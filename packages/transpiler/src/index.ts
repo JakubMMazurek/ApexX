@@ -12,8 +12,7 @@ import {
   collectIdentifiers,
   collectListVariables,
   createApexTypeProvider,
-  extractListElementType,
-  findEnclosingListReturnElementType,
+  findEnclosingMethodReturnType,
   findAvailableName,
   inferListMethodChainTypes,
 } from "@apexx/semantics";
@@ -58,7 +57,7 @@ export function transpileApexX(
     }
 
     call.elementType = listType.elementType;
-    const expectedResultElementType = inferExpectedListResultElementType(
+    const expectedResultType = inferExpectedListMethodResultType(
       source,
       call,
     );
@@ -66,7 +65,7 @@ export function transpileApexX(
       source,
       call,
       receiverElementType: listType.elementType,
-      expectedResultElementType,
+      expectedResultType,
       variables: declaredVariables,
       typeProvider,
     });
@@ -79,11 +78,16 @@ export function transpileApexX(
       continue;
     }
 
-    call.resultElementType = chainTypes.finalElementType;
+    call.resultElementType = chainTypes.finalKind === "list"
+      ? chainTypes.finalElementType
+      : undefined;
+    call.resultType = chainTypes.finalType;
+    call.resultKind = chainTypes.finalKind;
     call.stepInputTypes = chainTypes.inputTypes;
     call.stepResultTypes = chainTypes.resultTypes;
+    call.stepResultKinds = chainTypes.resultKinds;
     call.resultTempNames = call.steps.map(step =>
-      findAvailableName(step.methodName === "map" ? "apexxMap" : "apexxFilter", usedNames),
+      findAvailableName(tempPrefixForListMethod(step.methodName), usedNames),
     );
     call.resultTempName = call.resultTempNames.at(-1);
 
@@ -157,14 +161,17 @@ function lowerListMethodCall(
 ): string {
   const inputTypes = call.stepInputTypes;
   const resultTypes = call.stepResultTypes;
+  const resultKinds = call.stepResultKinds;
   const resultNames = call.resultTempNames;
 
   if (
     !inputTypes ||
     !resultTypes ||
+    !resultKinds ||
     !resultNames ||
     inputTypes.length !== call.steps.length ||
     resultTypes.length !== call.steps.length ||
+    resultKinds.length !== call.steps.length ||
     resultNames.length !== call.steps.length
   ) {
     return call.originalText;
@@ -181,25 +188,75 @@ function lowerListMethodCall(
     const lambda = step.lambda;
     const inputType = inputTypes[index];
     const resultType = resultTypes[index];
+    const resultKind = resultKinds[index];
 
-    lines.push(
-      `${indent}List<${resultType}> ${resultName} = new List<${resultType}>();`,
-      `${indent}for (${inputType} ${lambda.parameterName} : ${currentReceiver}) {`,
-    );
-
-    if (step.methodName === "filter") {
+    if (resultKind === "list") {
       lines.push(
+        `${indent}List<${resultType}> ${resultName} = new List<${resultType}>();`,
+        `${indent}for (${inputType} ${lambda.parameterName} : ${currentReceiver}) {`,
+      );
+
+      if (step.methodName === "filter") {
+        lines.push(
+          `${inner}if (${rewriteFuncInvocations(lambda.body, funcVariableNames)}) {`,
+          `${nested}${resultName}.add(${lambda.parameterName});`,
+          `${inner}}`,
+        );
+      } else if (step.methodName === "flatMap") {
+        lines.push(
+          `${inner}${resultName}.addAll(${rewriteFuncInvocations(lambda.body, funcVariableNames)});`,
+        );
+      } else {
+        lines.push(
+          `${inner}${resultName}.add(${rewriteFuncInvocations(lambda.body, funcVariableNames)});`,
+        );
+      }
+
+      lines.push(`${indent}}`);
+      currentReceiver = resultName;
+      continue;
+    }
+
+    if (step.methodName === "any") {
+      lines.push(
+        `${indent}Boolean ${resultName} = false;`,
+        `${indent}for (${inputType} ${lambda.parameterName} : ${currentReceiver}) {`,
         `${inner}if (${rewriteFuncInvocations(lambda.body, funcVariableNames)}) {`,
-        `${nested}${resultName}.add(${lambda.parameterName});`,
+        `${nested}${resultName} = true;`,
+        `${nested}break;`,
         `${inner}}`,
+        `${indent}}`,
+      );
+    } else if (step.methodName === "all") {
+      lines.push(
+        `${indent}Boolean ${resultName} = true;`,
+        `${indent}for (${inputType} ${lambda.parameterName} : ${currentReceiver}) {`,
+        `${inner}if (!(${rewriteFuncInvocations(lambda.body, funcVariableNames)})) {`,
+        `${nested}${resultName} = false;`,
+        `${nested}break;`,
+        `${inner}}`,
+        `${indent}}`,
+      );
+    } else if (step.methodName === "count") {
+      lines.push(
+        `${indent}Integer ${resultName} = 0;`,
+        `${indent}for (${inputType} ${lambda.parameterName} : ${currentReceiver}) {`,
+        `${inner}if (${rewriteFuncInvocations(lambda.body, funcVariableNames)}) {`,
+        `${nested}${resultName}++;`,
+        `${inner}}`,
+        `${indent}}`,
       );
     } else {
       lines.push(
-        `${inner}${resultName}.add(${rewriteFuncInvocations(lambda.body, funcVariableNames)});`,
+        `${indent}${resultType} ${resultName} = null;`,
+        `${indent}for (${inputType} ${lambda.parameterName} : ${currentReceiver}) {`,
+        `${inner}if (${rewriteFuncInvocations(lambda.body, funcVariableNames)}) {`,
+        `${nested}${resultName} = ${lambda.parameterName};`,
+        `${nested}break;`,
+        `${inner}}`,
+        `${indent}}`,
       );
     }
-
-    lines.push(`${indent}}`);
 
     currentReceiver = resultName;
   }
@@ -213,19 +270,38 @@ function lowerListMethodCall(
   return lines.join("\n");
 }
 
-function inferExpectedListResultElementType(
+function inferExpectedListMethodResultType(
   source: string,
   call: ListMethodCallExpression,
 ): string | undefined {
   if (call.statementKind === "assignment") {
-    return extractListElementType(call.targetType ?? "");
+    return extractAssignmentDeclaredType(call.targetType ?? "");
   }
 
   if (call.statementKind === "return") {
-    return findEnclosingListReturnElementType(source, call.range.start.offset);
+    return findEnclosingMethodReturnType(source, call.range.start.offset);
   }
 
   return undefined;
+}
+
+function extractAssignmentDeclaredType(targetType: string): string | undefined {
+  const match = /^(.*)\s+[A-Za-z][A-Za-z0-9_]*$/.exec(targetType.trim());
+  return match?.[1].replace(/\s+/g, " ").trim();
+}
+
+function tempPrefixForListMethod(methodName: string): string {
+  const prefixes: Record<string, string> = {
+    filter: "apexxFilter",
+    map: "apexxMap",
+    flatMap: "apexxFlatMap",
+    any: "apexxAny",
+    all: "apexxAll",
+    count: "apexxCount",
+    find: "apexxFind",
+  };
+
+  return prefixes[methodName] ?? "apexxResult";
 }
 
 function lowerFuncLambdaAssignment(assignment: FuncLambdaAssignment): string {

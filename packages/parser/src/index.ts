@@ -17,7 +17,7 @@ import { createRange, isApexIdentifier } from "@apexx/semantics";
 
 const returnStatementPattern = /^([ \t]*)return\s+/gm;
 const assignmentStatementPattern =
-  /^([ \t]*)(List\s*<\s*[^>\r\n]+\s*>\s+([A-Za-z][A-Za-z0-9_]*))\s*=\s*/gm;
+  /^([ \t]*)((?:[A-Za-z][A-Za-z0-9_.]*(?:\s*<\s*[^>\r\n]+\s*>)?)\s+([A-Za-z][A-Za-z0-9_]*))\s*=\s*/gm;
 const expressionStatementPattern = /^([ \t]*)([A-Za-z][A-Za-z0-9_]*)/gm;
 const funcLambdaAssignmentPattern =
   /^([ \t]*)(Func\s*<\s*([^>\r\n]+?)\s*>)\s+([A-Za-z][A-Za-z0-9_]*)\s*=\s*\(([^)\r\n]*)\)\s*=>\s*(.+?)\s*;?[ \t]*(?=\r?$)/gm;
@@ -118,7 +118,7 @@ export function parseApexX(source: string, fileName?: string): ApexXParseResult 
         severity: "error",
         source: "apexx-parser",
         message:
-          "Unsupported lambda form. v0.1 supports lambdas in Func assignments, List<T>.filter(...), or List<T>.map(...).",
+          "Unsupported lambda form. v0.1 supports lambdas in Func assignments and ApexX List<T> methods.",
         range: createRange(source, offset, offset + match[0].length),
       });
     }
@@ -472,7 +472,7 @@ function readListMethodNameAt(
     return undefined;
   }
 
-  for (const methodName of ["filter", "map"] as const) {
+  for (const methodName of ["flatMap", "filter", "count", "find", "map", "any", "all"] as const) {
     const nameStart = offset + 1;
     const nameEnd = nameStart + methodName.length;
 

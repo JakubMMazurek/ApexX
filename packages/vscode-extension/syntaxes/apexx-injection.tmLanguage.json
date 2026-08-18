@@ -8,7 +8,7 @@
     },
     {
       "name": "support.function.collection.apexx",
-      "match": "\\b(?:filter|map)\\b"
+      "match": "\\b(?:filter|map|flatMap|find|any|all|count)\\b"
     }
   ]
 }

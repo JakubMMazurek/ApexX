@@ -52,7 +52,7 @@ try {
 }
 `),
   );
-  assertHasLabels(listMembers, ["filter", "map", "add"]);
+  assertHasLabels(listMembers, ["filter", "map", "flatMap", "find", "any", "all", "count", "add"]);
 
   const mapInputMembers = await completionsFor(
     "MapInputProbe",
@@ -148,6 +148,52 @@ try {
   );
   assertHasLabels(secondMapDateMembers, ["addDays", "month", "year"]);
   assertNoLabels(secondMapDateMembers, ["AccountNumber", "Rating", "toUpperCase"]);
+
+  const anyMembers = await completionsFor(
+    "AnyProbe",
+    withCursor(`public with sharing class AnyProbe {
+    public static Boolean hasHot(List<Account> accounts) {
+        return accounts.any(account => account.__CURSOR__);
+    }
+}
+`),
+  );
+  assertHasLabels(anyMembers, ["AccountNumber", "Name", "Rating"]);
+
+  const findMembers = await completionsFor(
+    "FindProbe",
+    withCursor(`public with sharing class FindProbe {
+    public static Account firstHot(List<Account> accounts) {
+        return accounts.find(account => account.__CURSOR__);
+    }
+}
+`),
+  );
+  assertHasLabels(findMembers, ["AccountNumber", "Name", "Rating"]);
+
+  const flatMapMembers = await completionsFor(
+    "FlatMapProbe",
+    withCursor(`public with sharing class FlatMapProbe {
+    public static List<Contact> contacts(List<Account> accounts) {
+        return accounts.flatMap(account => account.__CURSOR__);
+    }
+}
+`),
+  );
+  assertHasLabels(flatMapMembers, ["Contacts", "AccountNumber", "Name"]);
+
+  const flatMappedContactMembers = await completionsFor(
+    "FlatMappedContactProbe",
+    withCursor(`public with sharing class FlatMappedContactProbe {
+    public static List<String> contactEmails(List<Account> accounts) {
+        return accounts.flatMap(account => account.Contacts)
+            .map(contact => contact.__CURSOR__);
+    }
+}
+`),
+  );
+  assertHasLabels(flatMappedContactMembers, ["Email", "FirstName", "LastName"]);
+  assertNoLabels(flatMappedContactMembers, ["AccountNumber", "Rating"]);
 
   const intermediateListMembers = await completionsFor(
     "IntermediateListProbe",

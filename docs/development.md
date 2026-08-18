@@ -43,7 +43,7 @@ force-app/main/default/classes/<ClassName>.cls
 force-app/main/default/classes/<ClassName>.cls-meta.xml
 ```
 
-The language server infers a lambda parameter from the receiver list. For example, in `accounts.filter(a => a.)` or `accounts.map(a => a.)`, `a` is treated as `Account` when `accounts` is declared as `List<Account>`. sObject field completions use built-in fallbacks first, and they can use a local org schema cache:
+The language server infers a lambda parameter from the receiver list. For example, in `accounts.filter(a => a.)`, `accounts.map(a => a.)`, or `accounts.find(a => a.)`, `a` is treated as `Account` when `accounts` is declared as `List<Account>`. It also follows typed chains such as `accounts.flatMap(a => a.Contacts).map(c => c.)`, where `c` is treated as `Contact`. sObject field completions use built-in fallbacks first, and they can use a local org schema cache:
 
 ```powershell
 npm run schema:refresh -- --target-org apexx Account

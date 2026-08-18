@@ -27,7 +27,15 @@ export interface ListTypeInfo {
 export type ListMethodCallStatementKind = "return" | "assignment" | "expression";
 export type FilterLambdaStatementKind = ListMethodCallStatementKind;
 
-export type ListMethodName = "filter" | "map";
+export type ListMethodName =
+  | "filter"
+  | "map"
+  | "flatMap"
+  | "any"
+  | "all"
+  | "count"
+  | "find";
+export type ListMethodResultKind = "list" | "scalar";
 
 export interface LambdaExpression {
   parameterName: string;
@@ -61,8 +69,11 @@ export interface ListMethodCallExpression {
   targetType?: string;
   elementType?: string;
   resultElementType?: string;
+  resultType?: string;
+  resultKind?: ListMethodResultKind;
   stepInputTypes?: string[];
   stepResultTypes?: string[];
+  stepResultKinds?: ListMethodResultKind[];
   resultTempName?: string;
   resultTempNames?: string[];
 }

@@ -47,6 +47,15 @@ return accounts.filter(a => a.Rating == 'Hot')
     .map(a => a.Name);
 ```
 
+Scalar and flattening helpers:
+
+```apex
+Boolean hasHot = accounts.any(a => a.Rating == 'Hot');
+Integer hotCount = accounts.count(a => a.Rating == 'Hot');
+Account firstHot = accounts.find(a => a.Rating == 'Hot');
+List<Contact> contacts = accounts.flatMap(a => a.Contacts);
+```
+
 Inside a return expression:
 
 ```apex
@@ -65,7 +74,7 @@ As a standalone expression statement:
 accounts.filter(a => a.Rating == 'Hot');
 ```
 
-The receiver must currently begin as a simple variable whose type is discoverable as `List<T>` in the same file. Every chained `filter` preserves that same `List<T>` type, so each lambda parameter is typed as `T` and each generated loop produces another `List<T>`.
+The receiver must currently begin as a simple variable whose type is discoverable as `List<T>` in the same file. `filter` preserves `List<T>`, `map` transforms to `List<R>`, `flatMap` expects a lambda returning `List<R>` and also produces `List<R>`, and scalar helpers such as `any`, `all`, `count`, and `find` terminate the chain.
 
 `map` transforms `List<T>` into `List<R>`. ApexX infers `R` from the lambda body when the expression is in the supported semantic subset: local identifiers, literals, sObject fields, equality/comparison/logical expressions, common primitive methods, and static calls such as `String.valueOf(...)`. An assignment target or enclosing method return type is still used as context and as a result-type sanity check.
 

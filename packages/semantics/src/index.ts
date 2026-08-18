@@ -3,6 +3,7 @@ import path from "node:path";
 import type {
   ApexXDiagnostic,
   ListMethodCallExpression,
+  ListMethodResultKind,
   ListTypeInfo,
   SourcePosition,
   SourceRange,
@@ -11,8 +12,8 @@ import type {
 const identifierPattern = /\b[A-Za-z][A-Za-z0-9_]*\b/g;
 const listDeclarationPattern =
   /\bList\s*<\s*([A-Za-z][A-Za-z0-9_]*(?:\s*\.\s*[A-Za-z][A-Za-z0-9_]*)?)\s*>\s+([A-Za-z][A-Za-z0-9_]*)\b/g;
-const listReturningMethodPattern =
-  /\b(?:public|private|protected|global|static|final|virtual|abstract|override|webservice|testmethod|\s)*List\s*<\s*([A-Za-z][A-Za-z0-9_]*(?:\s*\.\s*[A-Za-z][A-Za-z0-9_]*)?)\s*>\s+[A-Za-z][A-Za-z0-9_]*\s*\([^;{}]*\)\s*\{/g;
+const methodReturningPattern =
+  /\b(?:public|private|protected|global|static|final|virtual|abstract|override|webservice|testmethod|\s)*((?:List|Set)\s*<\s*[A-Za-z][A-Za-z0-9_.]*\s*>|Map\s*<\s*[A-Za-z][A-Za-z0-9_.]*\s*,\s*[A-Za-z][A-Za-z0-9_.]*\s*>|[A-Za-z][A-Za-z0-9_.]*)\s+[A-Za-z][A-Za-z0-9_]*\s*\([^;{}]*\)\s*\{/g;
 
 export interface ApexXTypeProvider {
   getFieldType?: (receiverType: string, fieldName: string) => string | undefined;
@@ -38,6 +39,7 @@ export interface InferListMethodChainTypesOptions {
   call: ListMethodCallExpression;
   receiverElementType: string;
   expectedResultElementType?: string;
+  expectedResultType?: string;
   variables?: Map<string, string>;
   typeProvider?: ApexXTypeProvider;
 }
@@ -45,7 +47,10 @@ export interface InferListMethodChainTypesOptions {
 export interface InferListMethodChainTypesResult {
   inputTypes: string[];
   resultTypes: string[];
+  resultKinds: ListMethodResultKind[];
   finalElementType: string;
+  finalType: string;
+  finalKind: ListMethodResultKind;
   diagnostics: ApexXDiagnostic[];
 }
 
@@ -100,6 +105,17 @@ const fallbackSObjectFields: Record<string, SObjectFieldTypeInfo[]> = {
     field("LastActivityDate", "date"),
     field("LastViewedDate", "datetime"),
     field("LastReferencedDate", "datetime"),
+    field("Contacts", "List<Contact>"),
+  ],
+  contact: [
+    ...commonSObjectFields,
+    field("AccountId", "reference", ["Account"]),
+    field("FirstName", "string"),
+    field("LastName", "string"),
+    field("Name", "string"),
+    field("Email", "email"),
+    field("Phone", "phone"),
+    field("Title", "string"),
   ],
 };
 
@@ -211,24 +227,15 @@ export function findEnclosingListReturnElementType(
   source: string,
   offset: number,
 ): string | undefined {
-  const masked = maskCommentsAndStrings(source);
-  let match: RegExpExecArray | null;
-  let elementType: string | undefined;
+  const returnType = findEnclosingMethodReturnType(source, offset);
+  return returnType ? extractListElementType(returnType) : undefined;
+}
 
-  while ((match = listReturningMethodPattern.exec(masked)) !== null) {
-    const openBrace = (match.index ?? 0) + match[0].length - 1;
-
-    if (openBrace >= offset) {
-      continue;
-    }
-
-    const closeBrace = findMatchingBrace(masked, openBrace);
-    if (closeBrace === undefined || offset < closeBrace) {
-      elementType = normalizeType(match[1]);
-    }
-  }
-
-  return elementType;
+export function findEnclosingMethodReturnType(
+  source: string,
+  offset: number,
+): string | undefined {
+  return findEnclosingReturnType(source, offset, methodReturningPattern);
 }
 
 export function createApexTypeProvider(
@@ -324,10 +331,26 @@ export function inferListMethodChainTypes(
   const diagnostics: ApexXDiagnostic[] = [];
   const inputTypes: string[] = [];
   const resultTypes: string[] = [];
+  const resultKinds: ListMethodResultKind[] = [];
   const baseVariables = options.variables ?? collectDeclaredVariables(options.source);
+  const expectedResultType = inferExpectedResultType(options);
+  const expectedListElementType = expectedResultType
+    ? extractListElementType(expectedResultType)
+    : options.expectedResultElementType;
   let currentType = toApexType(options.receiverElementType);
+  let currentKind: ListMethodResultKind = "list";
 
   for (const [index, step] of options.call.steps.entries()) {
+    if (currentKind !== "list") {
+      diagnostics.push({
+        severity: "error",
+        source: "apexx-semantics",
+        message: `${step.methodName}(...) cannot run after a list method that returns ${currentType}.`,
+        range: step.range,
+      });
+      break;
+    }
+
     inputTypes.push(currentType);
 
     const variables = new Map(baseVariables);
@@ -344,19 +367,23 @@ export function inferListMethodChainTypes(
       typeProvider: options.typeProvider,
     });
 
-    if (step.methodName === "filter") {
+    if (isPredicateMethod(step.methodName)) {
       if (bodyType && !isAssignableType("Boolean", bodyType)) {
         diagnostics.push({
           severity: "error",
           source: "apexx-semantics",
-          message: `filter(...) expects a Boolean predicate, but this lambda returns ${bodyType}.`,
+          message: `${step.methodName}(...) expects a Boolean predicate, but this lambda returns ${bodyType}.`,
           range: step.lambda.range,
         });
       }
-    } else {
+    }
+
+    if (step.methodName === "filter") {
+      currentKind = "list";
+    } else if (step.methodName === "map") {
       const isLastStep = index === options.call.steps.length - 1;
       const fallbackType = isLastStep
-        ? options.expectedResultElementType
+        ? expectedListElementType
         : undefined;
       const mappedType = bodyType ?? fallbackType;
 
@@ -370,19 +397,53 @@ export function inferListMethodChainTypes(
       } else {
         currentType = toApexType(mappedType);
       }
+      currentKind = "list";
+    } else if (step.methodName === "flatMap") {
+      const isLastStep = index === options.call.steps.length - 1;
+      const fallbackType = isLastStep ? expectedListElementType : undefined;
+      const flattenedType = bodyType
+        ? extractListElementType(bodyType)
+        : fallbackType;
+
+      if (bodyType && !extractListElementType(bodyType)) {
+        diagnostics.push({
+          severity: "error",
+          source: "apexx-semantics",
+          message: `flatMap(...) expects a lambda that returns List<R>, but this lambda returns ${bodyType}.`,
+          range: step.lambda.range,
+        });
+      } else if (!flattenedType) {
+        diagnostics.push({
+          severity: "error",
+          source: "apexx-semantics",
+          message: `Cannot infer flatMap(...) result type from '${step.lambda.body}'. Return a List<R> expression or add typed context.`,
+          range: step.lambda.range,
+        });
+      } else {
+        currentType = toApexType(flattenedType);
+      }
+      currentKind = "list";
+    } else if (step.methodName === "any" || step.methodName === "all") {
+      currentType = "Boolean";
+      currentKind = "scalar";
+    } else if (step.methodName === "count") {
+      currentType = "Integer";
+      currentKind = "scalar";
+    } else {
+      currentKind = "scalar";
     }
 
     resultTypes.push(currentType);
+    resultKinds.push(currentKind);
   }
 
-  if (
-    options.expectedResultElementType &&
-    !isAssignableType(options.expectedResultElementType, currentType)
-  ) {
+  const finalType = currentKind === "list" ? `List<${currentType}>` : currentType;
+
+  if (expectedResultType && !isAssignableType(expectedResultType, finalType)) {
     diagnostics.push({
       severity: "error",
       source: "apexx-semantics",
-      message: `List chain returns List<${currentType}>, but the surrounding context expects List<${toApexType(options.expectedResultElementType)}>.`,
+      message: `List chain returns ${finalType}, but the surrounding context expects ${toApexType(expectedResultType)}.`,
       range: options.call.range,
     });
   }
@@ -390,7 +451,10 @@ export function inferListMethodChainTypes(
   return {
     inputTypes,
     resultTypes,
+    resultKinds,
     finalElementType: currentType,
+    finalType,
+    finalKind: currentKind,
     diagnostics,
   };
 }
@@ -489,6 +553,30 @@ function inferChainExpressionType(
   }
 
   return currentType;
+}
+
+function inferExpectedResultType(
+  options: InferListMethodChainTypesOptions,
+): string | undefined {
+  if (options.expectedResultType) {
+    return toApexType(options.expectedResultType);
+  }
+
+  if (options.expectedResultElementType) {
+    return `List<${toApexType(options.expectedResultElementType)}>`;
+  }
+
+  return undefined;
+}
+
+function isPredicateMethod(methodName: string): boolean {
+  return (
+    methodName === "filter" ||
+    methodName === "any" ||
+    methodName === "all" ||
+    methodName === "count" ||
+    methodName === "find"
+  );
 }
 
 function inferFieldType(
@@ -681,14 +769,32 @@ function getSObjectFieldType(
     return undefined;
   }
 
-  const fields =
-    readWorkspaceSObjectFields(objectName, workspaceRoot) ??
-    fallbackSObjectFields[objectName.toLowerCase()];
+  const fields = mergeSObjectFields(
+    fallbackSObjectFields[objectName.toLowerCase()] ?? [],
+    readWorkspaceSObjectFields(objectName, workspaceRoot) ?? [],
+  );
   const fieldInfo = fields?.find(
     candidate => candidate.name.toLowerCase() === fieldName.toLowerCase(),
   );
 
   return fieldInfo ? apexTypeForSObjectField(fieldInfo) : undefined;
+}
+
+function mergeSObjectFields(
+  fallbackFields: SObjectFieldTypeInfo[],
+  workspaceFields: SObjectFieldTypeInfo[],
+): SObjectFieldTypeInfo[] {
+  const merged = new Map<string, SObjectFieldTypeInfo>();
+
+  for (const fieldInfo of fallbackFields) {
+    merged.set(fieldInfo.name.toLowerCase(), fieldInfo);
+  }
+
+  for (const fieldInfo of workspaceFields) {
+    merged.set(fieldInfo.name.toLowerCase(), fieldInfo);
+  }
+
+  return [...merged.values()];
 }
 
 function apexTypeForSObjectField(fieldInfo: SObjectFieldTypeInfo): string {
@@ -1150,6 +1256,32 @@ function findMatchingBrace(source: string, openBraceOffset: number): number | un
   }
 
   return undefined;
+}
+
+function findEnclosingReturnType(
+  source: string,
+  offset: number,
+  pattern: RegExp,
+): string | undefined {
+  const masked = maskCommentsAndStrings(source);
+  pattern.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let returnType: string | undefined;
+
+  while ((match = pattern.exec(masked)) !== null) {
+    const openBrace = (match.index ?? 0) + match[0].length - 1;
+
+    if (openBrace >= offset) {
+      continue;
+    }
+
+    const closeBrace = findMatchingBrace(masked, openBrace);
+    if (closeBrace === undefined || offset < closeBrace) {
+      returnType = toApexType(match[1]);
+    }
+  }
+
+  return returnType;
 }
 
 function field(

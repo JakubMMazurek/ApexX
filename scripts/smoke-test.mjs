@@ -258,6 +258,118 @@ assert.match(
   /List chain returns List<String>, but the surrounding context expects List<Integer>\./,
 );
 
+const scalarCollectionMethodsSource = `public with sharing class AccountService {
+    public static Boolean hasHotAccount(List<Account> accounts) {
+        return accounts.any(a => a.Rating == 'Hot');
+    }
+
+    public static Boolean allHaveNumbers(List<Account> accounts) {
+        return accounts.all(a => a.AccountNumber != null);
+    }
+
+    public static Integer hotAccountCount(List<Account> accounts) {
+        return accounts.count(a => a.Rating == 'Hot');
+    }
+
+    public static Account firstHotAccount(List<Account> accounts) {
+        return accounts.find(a => a.Rating == 'Hot');
+    }
+}
+`;
+const scalarCollectionMethodsResult = transpileApexX(scalarCollectionMethodsSource, {
+  sourceFileName: "AccountService.clsx",
+});
+const scalarCollectionMethodsErrors = scalarCollectionMethodsResult.diagnostics.filter(
+  diagnostic => diagnostic.severity === "error",
+);
+assert.deepEqual(scalarCollectionMethodsErrors, []);
+assert.match(scalarCollectionMethodsResult.output, /Boolean apexxAny0 = false;/);
+assert.match(scalarCollectionMethodsResult.output, /apexxAny0 = true;/);
+assert.match(scalarCollectionMethodsResult.output, /Boolean apexxAll0 = true;/);
+assert.match(scalarCollectionMethodsResult.output, /if \(!\(a\.AccountNumber != null\)\)/);
+assert.match(scalarCollectionMethodsResult.output, /Integer apexxCount0 = 0;/);
+assert.match(scalarCollectionMethodsResult.output, /apexxCount0\+\+;/);
+assert.match(scalarCollectionMethodsResult.output, /Account apexxFind0 = null;/);
+assert.match(scalarCollectionMethodsResult.output, /apexxFind0 = a;/);
+
+const scalarAssignmentSource = `public with sharing class AccountService {
+    public static Boolean summarize(List<Account> accounts) {
+        Boolean hasHot = accounts.any(a => a.Rating == 'Hot');
+        Integer hotCount = accounts.count(a => a.Rating == 'Hot');
+        Account firstHot = accounts.find(a => a.Rating == 'Hot');
+        return hasHot && hotCount > 0 && firstHot != null;
+    }
+}
+`;
+const scalarAssignmentResult = transpileApexX(scalarAssignmentSource, {
+  sourceFileName: "AccountService.clsx",
+});
+const scalarAssignmentErrors = scalarAssignmentResult.diagnostics.filter(
+  diagnostic => diagnostic.severity === "error",
+);
+assert.deepEqual(scalarAssignmentErrors, []);
+assert.match(scalarAssignmentResult.output, /Boolean hasHot = apexxAny0;/);
+assert.match(scalarAssignmentResult.output, /Integer hotCount = apexxCount0;/);
+assert.match(scalarAssignmentResult.output, /Account firstHot = apexxFind0;/);
+
+const flatMapSource = `public with sharing class AccountService {
+    public static List<Contact> contacts(List<Account> accounts) {
+        return accounts.flatMap(a => a.Contacts);
+    }
+
+    public static List<String> contactEmails(List<Account> accounts) {
+        return accounts.flatMap(a => a.Contacts)
+            .map(c => c.Email);
+    }
+
+    public static Contact firstContactWithEmail(List<Account> accounts) {
+        return accounts.flatMap(a => a.Contacts)
+            .find(c => c.Email != null);
+    }
+}
+`;
+const flatMapResult = transpileApexX(flatMapSource, {
+  sourceFileName: "AccountService.clsx",
+});
+const flatMapErrors = flatMapResult.diagnostics.filter(
+  diagnostic => diagnostic.severity === "error",
+);
+assert.deepEqual(flatMapErrors, []);
+assert.match(flatMapResult.output, /List<Contact> apexxFlatMap0 = new List<Contact>\(\);/);
+assert.match(flatMapResult.output, /apexxFlatMap0\.addAll\(a\.Contacts\);/);
+assert.match(flatMapResult.output, /for \(Contact c : apexxFlatMap1\)/);
+assert.match(flatMapResult.output, /List<String> apexxMap0 = new List<String>\(\);/);
+assert.match(flatMapResult.output, /Contact apexxFind0 = null;/);
+
+const invalidFlatMapSource = `public with sharing class AccountService {
+    public static List<String> invalid(List<Account> accounts) {
+        return accounts.flatMap(a => a.Name);
+    }
+}
+`;
+const invalidFlatMapResult = transpileApexX(invalidFlatMapSource, {
+  sourceFileName: "AccountService.clsx",
+});
+assert.match(
+  invalidFlatMapResult.diagnostics.map(diagnostic => diagnostic.message).join("\n"),
+  /flatMap\(\.\.\.\) expects a lambda that returns List<R>, but this lambda returns String\./,
+);
+
+const invalidTerminalChainSource = `public with sharing class AccountService {
+    public static List<Account> invalid(List<Account> accounts) {
+        return accounts.any(a => a.Rating == 'Hot')
+            .filter(a => a.Rating == 'Warm');
+    }
+}
+`;
+const invalidTerminalChainResult = transpileApexX(invalidTerminalChainSource, {
+  sourceFileName: "AccountService.clsx",
+});
+assert.match(
+  invalidTerminalChainResult.diagnostics.map(diagnostic => diagnostic.message).join("\n"),
+  /filter\(\.\.\.\) cannot run after a list method that returns Boolean\./,
+);
+
 const funcLambdaSource = `public with sharing class EqualityService {
     public static Boolean compare(Integer left, Integer right) {
         Func<int, int, bool> testForEquality = (x, y) => x == y;

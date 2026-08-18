@@ -57,6 +57,17 @@ const fallbackSObjects: Record<string, SObjectFieldInfo[]> = {
     field("LastActivityDate", "date", "Last Activity"),
     field("LastViewedDate", "datetime", "Last Viewed Date"),
     field("LastReferencedDate", "datetime", "Last Referenced Date"),
+    field("Contacts", "List<Contact>", "Contacts"),
+  ],
+  contact: [
+    ...commonSObjectFields,
+    field("AccountId", "reference", "Account ID", ["Account"]),
+    field("FirstName", "string", "First Name"),
+    field("LastName", "string", "Last Name"),
+    field("Name", "string", "Name"),
+    field("Email", "email", "Email"),
+    field("Phone", "phone", "Phone"),
+    field("Title", "string", "Title"),
   ],
 };
 
@@ -69,10 +80,27 @@ export function getSObjectFields(
     return undefined;
   }
 
-  return (
-    readWorkspaceSchema(normalized, workspaceRoot) ??
-    fallbackSObjects[normalized.toLowerCase()]
+  return mergeSObjectFields(
+    fallbackSObjects[normalized.toLowerCase()] ?? [],
+    readWorkspaceSchema(normalized, workspaceRoot) ?? [],
   );
+}
+
+function mergeSObjectFields(
+  fallbackFields: SObjectFieldInfo[],
+  workspaceFields: SObjectFieldInfo[],
+): SObjectFieldInfo[] {
+  const merged = new Map<string, SObjectFieldInfo>();
+
+  for (const fieldInfo of fallbackFields) {
+    merged.set(fieldInfo.name.toLowerCase(), fieldInfo);
+  }
+
+  for (const fieldInfo of workspaceFields) {
+    merged.set(fieldInfo.name.toLowerCase(), fieldInfo);
+  }
+
+  return [...merged.values()];
 }
 
 function readWorkspaceSchema(

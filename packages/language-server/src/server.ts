@@ -17,6 +17,7 @@ import type { ApexXDiagnostic } from "@apexx/ast";
 import {
   collectListVariables,
   createApexTypeProvider,
+  extractListElementType,
   inferExpressionType,
   normalizeType,
 } from "@apexx/semantics";
@@ -175,7 +176,7 @@ function inferLambdaParameterType(
 ): string | undefined {
   const prefix = source.slice(0, offset);
   const lambdaPattern =
-    /\.(filter|map)\s*\(\s*([A-Za-z][A-Za-z0-9_]*)\s*=>/g;
+    /\.(filter|map|flatMap|any|all|count|find)\s*\(\s*([A-Za-z][A-Za-z0-9_]*)\s*=>/g;
   let match: RegExpExecArray | null;
   let inferredType: string | undefined;
 
@@ -204,7 +205,7 @@ function inferListMethodLambdaInputType(
   const chainStart = statementStart + 1;
   const statementPrefix = prefix.slice(chainStart);
   const baseMatch =
-    /([A-Za-z][A-Za-z0-9_]*)\s*\.(?:filter|map)\s*\(/.exec(statementPrefix);
+    /([A-Za-z][A-Za-z0-9_]*)\s*\.(?:filter|map|flatMap|any|all|count|find)\s*\(/.exec(statementPrefix);
 
   if (!baseMatch) {
     return undefined;
@@ -218,7 +219,7 @@ function inferListMethodLambdaInputType(
 
   const methodOffsetInStatement = methodStartOffset - chainStart;
   const lambdaPattern =
-    /\.(filter|map)\s*\(\s*([A-Za-z][A-Za-z0-9_]*)\s*=>/g;
+    /\.(filter|map|flatMap|any|all|count|find)\s*\(\s*([A-Za-z][A-Za-z0-9_]*)\s*=>/g;
   let match: RegExpExecArray | null;
   let currentType = baseType;
   const typeProvider = createApexTypeProvider({ workspaceRoot });
@@ -235,7 +236,7 @@ function inferListMethodLambdaInputType(
       break;
     }
 
-    if (methodName === "map") {
+    if (methodName === "map" || methodName === "flatMap") {
       const bodyStart = match.index + match[0].length;
       const bodyEnd = findLambdaBodyEnd(statementPrefix, bodyStart);
 
@@ -254,7 +255,15 @@ function inferListMethodLambdaInputType(
         return undefined;
       }
 
-      currentType = bodyType;
+      if (methodName === "flatMap") {
+        const elementType = extractListElementType(bodyType);
+        if (!elementType) {
+          return undefined;
+        }
+        currentType = elementType;
+      } else {
+        currentType = bodyType;
+      }
     }
   }
 
@@ -483,6 +492,36 @@ function topLevelCompletions(): CompletionItem[] {
       detail: "ApexX List<T>.map(item => result)",
       insertText: "map(item => item)",
     },
+    {
+      label: "find",
+      kind: CompletionItemKind.Method,
+      detail: "ApexX List<T>.find(item => predicate)",
+      insertText: "find(item => item)",
+    },
+    {
+      label: "any",
+      kind: CompletionItemKind.Method,
+      detail: "ApexX List<T>.any(item => predicate)",
+      insertText: "any(item => item)",
+    },
+    {
+      label: "all",
+      kind: CompletionItemKind.Method,
+      detail: "ApexX List<T>.all(item => predicate)",
+      insertText: "all(item => item)",
+    },
+    {
+      label: "count",
+      kind: CompletionItemKind.Method,
+      detail: "ApexX List<T>.count(item => predicate)",
+      insertText: "count(item => item)",
+    },
+    {
+      label: "flatMap",
+      kind: CompletionItemKind.Method,
+      detail: "ApexX List<T>.flatMap(item => list)",
+      insertText: "flatMap(item => item)",
+    },
   ];
 }
 
@@ -652,6 +691,11 @@ function listMembers(): CompletionItem[] {
   return [
     method("filter", "ApexX List<T> filter(item => predicate)", "filter(${1:item} => ${1:item}.${2:field} == ${3:value})"),
     method("map", "ApexX List<R> map(item => result)", "map(${1:item} => ${1:item}.${2:field})"),
+    method("flatMap", "ApexX List<R> flatMap(item => List<R>)", "flatMap(${1:item} => ${1:item}.${2:listField})"),
+    method("find", "ApexX T find(item => predicate)", "find(${1:item} => ${1:item}.${2:field} == ${3:value})"),
+    method("any", "ApexX Boolean any(item => predicate)", "any(${1:item} => ${1:item}.${2:field} == ${3:value})"),
+    method("all", "ApexX Boolean all(item => predicate)", "all(${1:item} => ${1:item}.${2:field} != ${3:null})"),
+    method("count", "ApexX Integer count(item => predicate)", "count(${1:item} => ${1:item}.${2:field} == ${3:value})"),
     method("add", "Boolean add(T element)", "add(${1:element})"),
     method("addAll", "void addAll(List<T> fromList)", "addAll(${1:fromList})"),
     method("clear", "void clear()"),
