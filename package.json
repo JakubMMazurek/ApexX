@@ -11,7 +11,7 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "tsc -b packages/ast packages/semantics packages/parser packages/transpiler packages/cli packages/language-server packages/vscode-extension",
+    "build": "tsc -b packages/ast packages/semantics packages/parser packages/transpiler packages/sfdx packages/cli packages/language-server packages/vscode-extension",
     "clean": "node scripts/clean.mjs",
     "smoke": "node scripts/smoke-test.mjs",
     "test": "npm run build && npm run smoke",
@@ -30,4 +30,3 @@
     "vscode-languageclient": "^9.0.1"
   }
 }
-

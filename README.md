@@ -16,7 +16,7 @@ cd C:\Users\qba05\Documents\ApexX
 npm install
 npm run build
 npm run test
-npm run apexx -- build examples --out generated
+npm run apexx -- build examples
 ```
 
 Example `.clsx`:
@@ -27,6 +27,18 @@ public with sharing class AccountService {
         return accounts.filter(a => a.Rating == 'Hot');
     }
 }
+```
+
+Generated Salesforce DX files:
+
+```text
+generated/
+  force-app/
+    main/
+      default/
+        classes/
+          AccountService.cls
+          AccountService.cls-meta.xml
 ```
 
 Generated `.cls`:
@@ -56,3 +68,13 @@ ApexX starts as an integration layer over `@apexdevtools/apex-parser`. A grammar
 
 See [docs/architecture.md](docs/architecture.md) and [docs/development.md](docs/development.md).
 
+## VS Code
+
+The VS Code extension contributes `.clsx` language support and compiles on save by default. In a Salesforce DX project, saving `AccountService.clsx` writes:
+
+```text
+force-app/main/default/classes/AccountService.cls
+force-app/main/default/classes/AccountService.cls-meta.xml
+```
+
+The output package directory and API version come from `sfdx-project.json` when present. Outside a Salesforce DX project, ApexX writes to `generated/force-app/main/default/classes`.

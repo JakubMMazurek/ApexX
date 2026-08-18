@@ -20,6 +20,7 @@ The first implementation does not fork the grammar. Instead, it recognizes a tin
 - `@apexx/semantics`: small semantic helpers, currently `List<T>` receiver discovery and generated-name allocation
 - `@apexx/parser`: upstream Apex parser wrapper plus ApexX lambda discovery
 - `@apexx/transpiler`: lowers `.clsx` source into `.cls` source
+- `@apexx/sfdx`: Salesforce DX layout detection and `.cls-meta.xml` generation
 - `@apexx/cli`: command-line build and parse entry point
 - `@apexx/language-server`: minimal LSP diagnostics for `.clsx`
 - `apexx-vscode-extension`: local VS Code extension shell for `.clsx`
@@ -52,6 +53,21 @@ Generated locals use names such as `apexxFilter0`. They intentionally avoid unde
 
 The transpiler checks existing identifiers and increments the numeric suffix until the generated name is free.
 
+## Salesforce DX Output
+
+ApexX writes Apex classes in Salesforce source format:
+
+```text
+force-app/main/default/classes/ClassName.cls
+force-app/main/default/classes/ClassName.cls-meta.xml
+```
+
+When `sfdx-project.json` is present, ApexX uses its default package directory and `sourceApiVersion`. Outside a Salesforce DX project, it falls back to:
+
+```text
+generated/force-app/main/default/classes
+```
+
 ## Future Surface
 
 The next major design thread is source-level generic function types:
@@ -61,4 +77,3 @@ Func<Integer, Integer, Boolean> testForEquality = (x, y) => x == y;
 ```
 
 That likely lowers to generated interfaces and classes inside the enclosing Apex class. It is not part of v0.1 because `filter` can compile more cleanly as a direct loop.
-

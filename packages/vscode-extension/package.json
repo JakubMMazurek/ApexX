@@ -10,7 +10,8 @@
     "vscode": "^1.90.0"
   },
   "activationEvents": [
-    "onLanguage:apexx"
+    "onLanguage:apexx",
+    "onCommand:apexx.buildCurrentFile"
   ],
   "categories": [
     "Programming Languages"
@@ -30,12 +31,40 @@
         "scopeName": "source.apexx",
         "path": "./syntaxes/apexx.tmLanguage.json"
       }
-    ]
+    ],
+    "commands": [
+      {
+        "command": "apexx.buildCurrentFile",
+        "title": "ApexX: Build Current File"
+      }
+    ],
+    "configuration": {
+      "title": "ApexX",
+      "properties": {
+        "apexx.compileOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Generate the corresponding Salesforce Apex .cls files whenever a .clsx file is saved."
+        },
+        "apexx.outputDirectory": {
+          "type": "string",
+          "default": "",
+          "description": "Output classes directory. Leave empty to use the Salesforce DX default package directory, or generated/force-app/main/default/classes outside a Salesforce DX project."
+        },
+        "apexx.apiVersion": {
+          "type": "string",
+          "default": "",
+          "description": "Apex metadata API version for generated .cls-meta.xml files. Leave empty to use sfdx-project.json sourceApiVersion, then ApexX's fallback."
+        }
+      }
+    }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@apexx/sfdx": "0.1.0",
+    "@apexx/transpiler": "0.1.0",
     "@apexx/language-server": "0.1.0",
     "vscode-languageclient": "^9.0.1"
   },
@@ -44,4 +73,3 @@
     "@types/vscode": "^1.90.0"
   }
 }
-

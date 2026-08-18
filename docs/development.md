@@ -11,10 +11,10 @@ npm run build
 ## Run The PoC
 
 ```powershell
-npm run apexx -- build examples --out generated
+npm run apexx -- build examples
 ```
 
-This writes `.cls` files under `generated`.
+Outside a Salesforce DX project, this writes Salesforce source-format files under `generated/force-app/main/default/classes`.
 
 ## Validate
 
@@ -36,6 +36,15 @@ npm run apexx -- parse examples\AccountService.clsx
 
 The extension package contributes the `apexx` language for `.clsx` files and starts the minimal ApexX language server in local development after the repo is built.
 
+It also compiles on save by default. In a Salesforce DX workspace, a saved `.clsx` file generates:
+
+```text
+force-app/main/default/classes/<ClassName>.cls
+force-app/main/default/classes/<ClassName>.cls-meta.xml
+```
+
+The extension uses the default `packageDirectories` entry and `sourceApiVersion` from `sfdx-project.json`. The same behavior is available manually through `ApexX: Build Current File`.
+
 Open `packages/vscode-extension` as an extension development host target after running:
 
 ```powershell
@@ -44,4 +53,3 @@ npm run build
 ```
 
 The extension is intentionally thin for v0.1. Its main job is to prove `.clsx` language registration and diagnostics wiring while the CLI/compiler shape settles.
-

@@ -5,10 +5,6 @@
     "outDir": "dist",
     "tsBuildInfoFile": "dist/.tsbuildinfo"
   },
-  "references": [
-    { "path": "../language-server" },
-    { "path": "../transpiler" },
-    { "path": "../sfdx" }
-  ],
   "include": ["src/**/*.ts"]
 }
+

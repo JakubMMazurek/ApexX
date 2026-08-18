@@ -1,6 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import * as vscode from "vscode";
+import { transpileApexX } from "@apexx/transpiler";
+import {
+  inferApexClassName,
+  resolveBuildTarget,
+  writeApexClassFiles,
+} from "@apexx/sfdx";
 import {
   LanguageClient,
   TransportKind,
@@ -9,8 +15,12 @@ import {
 } from "vscode-languageclient/node.js";
 
 let client: LanguageClient | undefined;
+let outputChannel: vscode.OutputChannel | undefined;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
+  outputChannel = vscode.window.createOutputChannel("ApexX");
+  context.subscriptions.push(outputChannel);
+
   const serverModule = resolveServerModule(context);
   const serverOptions: ServerOptions = {
     run: { module: serverModule, transport: TransportKind.ipc },
@@ -32,6 +42,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
 
   context.subscriptions.push(client);
+  context.subscriptions.push(
+    vscode.workspace.onDidSaveTextDocument(document => {
+      if (shouldCompileOnSave(document)) {
+        void buildDocument(document).catch(reportBuildError);
+      }
+    }),
+  );
+  context.subscriptions.push(
+    vscode.commands.registerCommand("apexx.buildCurrentFile", async () => {
+      const document = vscode.window.activeTextEditor?.document;
+
+      if (!document || !isApexXDocument(document)) {
+        await vscode.window.showWarningMessage("Open a .clsx file first.");
+        return;
+      }
+
+      await buildDocument(document).catch(reportBuildError);
+    }),
+  );
+
   await client.start();
 }
 
@@ -58,4 +88,74 @@ function resolveServerModule(context: vscode.ExtensionContext): string {
   }
 
   return found;
+}
+
+function shouldCompileOnSave(document: vscode.TextDocument): boolean {
+  if (!isApexXDocument(document)) {
+    return false;
+  }
+
+  return vscode.workspace
+    .getConfiguration("apexx", document.uri)
+    .get<boolean>("compileOnSave", true);
+}
+
+function isApexXDocument(document: vscode.TextDocument): boolean {
+  return (
+    document.uri.scheme === "file" &&
+    (document.languageId === "apexx" ||
+      document.uri.fsPath.toLowerCase().endsWith(".clsx"))
+  );
+}
+
+async function buildDocument(document: vscode.TextDocument): Promise<void> {
+  const filePath = document.uri.fsPath;
+  const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
+  const workspaceRoot = workspaceFolder?.uri.fsPath ?? path.dirname(filePath);
+  const config = vscode.workspace.getConfiguration("apexx", document.uri);
+  const outputDirectory = config.get<string>("outputDirectory", "").trim();
+  const apiVersion = config.get<string>("apiVersion", "").trim();
+  const result = transpileApexX(document.getText(), {
+    sourceFileName: path.basename(filePath),
+  });
+  const errors = result.diagnostics.filter(
+    diagnostic => diagnostic.severity === "error",
+  );
+
+  if (errors.length > 0) {
+    const message = `ApexX did not write generated Apex because ${errors.length} error(s) were found.`;
+    outputChannel?.appendLine(message);
+    for (const error of errors) {
+      outputChannel?.appendLine(`error: ${error.message}`);
+    }
+    vscode.window.setStatusBarMessage(message, 5000);
+    return;
+  }
+
+  const target = await resolveBuildTarget({
+    sourcePath: filePath,
+    workspaceRoot,
+    explicitClassesDir: outputDirectory.length > 0 ? outputDirectory : undefined,
+    explicitApiVersion: apiVersion.length > 0 ? apiVersion : undefined,
+  });
+  const className = inferApexClassName(result.output, path.basename(filePath));
+  const written = await writeApexClassFiles({
+    classesDir: target.classesDir,
+    className,
+    source: result.output,
+    apiVersion: target.apiVersion,
+  });
+
+  outputChannel?.appendLine(`Built ${written.classFile}`);
+  outputChannel?.appendLine(`Built ${written.metadataFile}`);
+  vscode.window.setStatusBarMessage(
+    `ApexX generated ${path.basename(written.classFile)}`,
+    3500,
+  );
+}
+
+function reportBuildError(error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error);
+  outputChannel?.appendLine(`error: ${message}`);
+  void vscode.window.showErrorMessage(`ApexX build failed: ${message}`);
 }

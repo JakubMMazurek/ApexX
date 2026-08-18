@@ -3,6 +3,11 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { transpileApexX } from "@apexx/transpiler";
 import type { ApexXDiagnostic } from "@apexx/ast";
+import {
+  inferApexClassName,
+  resolveBuildTarget,
+  writeApexClassFiles,
+} from "@apexx/sfdx";
 
 interface ParsedArgs {
   command: string;
@@ -29,10 +34,16 @@ async function main(argv: string[]): Promise<void> {
 
 async function build(args: ParsedArgs): Promise<void> {
   const input = path.resolve(process.cwd(), args.positional[0] ?? "src");
-  const outDir = path.resolve(
-    process.cwd(),
-    String(args.options.get("out") ?? "generated"),
-  );
+  const explicitOut = args.options.get("out");
+  const explicitApiVersion = args.options.get("api-version");
+  const buildTarget = await resolveBuildTarget({
+    sourcePath: input,
+    workspaceRoot: process.cwd(),
+    explicitClassesDir:
+      typeof explicitOut === "string" ? explicitOut : undefined,
+    explicitApiVersion:
+      typeof explicitApiVersion === "string" ? explicitApiVersion : undefined,
+  });
   const files = await collectClsxFiles(input);
 
   if (files.length === 0) {
@@ -41,10 +52,7 @@ async function build(args: ParsedArgs): Promise<void> {
     return;
   }
 
-  const inputRoot = (await statIsDirectory(input)) ? input : path.dirname(input);
   let hadError = false;
-
-  await fs.mkdir(outDir, { recursive: true });
 
   for (const file of files) {
     const source = await fs.readFile(file, "utf8");
@@ -62,11 +70,16 @@ async function build(args: ParsedArgs): Promise<void> {
       continue;
     }
 
-    const relative = path.relative(inputRoot, file).replace(/\.clsx$/i, ".cls");
-    const outFile = path.join(outDir, relative);
-    await fs.mkdir(path.dirname(outFile), { recursive: true });
-    await fs.writeFile(outFile, result.output, "utf8");
-    console.log(`Wrote ${path.relative(process.cwd(), outFile)}`);
+    const className = inferApexClassName(result.output, path.basename(file));
+    const written = await writeApexClassFiles({
+      classesDir: buildTarget.classesDir,
+      className,
+      source: result.output,
+      apiVersion: buildTarget.apiVersion,
+    });
+
+    console.log(`Wrote ${path.relative(process.cwd(), written.classFile)}`);
+    console.log(`Wrote ${path.relative(process.cwd(), written.metadataFile)}`);
   }
 
   if (hadError) {
@@ -175,7 +188,9 @@ function printHelp(): void {
   console.log(`ApexX
 
 Usage:
-  apexx build [path] --out generated
+  apexx build [path]
+  apexx build [path] --out force-app/main/default/classes
+  apexx build [path] --api-version 67.0
   apexx parse <file.clsx>
 `);
 }
@@ -184,4 +199,3 @@ main(process.argv.slice(2)).catch(error => {
   console.error(error instanceof Error ? error.message : String(error));
   process.exitCode = 1;
 });
-

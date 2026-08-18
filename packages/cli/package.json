@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@apexx/ast": "0.1.0",
+    "@apexx/sfdx": "0.1.0",
     "@apexx/transpiler": "0.1.0"
   }
 }
