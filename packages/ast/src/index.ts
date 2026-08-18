@@ -80,11 +80,20 @@ export interface FuncLambdaAssignment {
   implementationName?: string;
 }
 
+export interface FuncInvocation {
+  kind: "funcInvocation";
+  variableName: string;
+  argumentsText: string;
+  originalText: string;
+  range: SourceRange;
+}
+
 export interface ApexXParseResult {
   source: string;
   fileName?: string;
   listMethodCalls: ListMethodCallExpression[];
   funcLambdaAssignments: FuncLambdaAssignment[];
+  funcInvocations: FuncInvocation[];
   filters: FilterLambdaExpression[];
   diagnostics: ApexXDiagnostic[];
 }
@@ -99,5 +108,6 @@ export interface TranspileResult {
   diagnostics: ApexXDiagnostic[];
   listMethodCalls: ListMethodCallExpression[];
   funcLambdaAssignments: FuncLambdaAssignment[];
+  funcInvocations: FuncInvocation[];
   filters: FilterLambdaExpression[];
 }

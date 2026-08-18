@@ -6,6 +6,7 @@ import type {
   ApexXDiagnostic,
   ApexXParseResult,
   FilterLambdaExpression,
+  FuncInvocation,
   FuncLambdaAssignment,
   ListMethodCallExpression,
   ListMethodCallStep,
@@ -54,6 +55,10 @@ export function parseApex(source: string): ApexParseResult {
 export function parseApexX(source: string, fileName?: string): ApexXParseResult {
   const listMethodCalls = findListMethodCalls(source);
   const funcLambdaAssignments = findFuncLambdaAssignments(source);
+  const funcVariableNames = new Set(
+    funcLambdaAssignments.map(assignment => assignment.variableName),
+  );
+  const funcInvocations = findFuncInvocations(source, funcVariableNames);
   const diagnostics: ApexXDiagnostic[] = [];
 
   for (const call of listMethodCalls) {
@@ -122,6 +127,7 @@ export function parseApexX(source: string, fileName?: string): ApexXParseResult 
     fileName,
     listMethodCalls,
     funcLambdaAssignments,
+    funcInvocations,
     filters: listMethodCalls,
     diagnostics,
   };
@@ -166,6 +172,106 @@ export function findFuncLambdaAssignments(
   }
 
   return assignments.sort((left, right) => left.range.start.offset - right.range.start.offset);
+}
+
+export function findFuncInvocations(
+  source: string,
+  funcVariableNames: Set<string>,
+): FuncInvocation[] {
+  const invocations: FuncInvocation[] = [];
+  let cursor = 0;
+  let state: "code" | "lineComment" | "blockComment" | "string" = "code";
+
+  while (cursor < source.length) {
+    const current = source[cursor];
+    const next = source[cursor + 1];
+
+    if (state === "code" && current === "/" && next === "/") {
+      cursor += 2;
+      state = "lineComment";
+      continue;
+    }
+
+    if (state === "code" && current === "/" && next === "*") {
+      cursor += 2;
+      state = "blockComment";
+      continue;
+    }
+
+    if (state === "code" && current === "'") {
+      cursor += 1;
+      state = "string";
+      continue;
+    }
+
+    if (state === "lineComment") {
+      cursor += 1;
+      if (current === "\n") {
+        state = "code";
+      }
+      continue;
+    }
+
+    if (state === "blockComment") {
+      if (current === "*" && next === "/") {
+        cursor += 2;
+        state = "code";
+      } else {
+        cursor += 1;
+      }
+      continue;
+    }
+
+    if (state === "string") {
+      if (current === "\\" && next) {
+        cursor += 2;
+      } else {
+        cursor += 1;
+        if (current === "'") {
+          state = "code";
+        }
+      }
+      continue;
+    }
+
+    if (!isIdentifierStart(current ?? "")) {
+      cursor += 1;
+      continue;
+    }
+
+    const identifier = readIdentifier(source, cursor);
+    if (!identifier) {
+      cursor += 1;
+      continue;
+    }
+
+    const openParen = skipWhitespace(source, identifier.endOffset);
+    const previous = previousNonWhitespace(source, identifier.startOffset);
+
+    if (
+      funcVariableNames.has(identifier.name) &&
+      previous !== "." &&
+      source[openParen] === "("
+    ) {
+      const closeParen = findMatchingParen(source, openParen);
+
+      if (closeParen !== undefined) {
+        invocations.push({
+          kind: "funcInvocation",
+          variableName: identifier.name,
+          argumentsText: source.slice(openParen + 1, closeParen),
+          originalText: source.slice(identifier.startOffset, closeParen + 1),
+          range: createRange(source, identifier.startOffset, closeParen + 1),
+        });
+        cursor = closeParen + 1;
+        continue;
+      }
+    }
+
+    cursor = identifier.endOffset;
+  }
+
+  return invocations;
 }
 
 export function findListMethodCalls(
@@ -394,6 +500,82 @@ function findFilterPredicateEnd(
   return undefined;
 }
 
+function findMatchingParen(
+  source: string,
+  openParenOffset: number,
+): number | undefined {
+  let cursor = openParenOffset + 1;
+  let depth = 1;
+  let state: "code" | "lineComment" | "blockComment" | "string" = "code";
+
+  while (cursor < source.length) {
+    const current = source[cursor];
+    const next = source[cursor + 1];
+
+    if (state === "code" && current === "/" && next === "/") {
+      cursor += 2;
+      state = "lineComment";
+      continue;
+    }
+
+    if (state === "code" && current === "/" && next === "*") {
+      cursor += 2;
+      state = "blockComment";
+      continue;
+    }
+
+    if (state === "code" && current === "'") {
+      cursor += 1;
+      state = "string";
+      continue;
+    }
+
+    if (state === "lineComment") {
+      cursor += 1;
+      if (current === "\n") {
+        state = "code";
+      }
+      continue;
+    }
+
+    if (state === "blockComment") {
+      if (current === "*" && next === "/") {
+        cursor += 2;
+        state = "code";
+      } else {
+        cursor += 1;
+      }
+      continue;
+    }
+
+    if (state === "string") {
+      if (current === "\\" && next) {
+        cursor += 2;
+      } else {
+        cursor += 1;
+        if (current === "'") {
+          state = "code";
+        }
+      }
+      continue;
+    }
+
+    if (current === "(") {
+      depth += 1;
+    } else if (current === ")") {
+      depth -= 1;
+
+      if (depth === 0) {
+        return cursor;
+      }
+    }
+
+    cursor += 1;
+  }
+
+  return undefined;
+}
+
 function readIdentifier(
   source: string,
   startOffset: number,
@@ -433,6 +615,29 @@ function skipHorizontalWhitespace(source: string, startOffset: number): number {
 
 function isIdentifierPart(character: string): boolean {
   return /^[A-Za-z0-9_]$/.test(character);
+}
+
+function isIdentifierStart(character: string): boolean {
+  return /^[A-Za-z]$/.test(character);
+}
+
+function previousNonWhitespace(
+  source: string,
+  startOffset: number,
+): string | undefined {
+  let cursor = startOffset - 1;
+
+  while (cursor >= 0) {
+    const character = source[cursor];
+
+    if (character !== " " && character !== "\t" && character !== "\r" && character !== "\n") {
+      return character;
+    }
+
+    cursor -= 1;
+  }
+
+  return undefined;
 }
 
 function splitCommaList(source: string): string[] {

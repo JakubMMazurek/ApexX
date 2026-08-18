@@ -1,11 +1,12 @@
 import type {
   ApexXDiagnostic,
+  FuncInvocation,
   FuncLambdaAssignment,
   ListMethodCallExpression,
   TranspileOptions,
   TranspileResult,
 } from "@apexx/ast";
-import { parseApex, parseApexX } from "@apexx/parser";
+import { findFuncInvocations, parseApex, parseApexX } from "@apexx/parser";
 import {
   collectIdentifiers,
   collectListVariables,
@@ -24,6 +25,12 @@ export function transpileApexX(
   const funcLambdaAssignments = parseResult.funcLambdaAssignments.map(assignment => ({
     ...assignment,
   }));
+  const funcInvocations = parseResult.funcInvocations.map(invocation => ({
+    ...invocation,
+  }));
+  const funcVariableNames = new Set(
+    funcLambdaAssignments.map(assignment => assignment.variableName),
+  );
   const transformations: Transformation[] = [];
   let output = "";
   let cursor = 0;
@@ -50,7 +57,7 @@ export function transpileApexX(
     transformations.push({
       start: call.range.start.offset,
       end: call.range.end.offset,
-      replacement: lowerListMethodCall(call),
+      replacement: lowerListMethodCall(call, funcVariableNames),
     });
   }
 
@@ -67,6 +74,14 @@ export function transpileApexX(
     }
   }
 
+  for (const invocation of funcInvocations) {
+    transformations.push({
+      start: invocation.range.start.offset,
+      end: invocation.range.end.offset,
+      replacement: lowerFuncInvocation(invocation, funcVariableNames),
+    });
+  }
+
   for (const transformation of transformations.sort((left, right) => left.start - right.start)) {
     if (transformation.start < cursor) {
       continue;
@@ -78,7 +93,7 @@ export function transpileApexX(
   }
 
   output += source.slice(cursor);
-  output = addGeneratedFuncTypes(output, funcLambdaAssignments);
+  output = addGeneratedFuncTypes(output, funcLambdaAssignments, funcVariableNames);
 
   const generated = addHeader(output, options.sourceFileName);
   const generatedParse = parseApex(generated);
@@ -92,6 +107,7 @@ export function transpileApexX(
     diagnostics,
     listMethodCalls,
     funcLambdaAssignments,
+    funcInvocations,
     filters: listMethodCalls,
   };
 }
@@ -102,7 +118,10 @@ interface Transformation {
   replacement: string;
 }
 
-function lowerListMethodCall(call: ListMethodCallExpression): string {
+function lowerListMethodCall(
+  call: ListMethodCallExpression,
+  funcVariableNames: Set<string>,
+): string {
   const elementType = call.elementType;
   const resultNames = call.resultTempNames;
 
@@ -123,7 +142,7 @@ function lowerListMethodCall(call: ListMethodCallExpression): string {
     lines.push(
       `${indent}List<${elementType}> ${resultName} = new List<${elementType}>();`,
       `${indent}for (${elementType} ${lambda.parameterName} : ${currentReceiver}) {`,
-      `${inner}if (${lambda.body}) {`,
+      `${inner}if (${rewriteFuncInvocations(lambda.body, funcVariableNames)}) {`,
       `${nested}${resultName}.add(${lambda.parameterName});`,
       `${inner}}`,
       `${indent}}`,
@@ -145,9 +164,17 @@ function lowerFuncLambdaAssignment(assignment: FuncLambdaAssignment): string {
   return `${assignment.indent}${assignment.interfaceName} ${assignment.variableName} = new ${assignment.implementationName}();`;
 }
 
+function lowerFuncInvocation(
+  invocation: FuncInvocation,
+  funcVariableNames: Set<string>,
+): string {
+  return `${invocation.variableName}.invoke(${rewriteFuncInvocations(invocation.argumentsText, funcVariableNames)})`;
+}
+
 function addGeneratedFuncTypes(
   source: string,
   assignments: FuncLambdaAssignment[],
+  funcVariableNames: Set<string>,
 ): string {
   const supportedAssignments = assignments.filter(
     assignment =>
@@ -166,7 +193,7 @@ function addGeneratedFuncTypes(
   }
 
   const declarations = supportedAssignments
-    .map(assignment => renderFuncTypeDeclaration(assignment, "    "))
+    .map(assignment => renderFuncTypeDeclaration(assignment, "    ", funcVariableNames))
     .join("\n\n");
 
   return `${source.slice(0, classStart)}\n${declarations}\n${source.slice(classStart)}`;
@@ -175,6 +202,7 @@ function addGeneratedFuncTypes(
 function renderFuncTypeDeclaration(
   assignment: FuncLambdaAssignment,
   indent: string,
+  funcVariableNames: Set<string>,
 ): string {
   const inner = `${indent}    `;
   const nested = `${indent}        `;
@@ -194,7 +222,7 @@ function renderFuncTypeDeclaration(
     "",
     `${indent}private class ${assignment.implementationName} implements ${assignment.interfaceName} {`,
     `${inner}public ${returnType} invoke(${parameterText}) {`,
-    `${nested}return ${assignment.lambda.body};`,
+    `${nested}return ${rewriteFuncInvocations(assignment.lambda.body, funcVariableNames)};`,
     `${inner}}`,
     `${indent}}`,
   ].join("\n");
@@ -232,4 +260,33 @@ function toApexType(typeName: string): string {
   };
 
   return aliases[normalized.toLowerCase()] ?? normalized;
+}
+
+function rewriteFuncInvocations(
+  source: string,
+  funcVariableNames: Set<string>,
+): string {
+  if (funcVariableNames.size === 0) {
+    return source;
+  }
+
+  const invocations = findFuncInvocations(source, funcVariableNames);
+  let output = "";
+  let cursor = 0;
+
+  for (const invocation of invocations) {
+    const start = invocation.range.start.offset;
+    const end = invocation.range.end.offset;
+
+    if (start < cursor) {
+      continue;
+    }
+
+    output += source.slice(cursor, start);
+    output += lowerFuncInvocation(invocation, funcVariableNames);
+    cursor = end;
+  }
+
+  output += source.slice(cursor);
+  return output;
 }

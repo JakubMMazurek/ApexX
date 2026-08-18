@@ -97,7 +97,7 @@ assert.match(chainedFilterResult.output, /return apexxFilter1;/);
 const funcLambdaSource = `public with sharing class EqualityService {
     public static Boolean compare(Integer left, Integer right) {
         Func<int, int, bool> testForEquality = (x, y) => x == y;
-        return testForEquality.invoke(left, right);
+        return testForEquality(left, right);
     }
 }
 `;
@@ -116,6 +116,28 @@ assert.match(
   funcLambdaResult.output,
   /ApexXFunc0 testForEquality = new ApexXLambda0\(\);/,
 );
+assert.match(
+  funcLambdaResult.output,
+  /return testForEquality\.invoke\(left, right\);/,
+);
+
+const nestedFuncCallSource = `public with sharing class EqualityService {
+    public static Boolean compare(Integer left, Integer right) {
+        Func<int, int, bool> testForEquality = (x, y) => x == y;
+        Func<int, bool> isSelfEqual = (x) => testForEquality(x, x);
+        return isSelfEqual(left);
+    }
+}
+`;
+const nestedFuncCallResult = transpileApexX(nestedFuncCallSource, {
+  sourceFileName: "EqualityService.clsx",
+});
+const nestedFuncCallErrors = nestedFuncCallResult.diagnostics.filter(
+  diagnostic => diagnostic.severity === "error",
+);
+assert.deepEqual(nestedFuncCallErrors, []);
+assert.match(nestedFuncCallResult.output, /return testForEquality\.invoke\(x, x\);/);
+assert.match(nestedFuncCallResult.output, /return isSelfEqual\.invoke\(left\);/);
 
 const tempProject = fs.mkdtempSync(path.join(os.tmpdir(), "apexx-sfdx-"));
 try {

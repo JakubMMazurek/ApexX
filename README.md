@@ -9,6 +9,7 @@ The first milestone is intentionally small:
 - `filter` lowers to a typed Apex loop, avoiding `Object` casts in generated code
 - chained filters preserve the original `List<T>` type
 - `Func<T1, T2, TResult> name = (x, y) => expression` lowers to a generated invokable inner class
+- `Func` variables can be called directly in `.clsx`; generated Apex emits `.invoke(...)`
 - upstream Apex parsing is reused to validate generated `.cls`
 
 ## Quick Start
@@ -86,7 +87,7 @@ public with sharing class AccountService {
 
 ```apex
 Func<int, int, bool> testForEquality = (x, y) => x == y;
-return testForEquality.invoke(left, right);
+return testForEquality(left, right);
 ```
 
 Generated Apex:

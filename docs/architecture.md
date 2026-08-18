@@ -52,9 +52,10 @@ Source-level function values are supported for local assignments:
 
 ```apex
 Func<int, int, bool> testForEquality = (x, y) => x == y;
+return testForEquality(left, right);
 ```
 
-The last `Func` type argument is the return type. Earlier type arguments are lambda parameter types. For deployable Apex, the transpiler emits a generated inner interface plus a generated inner class with an `invoke(...)` method, then initializes the local variable with that generated class.
+The last `Func` type argument is the return type. Earlier type arguments are lambda parameter types. For deployable Apex, the transpiler emits a generated inner interface plus a generated inner class with an `invoke(...)` method, then initializes the local variable with that generated class. Direct source calls such as `testForEquality(left, right)` are lowered to `testForEquality.invoke(left, right)`.
 
 ## Generated Names
 
@@ -91,4 +92,4 @@ The next major design thread is making source-level generic function types first
 Func<Integer, Integer, Boolean> testForEquality = (x, y) => x == y;
 ```
 
-The current implementation supports local assignments only.
+The current implementation supports local assignments and direct calls to those local `Func` variables.
