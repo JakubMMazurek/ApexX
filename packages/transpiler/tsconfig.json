@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "tsBuildInfoFile": "dist/.tsbuildinfo"
+  },
+  "references": [
+    { "path": "../ast" },
+    { "path": "../semantics" },
+    { "path": "../parser" }
+  ],
+  "include": ["src/**/*.ts"]
+}
+

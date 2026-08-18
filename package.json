@@ -1,0 +1,33 @@
+{
+  "name": "apexx",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "ApexX transpiler experiments for .clsx source files targeting ordinary Salesforce Apex .cls files.",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "tsc -b packages/ast packages/semantics packages/parser packages/transpiler packages/cli packages/language-server packages/vscode-extension",
+    "clean": "node scripts/clean.mjs",
+    "smoke": "node scripts/smoke-test.mjs",
+    "test": "npm run build && npm run smoke",
+    "apexx": "node packages/cli/dist/index.js"
+  },
+  "dependencies": {
+    "@apexdevtools/apex-parser": "5.1.0",
+    "vscode-languageserver": "^9.0.1",
+    "vscode-languageserver-textdocument": "^1.0.12"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/vscode": "^1.90.0",
+    "tsx": "^4.23.11",
+    "typescript": "^5.8.2",
+    "vscode-languageclient": "^9.0.1"
+  }
+}
+

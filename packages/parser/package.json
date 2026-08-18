@@ -1,0 +1,19 @@
+{
+  "name": "@apexx/parser",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@apexdevtools/apex-parser": "5.1.0",
+    "@apexx/ast": "0.1.0",
+    "@apexx/semantics": "0.1.0"
+  }
+}
+

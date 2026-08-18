@@ -1,0 +1,19 @@
+{
+  "name": "@apexx/transpiler",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@apexx/ast": "0.1.0",
+    "@apexx/parser": "0.1.0",
+    "@apexx/semantics": "0.1.0"
+  }
+}
+

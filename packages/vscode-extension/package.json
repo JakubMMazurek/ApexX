@@ -1,0 +1,47 @@
+{
+  "name": "apexx-vscode-extension",
+  "displayName": "ApexX",
+  "description": "Language support shell for ApexX .clsx files.",
+  "version": "0.1.0",
+  "publisher": "apexx",
+  "type": "module",
+  "main": "./dist/extension.js",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "activationEvents": [
+    "onLanguage:apexx"
+  ],
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "apexx",
+        "aliases": ["ApexX", "Apex Extended"],
+        "extensions": [".clsx"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "apexx",
+        "scopeName": "source.apexx",
+        "path": "./syntaxes/apexx.tmLanguage.json"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@apexx/language-server": "0.1.0",
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/vscode": "^1.90.0"
+  }
+}
+

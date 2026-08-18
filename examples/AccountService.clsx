@@ -1,0 +1,6 @@
+public with sharing class AccountService {
+    public static List<Account> hotAccounts(List<Account> accounts) {
+        return accounts.filter(a => a.Rating == 'Hot');
+    }
+}
+

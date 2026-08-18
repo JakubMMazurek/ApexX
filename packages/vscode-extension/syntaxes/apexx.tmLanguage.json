@@ -1,0 +1,54 @@
+{
+  "scopeName": "source.apexx",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#lambda" },
+    { "include": "#keywords" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        { "name": "comment.line.double-slash.apexx", "match": "//.*$" },
+        {
+          "name": "comment.block.apexx",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.single.apexx",
+          "begin": "'",
+          "end": "'",
+          "patterns": [{ "name": "constant.character.escape.apexx", "match": "\\\\." }]
+        }
+      ]
+    },
+    "lambda": {
+      "patterns": [
+        { "name": "keyword.operator.lambda.apexx", "match": "=>" },
+        { "name": "support.function.collection.apexx", "match": "\\bfilter\\b" }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.apexx",
+          "match": "\\b(if|else|for|while|do|return|try|catch|finally|throw|switch|when)\\b"
+        },
+        {
+          "name": "storage.modifier.apexx",
+          "match": "\\b(public|private|protected|global|static|final|virtual|abstract|override|with|without|inherited|sharing)\\b"
+        },
+        {
+          "name": "storage.type.apexx",
+          "match": "\\b(class|interface|enum|void|Boolean|Integer|Long|Decimal|Double|String|Id|Object|List|Set|Map)\\b"
+        }
+      ]
+    }
+  }
+}
+
