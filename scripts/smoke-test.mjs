@@ -94,6 +94,27 @@ assert.match(chainedFilterResult.output, /for \(Account a : accounts\)/);
 assert.match(chainedFilterResult.output, /for \(Account acc : apexxFilter0\)/);
 assert.match(chainedFilterResult.output, /return apexxFilter1;/);
 
+const expressionFilterSource = `public with sharing class AccountService {
+    public static List<Account> hotAccounts(List<Account> accounts) {
+        accounts.filter(acc => acc.Rating == 'Hot');
+        return accounts.filter(a => a.AccountNumber == 'Hot')
+            .filter(acc => acc.AccountNumber != 'ABC');
+    }
+}
+`;
+const expressionFilterResult = transpileApexX(expressionFilterSource, {
+  sourceFileName: "AccountService.clsx",
+});
+const expressionFilterErrors = expressionFilterResult.diagnostics.filter(
+  diagnostic => diagnostic.severity === "error",
+);
+assert.deepEqual(expressionFilterErrors, []);
+assert.match(expressionFilterResult.output, /for \(Account acc : accounts\)/);
+assert.match(expressionFilterResult.output, /for \(Account a : accounts\)/);
+assert.match(expressionFilterResult.output, /for \(Account acc : apexxFilter1\)/);
+assert.match(expressionFilterResult.output, /return apexxFilter2;/);
+assert.doesNotMatch(expressionFilterResult.output, /Unsupported lambda form/);
+
 const funcLambdaSource = `public with sharing class EqualityService {
     public static Boolean compare(Integer left, Integer right) {
         Func<int, int, bool> testForEquality = (x, y) => x == y;

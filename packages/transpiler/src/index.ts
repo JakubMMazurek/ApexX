@@ -153,7 +153,7 @@ function lowerListMethodCall(
 
   if (call.statementKind === "assignment") {
     lines.push(`${indent}${call.targetType} = ${currentReceiver};`);
-  } else {
+  } else if (call.statementKind === "return") {
     lines.push(`${indent}return ${currentReceiver};`);
   }
 

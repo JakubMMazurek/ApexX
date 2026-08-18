@@ -24,7 +24,7 @@ export interface ListTypeInfo {
   variableName: string;
 }
 
-export type ListMethodCallStatementKind = "return" | "assignment";
+export type ListMethodCallStatementKind = "return" | "assignment" | "expression";
 export type FilterLambdaStatementKind = ListMethodCallStatementKind;
 
 export type ListMethodName = "filter";

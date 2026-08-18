@@ -46,6 +46,12 @@ Inside a `List<T>` assignment expression:
 List<Account> hot = accounts.filter(a => a.Rating == 'Hot');
 ```
 
+As a standalone expression statement:
+
+```apex
+accounts.filter(a => a.Rating == 'Hot');
+```
+
 The receiver must currently begin as a simple variable whose type is discoverable as `List<T>` in the same file. Every chained `filter` preserves that same `List<T>` type, so each lambda parameter is typed as `T` and each generated loop produces another `List<T>`.
 
 Source-level function values are supported for local assignments:

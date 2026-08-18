@@ -17,6 +17,7 @@ import { createRange, isApexIdentifier } from "@apexx/semantics";
 const returnStatementPattern = /^([ \t]*)return\s+/gm;
 const assignmentStatementPattern =
   /^([ \t]*)(List\s*<\s*[^>\r\n]+\s*>\s+([A-Za-z][A-Za-z0-9_]*))\s*=\s*/gm;
+const expressionStatementPattern = /^([ \t]*)([A-Za-z][A-Za-z0-9_]*)/gm;
 const funcLambdaAssignmentPattern =
   /^([ \t]*)(Func\s*<\s*([^>\r\n]+?)\s*>)\s+([A-Za-z][A-Za-z0-9_]*)\s*=\s*\(([^)\r\n]*)\)\s*=>\s*(.+?)\s*;?[ \t]*(?=\r?$)/gm;
 
@@ -116,7 +117,7 @@ export function parseApexX(source: string, fileName?: string): ApexXParseResult 
         severity: "error",
         source: "apexx-parser",
         message:
-          "Unsupported lambda form. v0.1 supports lambdas as Func assignments or arguments to List<T>.filter(...).",
+          "Unsupported lambda form. v0.1 supports lambdas in Func assignments or List<T>.filter(...).",
         range: createRange(source, offset, offset + match[0].length),
       });
     }
@@ -319,6 +320,32 @@ export function findListMethodCalls(
     calls.push({
       kind: "listMethodCall",
       statementKind: "return",
+      indent: match[1],
+      receiver: chain.receiver,
+      parameterName: chain.steps[0].lambda.parameterName,
+      predicate: chain.steps[0].lambda.body,
+      steps: chain.steps,
+      originalText: source.slice(start, chain.endOffset),
+      range: createRange(source, start, chain.endOffset),
+    });
+  }
+
+  for (const match of source.matchAll(expressionStatementPattern)) {
+    const start = match.index ?? 0;
+    const expressionStart = start + match[1].length;
+    const chain = parseFilterChain(source, expressionStart);
+
+    if (!chain) {
+      continue;
+    }
+
+    if (calls.some(call => rangesOverlap(call.range.start.offset, call.range.end.offset, start, chain.endOffset))) {
+      continue;
+    }
+
+    calls.push({
+      kind: "listMethodCall",
+      statementKind: "expression",
       indent: match[1],
       receiver: chain.receiver,
       parameterName: chain.steps[0].lambda.parameterName,
