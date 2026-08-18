@@ -165,20 +165,36 @@ function inferLambdaParameterType(
   const prefix = source.slice(0, offset);
   const listVariables = collectListVariables(source);
   const lambdaPattern =
-    /([A-Za-z][A-Za-z0-9_]*)\.filter\s*\(\s*([A-Za-z][A-Za-z0-9_]*)\s*=>[\s\S]*$/g;
+    /\.filter\s*\(\s*([A-Za-z][A-Za-z0-9_]*)\s*=>/g;
   let match: RegExpExecArray | null;
   let inferredType: string | undefined;
 
   while ((match = lambdaPattern.exec(prefix)) !== null) {
-    const listName = match[1];
-    const parameterName = match[2];
+    const parameterName = match[1];
 
     if (parameterName === receiver) {
-      inferredType = listVariables.get(listName)?.elementType;
+      const listName = findFilterChainBase(prefix, match.index);
+      if (listName) {
+        inferredType = listVariables.get(listName)?.elementType;
+      }
     }
   }
 
   return inferredType;
+}
+
+function findFilterChainBase(
+  prefix: string,
+  filterStartOffset: number,
+): string | undefined {
+  const beforeFilter = prefix.slice(0, filterStartOffset);
+  const statementStart = Math.max(
+    beforeFilter.lastIndexOf(";"),
+    beforeFilter.lastIndexOf("{"),
+    beforeFilter.lastIndexOf("}"),
+  );
+  const statementPrefix = beforeFilter.slice(statementStart + 1);
+  return statementPrefix.match(/([A-Za-z][A-Za-z0-9_]*)\s*\.filter\s*\(/)?.[1];
 }
 
 function inferDeclaredVariableType(

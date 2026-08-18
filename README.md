@@ -5,8 +5,9 @@ ApexX is an experimental extended Apex source language. It uses `.clsx` as the s
 The first milestone is intentionally small:
 
 - ordinary Apex in `.clsx` is emitted as ordinary `.cls`
-- `List<T>.filter(item => predicate)` parses in `.clsx`
+- lambda arguments parse on `List<T>.filter(item => predicate)` calls
 - `filter` lowers to a typed Apex loop, avoiding `Object` casts in generated code
+- chained filters preserve the original `List<T>` type
 - upstream Apex parsing is reused to validate generated `.cls`
 
 ## Quick Start
@@ -24,7 +25,9 @@ Example `.clsx`:
 ```apex
 public with sharing class AccountService {
     public static List<Account> hotAccounts(List<Account> accounts) {
-        return accounts.filter(a => a.Rating == 'Hot');
+        return accounts
+            .filter(a => a.Rating == 'Hot')
+            .filter(a => a.AccountNumber != null);
     }
 }
 ```
@@ -67,7 +70,13 @@ public with sharing class AccountService {
                 apexxFilter0.add(a);
             }
         }
-        return apexxFilter0;
+        List<Account> apexxFilter1 = new List<Account>();
+        for (Account a : apexxFilter0) {
+            if (a.AccountNumber != null) {
+                apexxFilter1.add(a);
+            }
+        }
+        return apexxFilter1;
     }
 }
 ```

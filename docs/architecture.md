@@ -18,7 +18,7 @@ The first implementation does not fork the grammar. Instead, it recognizes a tin
 
 - `@apexx/ast`: shared AST and diagnostic types for ApexX additions
 - `@apexx/semantics`: small semantic helpers, currently `List<T>` receiver discovery and generated-name allocation
-- `@apexx/parser`: upstream Apex parser wrapper plus ApexX lambda discovery
+- `@apexx/parser`: upstream Apex parser wrapper plus ApexX lambda/list-method discovery
 - `@apexx/transpiler`: lowers `.clsx` source into `.cls` source
 - `@apexx/sfdx`: Salesforce DX layout detection and `.cls-meta.xml` generation
 - `@apexx/cli`: command-line build and parse entry point
@@ -31,21 +31,22 @@ Supported:
 
 ```apex
 accounts.filter(a => a.Rating == 'Hot')
+    .filter(a => a.AccountNumber != null)
 ```
 
-Inside a return statement:
+Inside a return expression:
 
 ```apex
 return accounts.filter(a => a.Rating == 'Hot');
 ```
 
-Inside a `List<T>` assignment:
+Inside a `List<T>` assignment expression:
 
 ```apex
 List<Account> hot = accounts.filter(a => a.Rating == 'Hot');
 ```
 
-The receiver must currently be a simple variable whose type is discoverable as `List<T>` in the same file. This keeps generated Apex strongly typed.
+The receiver must currently begin as a simple variable whose type is discoverable as `List<T>` in the same file. Every chained `filter` preserves that same `List<T>` type, so each lambda parameter is typed as `T` and each generated loop produces another `List<T>`.
 
 ## Generated Names
 

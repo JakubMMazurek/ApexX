@@ -76,6 +76,24 @@ const editingErrors = editingResult.diagnostics.filter(
 assert.deepEqual(editingErrors, []);
 assert.match(editingResult.output, /return apexxFilter0;/);
 
+const chainedFilterSource = `public with sharing class AccountService {
+    public static List<Account> hotAccounts(List<Account> accounts) {
+        return accounts.filter(a => a.AccountNumber == 'Hot')
+            .filter(acc => acc.Rating == 'ABC');
+    }
+}
+`;
+const chainedFilterResult = transpileApexX(chainedFilterSource, {
+  sourceFileName: "AccountService.clsx",
+});
+const chainedFilterErrors = chainedFilterResult.diagnostics.filter(
+  diagnostic => diagnostic.severity === "error",
+);
+assert.deepEqual(chainedFilterErrors, []);
+assert.match(chainedFilterResult.output, /for \(Account a : accounts\)/);
+assert.match(chainedFilterResult.output, /for \(Account acc : apexxFilter0\)/);
+assert.match(chainedFilterResult.output, /return apexxFilter1;/);
+
 const tempProject = fs.mkdtempSync(path.join(os.tmpdir(), "apexx-sfdx-"));
 try {
   fs.writeFileSync(
