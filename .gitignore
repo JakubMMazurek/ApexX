@@ -1,6 +1,7 @@
 node_modules/
 dist/
 generated/
+.sf/
+.sfdx/
 *.tsbuildinfo
 .DS_Store
-
