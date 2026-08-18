@@ -34,7 +34,7 @@ npm run apexx -- parse apexx\classes\AccountService.clsx
 
 ## VS Code Extension
 
-The extension package associates `.clsx` with Salesforce Apex language mode for IntelliSense and starts the minimal ApexX language server in local development after the repo is built.
+The extension package associates `.clsx` with ApexX language mode and starts the minimal ApexX language server in local development after the repo is built.
 
 It also compiles on save by default. In a Salesforce DX workspace, a saved `apexx/classes/<ClassName>.clsx` file generates:
 

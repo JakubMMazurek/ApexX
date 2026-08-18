@@ -5,7 +5,6 @@
     "outDir": "dist",
     "tsBuildInfoFile": "dist/.tsbuildinfo"
   },
-  "references": [{ "path": "../transpiler" }],
+  "references": [{ "path": "../transpiler" }, { "path": "../semantics" }],
   "include": ["src/**/*.ts"]
 }
-

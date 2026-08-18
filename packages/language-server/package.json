@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@apexx/ast": "0.1.0",
+    "@apexx/semantics": "0.1.0",
     "@apexx/transpiler": "0.1.0",
     "vscode-languageserver": "^9.0.1",
     "vscode-languageserver-textdocument": "^1.0.12"

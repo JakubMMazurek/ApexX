@@ -3,6 +3,6 @@
   "salesforcedx-vscode-apex.enable-apex-ls-error-to-telemetry": false,
   "salesforcedx-vscode-apex.java.home": "C:\\Program Files\\Java\\latest\\jdk-21",
   "files.associations": {
-    "*.clsx": "apex"
+    "*.clsx": "apexx"
   }
 }

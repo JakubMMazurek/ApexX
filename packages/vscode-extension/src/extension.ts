@@ -31,10 +31,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     },
   };
   const clientOptions: LanguageClientOptions = {
-    documentSelector: [
-      { scheme: "file", language: "apexx" },
-      { scheme: "file", language: "apex", pattern: "**/*.clsx" },
-    ],
+    documentSelector: [{ scheme: "file", language: "apexx" }],
+    outputChannel,
   };
 
   client = new LanguageClient(
@@ -65,7 +63,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
   );
 
-  await client.start();
+  client.onDidChangeState(event => {
+    outputChannel?.appendLine(
+      `Language server state changed: ${event.oldState} -> ${event.newState}`,
+    );
+  });
+
+  try {
+    await client.start();
+  } catch (error) {
+    reportExtensionError("ApexX language server failed to start", error);
+  }
 }
 
 export async function deactivate(): Promise<void> {
@@ -173,7 +181,11 @@ function warnIfSourceIsInGeneratedClasses(
 }
 
 function reportBuildError(error: unknown): void {
+  reportExtensionError("ApexX build failed", error);
+}
+
+function reportExtensionError(prefix: string, error: unknown): void {
   const message = error instanceof Error ? error.message : String(error);
   outputChannel?.appendLine(`error: ${message}`);
-  void vscode.window.showErrorMessage(`ApexX build failed: ${message}`);
+  void vscode.window.showErrorMessage(`${prefix}: ${message}`);
 }
