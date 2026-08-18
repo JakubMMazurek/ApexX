@@ -14,7 +14,12 @@ import {
 import { TextDocument } from "vscode-languageserver-textdocument";
 import { transpileApexX } from "@apexx/transpiler";
 import type { ApexXDiagnostic } from "@apexx/ast";
-import { collectListVariables, normalizeType } from "@apexx/semantics";
+import {
+  collectListVariables,
+  extractListElementType,
+  findEnclosingListReturnElementType,
+  normalizeType,
+} from "@apexx/semantics";
 import {
   getSObjectFields,
   type SObjectFieldInfo,
@@ -168,27 +173,24 @@ function inferLambdaParameterType(
   receiver: string,
 ): string | undefined {
   const prefix = source.slice(0, offset);
-  const listVariables = collectListVariables(source);
   const lambdaPattern =
-    /\.(?:filter|map)\s*\(\s*([A-Za-z][A-Za-z0-9_]*)\s*=>/g;
+    /\.(filter|map)\s*\(\s*([A-Za-z][A-Za-z0-9_]*)\s*=>/g;
   let match: RegExpExecArray | null;
   let inferredType: string | undefined;
 
   while ((match = lambdaPattern.exec(prefix)) !== null) {
-    const parameterName = match[1];
+    const parameterName = match[2];
 
     if (parameterName === receiver) {
-      const listName = findListMethodChainBase(prefix, match.index);
-      if (listName) {
-        inferredType = listVariables.get(listName)?.elementType;
-      }
+      inferredType = inferListMethodLambdaInputType(source, prefix, match.index);
     }
   }
 
   return inferredType;
 }
 
-function findListMethodChainBase(
+function inferListMethodLambdaInputType(
+  source: string,
   prefix: string,
   methodStartOffset: number,
 ): string | undefined {
@@ -198,8 +200,74 @@ function findListMethodChainBase(
     beforeMethod.lastIndexOf("{"),
     beforeMethod.lastIndexOf("}"),
   );
-  const statementPrefix = beforeMethod.slice(statementStart + 1);
-  return statementPrefix.match(/([A-Za-z][A-Za-z0-9_]*)\s*\.(?:filter|map)\s*\(/)?.[1];
+  const chainStart = statementStart + 1;
+  const statementPrefix = prefix.slice(chainStart);
+  const baseMatch =
+    /([A-Za-z][A-Za-z0-9_]*)\s*\.(?:filter|map)\s*\(/.exec(statementPrefix);
+
+  if (!baseMatch) {
+    return undefined;
+  }
+
+  const listVariables = collectListVariables(source);
+  const baseType = listVariables.get(baseMatch[1])?.elementType;
+  if (!baseType) {
+    return undefined;
+  }
+
+  const mapResultType = inferListMethodChainResultElementType(
+    source,
+    statementPrefix,
+    chainStart,
+  );
+  const methodOffsetInStatement = methodStartOffset - chainStart;
+  const lambdaPattern =
+    /\.(filter|map)\s*\(\s*([A-Za-z][A-Za-z0-9_]*)\s*=>/g;
+  let match: RegExpExecArray | null;
+  let currentType = baseType;
+
+  while ((match = lambdaPattern.exec(statementPrefix)) !== null) {
+    const methodName = match[1];
+
+    if (match.index === methodOffsetInStatement) {
+      return currentType;
+    }
+
+    if (match.index > methodOffsetInStatement) {
+      break;
+    }
+
+    if (methodName === "map") {
+      if (!mapResultType) {
+        return undefined;
+      }
+
+      currentType = mapResultType;
+    }
+  }
+
+  return undefined;
+}
+
+function inferListMethodChainResultElementType(
+  source: string,
+  statementPrefix: string,
+  statementStartOffset: number,
+): string | undefined {
+  const assignmentMatch =
+    /^\s*List\s*<\s*[^>\r\n]+\s*>\s+[A-Za-z][A-Za-z0-9_]*\s*=/.exec(
+      statementPrefix,
+    );
+
+  if (assignmentMatch) {
+    return extractListElementType(assignmentMatch[0]);
+  }
+
+  if (/^\s*return\b/.test(statementPrefix)) {
+    return findEnclosingListReturnElementType(source, statementStartOffset);
+  }
+
+  return "Object";
 }
 
 function inferFuncLambdaParameterType(

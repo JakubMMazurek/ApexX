@@ -14,7 +14,8 @@
     "build": "tsc -b packages/ast packages/semantics packages/parser packages/transpiler packages/sfdx packages/cli packages/language-server packages/vscode-extension",
     "clean": "node scripts/clean.mjs",
     "smoke": "node scripts/smoke-test.mjs",
-    "test": "npm run build && npm run smoke",
+    "lsp-smoke": "node scripts/lsp-smoke-test.mjs",
+    "test": "npm run build && npm run smoke && npm run lsp-smoke",
     "apexx": "node packages/cli/dist/index.js",
     "schema:refresh": "node scripts/refresh-sobject-schema.mjs",
     "vscode:install": "powershell -ExecutionPolicy Bypass -File scripts/install-vscode-extension.ps1"
