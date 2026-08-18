@@ -5,8 +5,9 @@ ApexX is an experimental extended Apex source language. It uses `.clsx` as the s
 The first milestone is intentionally small:
 
 - ordinary Apex in `.clsx` is emitted as ordinary `.cls`
-- lambda arguments parse on `List<T>.filter(item => predicate)` calls
+- lambda arguments parse on `List<T>.filter(item => predicate)` and `List<T>.map(item => result)` calls
 - `filter` lowers to a typed Apex loop, avoiding `Object` casts in generated code
+- `map` lowers to a typed Apex loop that produces `List<R>`
 - chained filters preserve the original `List<T>` type
 - standalone `List<T>.filter(...)` expression statements parse while editing, even when the result is not assigned
 - `Func<T1, T2, TResult> name = (x, y) => expression` lowers to a generated invokable inner class
@@ -84,6 +85,31 @@ public with sharing class AccountService {
 }
 ```
 
+`map` returns a new list type when ApexX can see the result type from an assignment or method return:
+
+```apex
+public static List<String> hotAccountNames(List<Account> accounts) {
+    return accounts.filter(a => a.Rating == 'Hot')
+        .map(a => a.Name);
+}
+```
+
+Generated Apex:
+
+```apex
+List<Account> apexxFilter0 = new List<Account>();
+for (Account a : accounts) {
+    if (a.Rating == 'Hot') {
+        apexxFilter0.add(a);
+    }
+}
+List<String> apexxMap0 = new List<String>();
+for (Account a : apexxFilter0) {
+    apexxMap0.add(a.Name);
+}
+return apexxMap0;
+```
+
 `Func` lambda assignments are also supported as a first proof of concept. ApexX accepts C#-style lowercase aliases such as `int` and `bool` and emits Salesforce Apex type names:
 
 ```apex
@@ -130,7 +156,7 @@ force-app/main/default/classes/AccountService.cls-meta.xml
 
 The output package directory and API version come from `sfdx-project.json` when present. Outside a Salesforce DX project, ApexX writes to `generated/force-app/main/default/classes`.
 
-For `List<Account>.filter(a => a.)` completions, ApexX includes a small built-in Account fallback and can also read org schema cached under `.apexx/schema/sobjects`. Refresh the local cache from your default org or a specific alias:
+For `List<Account>.filter(a => a.)` and `List<Account>.map(a => a.)` completions, ApexX includes a small built-in Account fallback and can also read org schema cached under `.apexx/schema/sobjects`. Refresh the local cache from your default org or a specific alias:
 
 ```powershell
 npm run schema:refresh -- Account

@@ -10,6 +10,8 @@ import { findFuncInvocations, parseApex, parseApexX } from "@apexx/parser";
 import {
   collectIdentifiers,
   collectListVariables,
+  extractListElementType,
+  findEnclosingListReturnElementType,
   findAvailableName,
 } from "@apexx/semantics";
 
@@ -49,8 +51,42 @@ export function transpileApexX(
     }
 
     call.elementType = listType.elementType;
-    call.resultTempNames = call.steps.map(() =>
-      findAvailableName("apexxFilter", usedNames),
+    call.resultElementType = inferListMethodResultElementType(
+      source,
+      call,
+      listType.elementType,
+    );
+
+    if (!call.resultElementType) {
+      diagnostics.push({
+        severity: "error",
+        source: "apexx-semantics",
+        message: "Cannot infer List<R> result type for map(...). Assign to a List<R> variable or return from a method declared as List<R>.",
+        range: call.range,
+      });
+      continue;
+    }
+
+    const stepTypes = inferListMethodStepTypes(
+      call,
+      listType.elementType,
+      call.resultElementType,
+    );
+
+    if (!stepTypes) {
+      diagnostics.push({
+        severity: "error",
+        source: "apexx-semantics",
+        message: "v0.1 can infer one map(...) per list chain. Split the chain into typed intermediate List<T> variables.",
+        range: call.range,
+      });
+      continue;
+    }
+
+    call.stepInputTypes = stepTypes.inputTypes;
+    call.stepResultTypes = stepTypes.resultTypes;
+    call.resultTempNames = call.steps.map(step =>
+      findAvailableName(step.methodName === "map" ? "apexxMap" : "apexxFilter", usedNames),
     );
     call.resultTempName = call.resultTempNames.at(-1);
 
@@ -122,10 +158,18 @@ function lowerListMethodCall(
   call: ListMethodCallExpression,
   funcVariableNames: Set<string>,
 ): string {
-  const elementType = call.elementType;
+  const inputTypes = call.stepInputTypes;
+  const resultTypes = call.stepResultTypes;
   const resultNames = call.resultTempNames;
 
-  if (!elementType || !resultNames || resultNames.length !== call.steps.length) {
+  if (
+    !inputTypes ||
+    !resultTypes ||
+    !resultNames ||
+    inputTypes.length !== call.steps.length ||
+    resultTypes.length !== call.steps.length ||
+    resultNames.length !== call.steps.length
+  ) {
     return call.originalText;
   }
 
@@ -138,15 +182,27 @@ function lowerListMethodCall(
   for (const [index, step] of call.steps.entries()) {
     const resultName = resultNames[index];
     const lambda = step.lambda;
+    const inputType = inputTypes[index];
+    const resultType = resultTypes[index];
 
     lines.push(
-      `${indent}List<${elementType}> ${resultName} = new List<${elementType}>();`,
-      `${indent}for (${elementType} ${lambda.parameterName} : ${currentReceiver}) {`,
-      `${inner}if (${rewriteFuncInvocations(lambda.body, funcVariableNames)}) {`,
-      `${nested}${resultName}.add(${lambda.parameterName});`,
-      `${inner}}`,
-      `${indent}}`,
+      `${indent}List<${resultType}> ${resultName} = new List<${resultType}>();`,
+      `${indent}for (${inputType} ${lambda.parameterName} : ${currentReceiver}) {`,
     );
+
+    if (step.methodName === "filter") {
+      lines.push(
+        `${inner}if (${rewriteFuncInvocations(lambda.body, funcVariableNames)}) {`,
+        `${nested}${resultName}.add(${lambda.parameterName});`,
+        `${inner}}`,
+      );
+    } else {
+      lines.push(
+        `${inner}${resultName}.add(${rewriteFuncInvocations(lambda.body, funcVariableNames)});`,
+      );
+    }
+
+    lines.push(`${indent}}`);
 
     currentReceiver = resultName;
   }
@@ -158,6 +214,59 @@ function lowerListMethodCall(
   }
 
   return lines.join("\n");
+}
+
+interface ListMethodStepTypes {
+  inputTypes: string[];
+  resultTypes: string[];
+}
+
+function inferListMethodResultElementType(
+  source: string,
+  call: ListMethodCallExpression,
+  receiverElementType: string,
+): string | undefined {
+  if (!call.steps.some(step => step.methodName === "map")) {
+    return receiverElementType;
+  }
+
+  if (call.statementKind === "assignment") {
+    return extractListElementType(call.targetType ?? "");
+  }
+
+  if (call.statementKind === "return") {
+    return findEnclosingListReturnElementType(source, call.range.start.offset);
+  }
+
+  return "Object";
+}
+
+function inferListMethodStepTypes(
+  call: ListMethodCallExpression,
+  receiverElementType: string,
+  resultElementType: string,
+): ListMethodStepTypes | undefined {
+  const mapCount = call.steps.filter(step => step.methodName === "map").length;
+
+  if (mapCount > 1) {
+    return undefined;
+  }
+
+  const inputTypes: string[] = [];
+  const resultTypes: string[] = [];
+  let currentType = receiverElementType;
+
+  for (const step of call.steps) {
+    inputTypes.push(currentType);
+
+    if (step.methodName === "map") {
+      currentType = resultElementType;
+    }
+
+    resultTypes.push(currentType);
+  }
+
+  return { inputTypes, resultTypes };
 }
 
 function lowerFuncLambdaAssignment(assignment: FuncLambdaAssignment): string {

@@ -3,6 +3,8 @@ import type { ListTypeInfo, SourcePosition, SourceRange } from "@apexx/ast";
 const identifierPattern = /\b[A-Za-z][A-Za-z0-9_]*\b/g;
 const listDeclarationPattern =
   /\bList\s*<\s*([A-Za-z][A-Za-z0-9_]*(?:\s*\.\s*[A-Za-z][A-Za-z0-9_]*)?)\s*>\s+([A-Za-z][A-Za-z0-9_]*)\b/g;
+const listReturningMethodPattern =
+  /\b(?:public|private|protected|global|static|final|virtual|abstract|override|webservice|testmethod|\s)*List\s*<\s*([A-Za-z][A-Za-z0-9_]*(?:\s*\.\s*[A-Za-z][A-Za-z0-9_]*)?)\s*>\s+[A-Za-z][A-Za-z0-9_]*\s*\([^;{}]*\)\s*\{/g;
 
 export function indexToPosition(source: string, offset: number): SourcePosition {
   let line = 1;
@@ -72,6 +74,39 @@ export function collectListVariables(source: string): Map<string, ListTypeInfo> 
   }
 
   return variables;
+}
+
+export function extractListElementType(typeName: string): string | undefined {
+  const match =
+    /^\s*List\s*<\s*([A-Za-z][A-Za-z0-9_]*(?:\s*\.\s*[A-Za-z][A-Za-z0-9_]*)?)\s*>/i.exec(
+      typeName,
+    );
+
+  return match ? normalizeType(match[1]) : undefined;
+}
+
+export function findEnclosingListReturnElementType(
+  source: string,
+  offset: number,
+): string | undefined {
+  const masked = maskCommentsAndStrings(source);
+  let match: RegExpExecArray | null;
+  let elementType: string | undefined;
+
+  while ((match = listReturningMethodPattern.exec(masked)) !== null) {
+    const openBrace = (match.index ?? 0) + match[0].length - 1;
+
+    if (openBrace >= offset) {
+      continue;
+    }
+
+    const closeBrace = findMatchingBrace(masked, openBrace);
+    if (closeBrace === undefined || offset < closeBrace) {
+      elementType = normalizeType(match[1]);
+    }
+  }
+
+  return elementType;
 }
 
 export function findAvailableName(prefix: string, usedNames: Set<string>): string {
@@ -162,3 +197,22 @@ function maskCommentsAndStrings(source: string): string {
   return output;
 }
 
+function findMatchingBrace(source: string, openBraceOffset: number): number | undefined {
+  let depth = 0;
+
+  for (let index = openBraceOffset; index < source.length; index += 1) {
+    const current = source[index];
+
+    if (current === "{") {
+      depth += 1;
+    } else if (current === "}") {
+      depth -= 1;
+
+      if (depth === 0) {
+        return index;
+      }
+    }
+  }
+
+  return undefined;
+}

@@ -170,7 +170,7 @@ function inferLambdaParameterType(
   const prefix = source.slice(0, offset);
   const listVariables = collectListVariables(source);
   const lambdaPattern =
-    /\.filter\s*\(\s*([A-Za-z][A-Za-z0-9_]*)\s*=>/g;
+    /\.(?:filter|map)\s*\(\s*([A-Za-z][A-Za-z0-9_]*)\s*=>/g;
   let match: RegExpExecArray | null;
   let inferredType: string | undefined;
 
@@ -178,7 +178,7 @@ function inferLambdaParameterType(
     const parameterName = match[1];
 
     if (parameterName === receiver) {
-      const listName = findFilterChainBase(prefix, match.index);
+      const listName = findListMethodChainBase(prefix, match.index);
       if (listName) {
         inferredType = listVariables.get(listName)?.elementType;
       }
@@ -188,18 +188,18 @@ function inferLambdaParameterType(
   return inferredType;
 }
 
-function findFilterChainBase(
+function findListMethodChainBase(
   prefix: string,
-  filterStartOffset: number,
+  methodStartOffset: number,
 ): string | undefined {
-  const beforeFilter = prefix.slice(0, filterStartOffset);
+  const beforeMethod = prefix.slice(0, methodStartOffset);
   const statementStart = Math.max(
-    beforeFilter.lastIndexOf(";"),
-    beforeFilter.lastIndexOf("{"),
-    beforeFilter.lastIndexOf("}"),
+    beforeMethod.lastIndexOf(";"),
+    beforeMethod.lastIndexOf("{"),
+    beforeMethod.lastIndexOf("}"),
   );
-  const statementPrefix = beforeFilter.slice(statementStart + 1);
-  return statementPrefix.match(/([A-Za-z][A-Za-z0-9_]*)\s*\.filter\s*\(/)?.[1];
+  const statementPrefix = beforeMethod.slice(statementStart + 1);
+  return statementPrefix.match(/([A-Za-z][A-Za-z0-9_]*)\s*\.(?:filter|map)\s*\(/)?.[1];
 }
 
 function inferFuncLambdaParameterType(
@@ -363,6 +363,12 @@ function topLevelCompletions(): CompletionItem[] {
       kind: CompletionItemKind.Method,
       detail: "ApexX List<T>.filter(item => predicate)",
       insertText: "filter(item => item)",
+    },
+    {
+      label: "map",
+      kind: CompletionItemKind.Method,
+      detail: "ApexX List<T>.map(item => result)",
+      insertText: "map(item => item)",
     },
   ];
 }
@@ -532,6 +538,7 @@ function stringMembers(): CompletionItem[] {
 function listMembers(): CompletionItem[] {
   return [
     method("filter", "ApexX List<T> filter(item => predicate)", "filter(${1:item} => ${1:item}.${2:field} == ${3:value})"),
+    method("map", "ApexX List<R> map(item => result)", "map(${1:item} => ${1:item}.${2:field})"),
     method("add", "Boolean add(T element)", "add(${1:element})"),
     method("addAll", "void addAll(List<T> fromList)", "addAll(${1:fromList})"),
     method("clear", "void clear()"),

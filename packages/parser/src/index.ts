@@ -9,6 +9,7 @@ import type {
   FuncInvocation,
   FuncLambdaAssignment,
   ListMethodCallExpression,
+  ListMethodName,
   ListMethodCallStep,
   LambdaParameter,
 } from "@apexx/ast";
@@ -117,7 +118,7 @@ export function parseApexX(source: string, fileName?: string): ApexXParseResult 
         severity: "error",
         source: "apexx-parser",
         message:
-          "Unsupported lambda form. v0.1 supports lambdas in Func assignments or List<T>.filter(...).",
+          "Unsupported lambda form. v0.1 supports lambdas in Func assignments, List<T>.filter(...), or List<T>.map(...).",
         range: createRange(source, offset, offset + match[0].length),
       });
     }
@@ -283,7 +284,7 @@ export function findListMethodCalls(
   for (const match of source.matchAll(assignmentStatementPattern)) {
     const start = match.index ?? 0;
     const expressionStart = start + match[0].length;
-    const chain = parseFilterChain(source, expressionStart);
+    const chain = parseListMethodChain(source, expressionStart);
 
     if (!chain) {
       continue;
@@ -307,7 +308,7 @@ export function findListMethodCalls(
   for (const match of source.matchAll(returnStatementPattern)) {
     const start = match.index ?? 0;
     const expressionStart = start + match[0].length;
-    const chain = parseFilterChain(source, expressionStart);
+    const chain = parseListMethodChain(source, expressionStart);
 
     if (!chain) {
       continue;
@@ -333,7 +334,7 @@ export function findListMethodCalls(
   for (const match of source.matchAll(expressionStatementPattern)) {
     const start = match.index ?? 0;
     const expressionStart = start + match[1].length;
-    const chain = parseFilterChain(source, expressionStart);
+    const chain = parseListMethodChain(source, expressionStart);
 
     if (!chain) {
       continue;
@@ -365,7 +366,7 @@ export function findFilterLambdaExpressions(
   return findListMethodCalls(source);
 }
 
-interface ParsedFilterChain {
+interface ParsedListMethodChain {
   receiver: string;
   steps: ListMethodCallStep[];
   endOffset: number;
@@ -377,10 +378,10 @@ interface IdentifierToken {
   endOffset: number;
 }
 
-function parseFilterChain(
+function parseListMethodChain(
   source: string,
   startOffset: number,
-): ParsedFilterChain | undefined {
+): ParsedListMethodChain | undefined {
   let cursor = skipWhitespace(source, startOffset);
   const receiver = readIdentifier(source, cursor);
   const steps: ListMethodCallStep[] = [];
@@ -392,13 +393,14 @@ function parseFilterChain(
   cursor = receiver.endOffset;
 
   while (true) {
-    const filterStart = skipWhitespace(source, cursor);
+    const methodStart = skipWhitespace(source, cursor);
+    const methodName = readListMethodNameAt(source, methodStart);
 
-    if (!isFilterCallAt(source, filterStart)) {
+    if (!methodName) {
       break;
     }
 
-    cursor = filterStart + ".filter".length;
+    cursor = methodStart + 1 + methodName.length;
     cursor = skipWhitespace(source, cursor);
 
     if (source[cursor] !== "(") {
@@ -419,15 +421,15 @@ function parseFilterChain(
       return undefined;
     }
 
-    const predicateStart = cursor + 2;
-    const predicateEnd = findFilterPredicateEnd(source, predicateStart);
-    if (predicateEnd === undefined) {
+    const bodyStart = cursor + 2;
+    const bodyEnd = findLambdaBodyEnd(source, bodyStart);
+    if (bodyEnd === undefined) {
       return undefined;
     }
 
-    const callEnd = predicateEnd + 1;
+    const callEnd = bodyEnd + 1;
     steps.push({
-      methodName: "filter",
+      methodName,
       lambda: {
         parameterName: parameter.name,
         parameters: [
@@ -436,10 +438,10 @@ function parseFilterChain(
             range: createRange(source, parameter.startOffset, parameter.endOffset),
           },
         ],
-        body: source.slice(predicateStart, predicateEnd).trim(),
-        range: createRange(source, parameter.startOffset, predicateEnd),
+        body: source.slice(bodyStart, bodyEnd).trim(),
+        range: createRange(source, parameter.startOffset, bodyEnd),
       },
-      range: createRange(source, filterStart, callEnd),
+      range: createRange(source, methodStart, callEnd),
     });
 
     cursor = callEnd;
@@ -462,18 +464,30 @@ function parseFilterChain(
   };
 }
 
-function isFilterCallAt(source: string, offset: number): boolean {
-  const filterNameStart = offset + 1;
-  const filterNameEnd = filterNameStart + "filter".length;
+function readListMethodNameAt(
+  source: string,
+  offset: number,
+): ListMethodName | undefined {
+  if (source[offset] !== ".") {
+    return undefined;
+  }
 
-  return (
-    source[offset] === "." &&
-    source.slice(filterNameStart, filterNameEnd) === "filter" &&
-    !isIdentifierPart(source[filterNameEnd] ?? "")
-  );
+  for (const methodName of ["filter", "map"] as const) {
+    const nameStart = offset + 1;
+    const nameEnd = nameStart + methodName.length;
+
+    if (
+      source.slice(nameStart, nameEnd) === methodName &&
+      !isIdentifierPart(source[nameEnd] ?? "")
+    ) {
+      return methodName;
+    }
+  }
+
+  return undefined;
 }
 
-function findFilterPredicateEnd(
+function findLambdaBodyEnd(
   source: string,
   startOffset: number,
 ): number | undefined {

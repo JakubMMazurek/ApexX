@@ -115,6 +115,62 @@ assert.match(expressionFilterResult.output, /for \(Account acc : apexxFilter1\)/
 assert.match(expressionFilterResult.output, /return apexxFilter2;/);
 assert.doesNotMatch(expressionFilterResult.output, /Unsupported lambda form/);
 
+const mapAssignmentSource = `public with sharing class AccountService {
+    public static List<String> accountNames(List<Account> accounts) {
+        List<String> names = accounts.map(a => a.Name);
+        return names;
+    }
+}
+`;
+const mapAssignmentResult = transpileApexX(mapAssignmentSource, {
+  sourceFileName: "AccountService.clsx",
+});
+const mapAssignmentErrors = mapAssignmentResult.diagnostics.filter(
+  diagnostic => diagnostic.severity === "error",
+);
+assert.deepEqual(mapAssignmentErrors, []);
+assert.match(mapAssignmentResult.output, /List<String> apexxMap0 = new List<String>\(\);/);
+assert.match(mapAssignmentResult.output, /for \(Account a : accounts\)/);
+assert.match(mapAssignmentResult.output, /apexxMap0\.add\(a\.Name\);/);
+assert.match(mapAssignmentResult.output, /List<String> names = apexxMap0;/);
+
+const filterMapReturnSource = `public with sharing class AccountService {
+    public static List<String> hotAccountNames(List<Account> accounts) {
+        return accounts.filter(a => a.Rating == 'Hot')
+            .map(a => a.Name);
+    }
+}
+`;
+const filterMapReturnResult = transpileApexX(filterMapReturnSource, {
+  sourceFileName: "AccountService.clsx",
+});
+const filterMapReturnErrors = filterMapReturnResult.diagnostics.filter(
+  diagnostic => diagnostic.severity === "error",
+);
+assert.deepEqual(filterMapReturnErrors, []);
+assert.match(filterMapReturnResult.output, /List<Account> apexxFilter0 = new List<Account>\(\);/);
+assert.match(filterMapReturnResult.output, /List<String> apexxMap0 = new List<String>\(\);/);
+assert.match(filterMapReturnResult.output, /for \(Account a : apexxFilter0\)/);
+assert.match(filterMapReturnResult.output, /return apexxMap0;/);
+
+const mapFilterReturnSource = `public with sharing class AccountService {
+    public static List<String> accountNumbers(List<Account> accounts) {
+        return accounts.map(a => a.AccountNumber)
+            .filter(value => value != null);
+    }
+}
+`;
+const mapFilterReturnResult = transpileApexX(mapFilterReturnSource, {
+  sourceFileName: "AccountService.clsx",
+});
+const mapFilterReturnErrors = mapFilterReturnResult.diagnostics.filter(
+  diagnostic => diagnostic.severity === "error",
+);
+assert.deepEqual(mapFilterReturnErrors, []);
+assert.match(mapFilterReturnResult.output, /List<String> apexxMap0 = new List<String>\(\);/);
+assert.match(mapFilterReturnResult.output, /for \(String value : apexxMap0\)/);
+assert.match(mapFilterReturnResult.output, /return apexxFilter0;/);
+
 const funcLambdaSource = `public with sharing class EqualityService {
     public static Boolean compare(Integer left, Integer right) {
         Func<int, int, bool> testForEquality = (x, y) => x == y;

@@ -8,8 +8,7 @@
     },
     {
       "name": "support.function.collection.apexx",
-      "match": "\\bfilter\\b"
+      "match": "\\b(?:filter|map)\\b"
     }
   ]
 }
-

@@ -34,6 +34,19 @@ accounts.filter(a => a.Rating == 'Hot')
     .filter(a => a.AccountNumber != null)
 ```
 
+Typed maps:
+
+```apex
+List<String> names = accounts.map(a => a.Name);
+```
+
+Filter/map chains:
+
+```apex
+return accounts.filter(a => a.Rating == 'Hot')
+    .map(a => a.Name);
+```
+
 Inside a return expression:
 
 ```apex
@@ -53,6 +66,8 @@ accounts.filter(a => a.Rating == 'Hot');
 ```
 
 The receiver must currently begin as a simple variable whose type is discoverable as `List<T>` in the same file. Every chained `filter` preserves that same `List<T>` type, so each lambda parameter is typed as `T` and each generated loop produces another `List<T>`.
+
+`map` transforms `List<T>` into `List<R>`. ApexX infers `R` from an assignment target such as `List<String> names = ...` or from an enclosing method return type such as `public static List<String> names(...)`. The current implementation supports one `map(...)` per chain; split multiple maps into typed intermediate variables.
 
 Source-level function values are supported for local assignments:
 

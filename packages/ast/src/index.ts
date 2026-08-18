@@ -27,7 +27,7 @@ export interface ListTypeInfo {
 export type ListMethodCallStatementKind = "return" | "assignment" | "expression";
 export type FilterLambdaStatementKind = ListMethodCallStatementKind;
 
-export type ListMethodName = "filter";
+export type ListMethodName = "filter" | "map";
 
 export interface LambdaExpression {
   parameterName: string;
@@ -60,6 +60,9 @@ export interface ListMethodCallExpression {
   targetName?: string;
   targetType?: string;
   elementType?: string;
+  resultElementType?: string;
+  stepInputTypes?: string[];
+  stepResultTypes?: string[];
   resultTempName?: string;
   resultTempNames?: string[];
 }

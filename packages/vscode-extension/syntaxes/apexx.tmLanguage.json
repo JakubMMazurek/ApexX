@@ -31,7 +31,7 @@
     "lambda": {
       "patterns": [
         { "name": "keyword.operator.lambda.apexx", "match": "=>" },
-        { "name": "support.function.collection.apexx", "match": "\\bfilter\\b" }
+        { "name": "support.function.collection.apexx", "match": "\\b(?:filter|map)\\b" }
       ]
     },
     "keywords": {
