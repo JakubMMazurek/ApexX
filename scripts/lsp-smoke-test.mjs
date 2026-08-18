@@ -78,6 +78,21 @@ try {
   );
   assertHasLabels(filterMapMembers, ["AccountNumber", "Name", "Rating"]);
 
+  const multilineChainMembers = await completionsFor(
+    "MultilineChainProbe",
+    withCursor(`public with sharing class MultilineChainProbe {
+    public static List<String> hotAccountNames(List<Account> accounts) {
+        List<String> names = accounts
+            .filter(account => account.Rating == 'Hot')
+            .map(selected => selected.__CURSOR__);
+        return names;
+    }
+}
+`),
+  );
+  assertHasLabels(multilineChainMembers, ["AccountNumber", "Name", "Rating"]);
+  assertNoLabels(multilineChainMembers, ["contains", "toUpperCase"]);
+
   const mappedValueMembers = await completionsFor(
     "MappedValueProbe",
     withCursor(`public with sharing class MappedValueProbe {
@@ -90,6 +105,34 @@ try {
   );
   assertHasLabels(mappedValueMembers, ["contains", "length", "toUpperCase"]);
   assertNoLabels(mappedValueMembers, ["AccountNumber", "Rating"]);
+
+  const assignmentMappedValueMembers = await completionsFor(
+    "AssignmentMappedValueProbe",
+    withCursor(`public with sharing class AssignmentMappedValueProbe {
+    public static List<String> accountNumbers(List<Account> accounts) {
+        List<String> accountNumbers = accounts
+            .map(a => a.AccountNumber)
+            .filter(accountNumber => accountNumber.__CURSOR__);
+        return accountNumbers;
+    }
+}
+`),
+  );
+  assertHasLabels(assignmentMappedValueMembers, ["contains", "length", "toUpperCase"]);
+  assertNoLabels(assignmentMappedValueMembers, ["AccountNumber", "Rating"]);
+
+  const intermediateListMembers = await completionsFor(
+    "IntermediateListProbe",
+    withCursor(`public with sharing class IntermediateListProbe {
+    public static List<String> hotAccountNames(List<Account> accounts) {
+        List<Account> hotAccounts = accounts.filter(a => a.Rating == 'Hot');
+        return hotAccounts.map(account => account.__CURSOR__);
+    }
+}
+`),
+  );
+  assertHasLabels(intermediateListMembers, ["AccountNumber", "Name", "Rating"]);
+  assertNoLabels(intermediateListMembers, ["contains", "toUpperCase"]);
 
   await request("shutdown", null);
   notify("exit", undefined);
