@@ -31,7 +31,13 @@ export type ListMethodName = "filter";
 
 export interface LambdaExpression {
   parameterName: string;
+  parameters: LambdaParameter[];
   body: string;
+  range: SourceRange;
+}
+
+export interface LambdaParameter {
+  name: string;
   range: SourceRange;
 }
 
@@ -60,10 +66,25 @@ export interface ListMethodCallExpression {
 
 export type FilterLambdaExpression = ListMethodCallExpression;
 
+export interface FuncLambdaAssignment {
+  kind: "funcLambdaAssignment";
+  indent: string;
+  sourceFuncType: string;
+  parameterTypes: string[];
+  returnType: string;
+  variableName: string;
+  lambda: LambdaExpression;
+  originalText: string;
+  range: SourceRange;
+  interfaceName?: string;
+  implementationName?: string;
+}
+
 export interface ApexXParseResult {
   source: string;
   fileName?: string;
   listMethodCalls: ListMethodCallExpression[];
+  funcLambdaAssignments: FuncLambdaAssignment[];
   filters: FilterLambdaExpression[];
   diagnostics: ApexXDiagnostic[];
 }
@@ -77,5 +98,6 @@ export interface TranspileResult {
   output: string;
   diagnostics: ApexXDiagnostic[];
   listMethodCalls: ListMethodCallExpression[];
+  funcLambdaAssignments: FuncLambdaAssignment[];
   filters: FilterLambdaExpression[];
 }

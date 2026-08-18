@@ -8,6 +8,7 @@ The first milestone is intentionally small:
 - lambda arguments parse on `List<T>.filter(item => predicate)` calls
 - `filter` lowers to a typed Apex loop, avoiding `Object` casts in generated code
 - chained filters preserve the original `List<T>` type
+- `Func<T1, T2, TResult> name = (x, y) => expression` lowers to a generated invokable inner class
 - upstream Apex parsing is reused to validate generated `.cls`
 
 ## Quick Start
@@ -79,6 +80,30 @@ public with sharing class AccountService {
         return apexxFilter1;
     }
 }
+```
+
+`Func` lambda assignments are also supported as a first proof of concept. ApexX accepts C#-style lowercase aliases such as `int` and `bool` and emits Salesforce Apex type names:
+
+```apex
+Func<int, int, bool> testForEquality = (x, y) => x == y;
+return testForEquality.invoke(left, right);
+```
+
+Generated Apex:
+
+```apex
+public interface ApexXFunc0 {
+    Boolean invoke(Integer x, Integer y);
+}
+
+private class ApexXLambda0 implements ApexXFunc0 {
+    public Boolean invoke(Integer x, Integer y) {
+        return x == y;
+    }
+}
+
+ApexXFunc0 testForEquality = new ApexXLambda0();
+return testForEquality.invoke(left, right);
 ```
 
 ## Upstream Reuse

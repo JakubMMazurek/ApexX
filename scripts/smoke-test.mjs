@@ -94,6 +94,29 @@ assert.match(chainedFilterResult.output, /for \(Account a : accounts\)/);
 assert.match(chainedFilterResult.output, /for \(Account acc : apexxFilter0\)/);
 assert.match(chainedFilterResult.output, /return apexxFilter1;/);
 
+const funcLambdaSource = `public with sharing class EqualityService {
+    public static Boolean compare(Integer left, Integer right) {
+        Func<int, int, bool> testForEquality = (x, y) => x == y;
+        return testForEquality.invoke(left, right);
+    }
+}
+`;
+const funcLambdaResult = transpileApexX(funcLambdaSource, {
+  sourceFileName: "EqualityService.clsx",
+});
+const funcLambdaErrors = funcLambdaResult.diagnostics.filter(
+  diagnostic => diagnostic.severity === "error",
+);
+assert.deepEqual(funcLambdaErrors, []);
+assert.match(funcLambdaResult.output, /public interface ApexXFunc0/);
+assert.match(funcLambdaResult.output, /Boolean invoke\(Integer x, Integer y\);/);
+assert.match(funcLambdaResult.output, /private class ApexXLambda0 implements ApexXFunc0/);
+assert.match(funcLambdaResult.output, /return x == y;/);
+assert.match(
+  funcLambdaResult.output,
+  /ApexXFunc0 testForEquality = new ApexXLambda0\(\);/,
+);
+
 const tempProject = fs.mkdtempSync(path.join(os.tmpdir(), "apexx-sfdx-"));
 try {
   fs.writeFileSync(

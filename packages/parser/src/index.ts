@@ -6,14 +6,18 @@ import type {
   ApexXDiagnostic,
   ApexXParseResult,
   FilterLambdaExpression,
+  FuncLambdaAssignment,
   ListMethodCallExpression,
   ListMethodCallStep,
+  LambdaParameter,
 } from "@apexx/ast";
 import { createRange, isApexIdentifier } from "@apexx/semantics";
 
 const returnStatementPattern = /^([ \t]*)return\s+/gm;
 const assignmentStatementPattern =
   /^([ \t]*)(List\s*<\s*[^>\r\n]+\s*>\s+([A-Za-z][A-Za-z0-9_]*))\s*=\s*/gm;
+const funcLambdaAssignmentPattern =
+  /^([ \t]*)(Func\s*<\s*([^>\r\n]+?)\s*>)\s+([A-Za-z][A-Za-z0-9_]*)\s*=\s*\(([^)\r\n]*)\)\s*=>\s*(.+?)\s*;?[ \t]*(?=\r?$)/gm;
 
 export interface ApexParseResult {
   ok: boolean;
@@ -49,6 +53,7 @@ export function parseApex(source: string): ApexParseResult {
 
 export function parseApexX(source: string, fileName?: string): ApexXParseResult {
   const listMethodCalls = findListMethodCalls(source);
+  const funcLambdaAssignments = findFuncLambdaAssignments(source);
   const diagnostics: ApexXDiagnostic[] = [];
 
   for (const call of listMethodCalls) {
@@ -64,19 +69,49 @@ export function parseApexX(source: string, fileName?: string): ApexXParseResult 
     }
   }
 
+  for (const assignment of funcLambdaAssignments) {
+    for (const parameter of assignment.lambda.parameters) {
+      if (!isApexIdentifier(parameter.name)) {
+        diagnostics.push({
+          severity: "error",
+          source: "apexx-parser",
+          message: `Invalid lambda parameter name '${parameter.name}'.`,
+          range: parameter.range,
+        });
+      }
+    }
+
+    const expectedParameterCount = assignment.parameterTypes.length;
+    const actualParameterCount = assignment.lambda.parameters.length;
+
+    if (expectedParameterCount !== actualParameterCount) {
+      diagnostics.push({
+        severity: "error",
+        source: "apexx-parser",
+        message: `Func expects ${expectedParameterCount} lambda parameter(s), but got ${actualParameterCount}.`,
+        range: assignment.lambda.range,
+      });
+    }
+  }
+
   for (const match of source.matchAll(/=>/g)) {
     const offset = match.index ?? 0;
-    const isRecognized = listMethodCalls.some(
+    const isListMethodCall = listMethodCalls.some(
       call =>
         offset >= call.range.start.offset && offset < call.range.end.offset,
     );
+    const isFuncAssignment = funcLambdaAssignments.some(
+      assignment =>
+        offset >= assignment.range.start.offset &&
+        offset < assignment.range.end.offset,
+    );
 
-    if (!isRecognized) {
+    if (!isListMethodCall && !isFuncAssignment) {
       diagnostics.push({
         severity: "error",
         source: "apexx-parser",
         message:
-          "Unsupported lambda form. v0.1 supports lambdas as arguments to List<T>.filter(...) in return or assignment forms only.",
+          "Unsupported lambda form. v0.1 supports lambdas as Func assignments or arguments to List<T>.filter(...).",
         range: createRange(source, offset, offset + match[0].length),
       });
     }
@@ -86,9 +121,51 @@ export function parseApexX(source: string, fileName?: string): ApexXParseResult 
     source,
     fileName,
     listMethodCalls,
+    funcLambdaAssignments,
     filters: listMethodCalls,
     diagnostics,
   };
+}
+
+export function findFuncLambdaAssignments(
+  source: string,
+): FuncLambdaAssignment[] {
+  const assignments: FuncLambdaAssignment[] = [];
+
+  for (const match of source.matchAll(funcLambdaAssignmentPattern)) {
+    const start = match.index ?? 0;
+    const sourceFuncType = match[2].replace(/\s+/g, " ").trim();
+    const typeArguments = splitCommaList(match[3]);
+    const parameterTypes = typeArguments.slice(0, -1);
+    const returnType = typeArguments.at(-1) ?? "void";
+    const parameterListStart = start + match[0].indexOf("(") + 1;
+    const parameters = parseLambdaParameters(
+      source,
+      parameterListStart,
+      match[5],
+    );
+    const bodyStart = match[0].indexOf("=>") + 2 + start;
+    const bodyEnd = start + match[0].replace(/[ \t]*;?[ \t]*$/, "").length;
+
+    assignments.push({
+      kind: "funcLambdaAssignment",
+      indent: match[1],
+      sourceFuncType,
+      parameterTypes,
+      returnType,
+      variableName: match[4],
+      lambda: {
+        parameterName: parameters[0]?.name ?? "",
+        parameters,
+        body: source.slice(bodyStart, bodyEnd).trim(),
+        range: createRange(source, parameterListStart, bodyEnd),
+      },
+      originalText: match[0],
+      range: createRange(source, start, start + match[0].length),
+    });
+  }
+
+  return assignments.sort((left, right) => left.range.start.offset - right.range.start.offset);
 }
 
 export function findListMethodCalls(
@@ -220,6 +297,12 @@ function parseFilterChain(
       methodName: "filter",
       lambda: {
         parameterName: parameter.name,
+        parameters: [
+          {
+            name: parameter.name,
+            range: createRange(source, parameter.startOffset, parameter.endOffset),
+          },
+        ],
         body: source.slice(predicateStart, predicateEnd).trim(),
         range: createRange(source, parameter.startOffset, predicateEnd),
       },
@@ -350,6 +433,33 @@ function skipHorizontalWhitespace(source: string, startOffset: number): number {
 
 function isIdentifierPart(character: string): boolean {
   return /^[A-Za-z0-9_]$/.test(character);
+}
+
+function splitCommaList(source: string): string[] {
+  return source
+    .split(",")
+    .map(part => part.trim())
+    .filter(part => part.length > 0);
+}
+
+function parseLambdaParameters(
+  source: string,
+  parameterListStart: number,
+  parameterList: string,
+): LambdaParameter[] {
+  const parameters: LambdaParameter[] = [];
+  const parameterPattern = /[A-Za-z][A-Za-z0-9_]*/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = parameterPattern.exec(parameterList)) !== null) {
+    const start = parameterListStart + match.index;
+    parameters.push({
+      name: match[0],
+      range: createRange(source, start, start + match[0].length),
+    });
+  }
+
+  return parameters;
 }
 
 function rangesOverlap(

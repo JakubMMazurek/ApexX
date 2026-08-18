@@ -48,6 +48,14 @@ List<Account> hot = accounts.filter(a => a.Rating == 'Hot');
 
 The receiver must currently begin as a simple variable whose type is discoverable as `List<T>` in the same file. Every chained `filter` preserves that same `List<T>` type, so each lambda parameter is typed as `T` and each generated loop produces another `List<T>`.
 
+Source-level function values are supported for local assignments:
+
+```apex
+Func<int, int, bool> testForEquality = (x, y) => x == y;
+```
+
+The last `Func` type argument is the return type. Earlier type arguments are lambda parameter types. For deployable Apex, the transpiler emits a generated inner interface plus a generated inner class with an `invoke(...)` method, then initializes the local variable with that generated class.
+
 ## Generated Names
 
 Generated locals use names such as `apexxFilter0`. They intentionally avoid underscores because Apex identifiers cannot begin with an underscore, end with an underscore, or contain consecutive underscores.
@@ -77,10 +85,10 @@ generated/force-app/main/default/classes
 
 ## Future Surface
 
-The next major design thread is source-level generic function types:
+The next major design thread is making source-level generic function types first-class across method parameters, fields, and list APIs:
 
 ```apex
 Func<Integer, Integer, Boolean> testForEquality = (x, y) => x == y;
 ```
 
-That likely lowers to generated interfaces and classes inside the enclosing Apex class. It is not part of v0.1 because `filter` can compile more cleanly as a direct loop.
+The current implementation supports local assignments only.

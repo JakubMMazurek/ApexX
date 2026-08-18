@@ -46,7 +46,7 @@
         },
         {
           "name": "storage.type.apexx",
-          "match": "\\b(class|interface|enum|void|Boolean|Integer|Long|Decimal|Double|String|Id|Object|Date|Datetime|DateTime|Time|List|Set|Map)\\b"
+          "match": "\\b(class|interface|enum|void|Boolean|bool|Integer|int|Long|Decimal|Double|String|string|Id|Object|Date|Datetime|DateTime|Time|List|Set|Map|Func)\\b"
         }
       ]
     }

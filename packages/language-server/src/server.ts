@@ -154,6 +154,11 @@ function inferReceiverType(
     return lambdaType;
   }
 
+  const funcLambdaType = inferFuncLambdaParameterType(source, offset, receiver);
+  if (funcLambdaType) {
+    return funcLambdaType;
+  }
+
   return inferDeclaredVariableType(source.slice(0, offset), receiver);
 }
 
@@ -197,6 +202,38 @@ function findFilterChainBase(
   return statementPrefix.match(/([A-Za-z][A-Za-z0-9_]*)\s*\.filter\s*\(/)?.[1];
 }
 
+function inferFuncLambdaParameterType(
+  source: string,
+  offset: number,
+  receiver: string,
+): string | undefined {
+  const prefix = source.slice(0, offset);
+  const statementStart = Math.max(
+    prefix.lastIndexOf(";"),
+    prefix.lastIndexOf("{"),
+    prefix.lastIndexOf("}"),
+  );
+  const statementPrefix = prefix.slice(statementStart + 1);
+  const match =
+    /Func\s*<\s*([^>\r\n]+?)\s*>\s+[A-Za-z][A-Za-z0-9_]*\s*=\s*\(([^)\r\n]*)\)\s*=>/.exec(
+      statementPrefix,
+    );
+
+  if (!match) {
+    return undefined;
+  }
+
+  const typeArguments = splitCommaList(match[1]);
+  const parameterNames = splitCommaList(match[2]);
+  const parameterIndex = parameterNames.findIndex(name => name === receiver);
+
+  if (parameterIndex < 0 || parameterIndex >= typeArguments.length - 1) {
+    return undefined;
+  }
+
+  return toApexType(typeArguments[parameterIndex]);
+}
+
 function inferDeclaredVariableType(
   prefix: string,
   receiver: string,
@@ -208,14 +245,20 @@ function inferDeclaredVariableType(
 function collectDeclaredVariables(prefix: string): Map<string, string> {
   const variables = new Map<string, string>();
   const declarationPattern =
-    /\b((?:List|Set)\s*<\s*[A-Za-z][A-Za-z0-9_.]*\s*>|Map\s*<\s*[A-Za-z][A-Za-z0-9_.]*\s*,\s*[A-Za-z][A-Za-z0-9_.]*\s*>|DateTime|Datetime|Date|String|Integer|Long|Decimal|Double|Boolean|Id|Object|[A-Za-z][A-Za-z0-9_.]*)\s+([A-Za-z][A-Za-z0-9_]*)\b/g;
+    /\b(Func\s*<\s*[^>\r\n]+?\s*>|(?:List|Set)\s*<\s*[A-Za-z][A-Za-z0-9_.]*\s*>|Map\s*<\s*[A-Za-z][A-Za-z0-9_.]*\s*,\s*[A-Za-z][A-Za-z0-9_.]*\s*>|DateTime|Datetime|Date|String|Integer|Long|Decimal|Double|Boolean|Id|Object|[A-Za-z][A-Za-z0-9_.]*)\s+([A-Za-z][A-Za-z0-9_]*)\b/g;
   let match: RegExpExecArray | null;
 
   while ((match = declarationPattern.exec(prefix)) !== null) {
     const typeName = normalizeType(match[1]);
     const variableName = match[2];
+    const nextCharacter = prefix
+      .slice((match.index ?? 0) + match[0].length)
+      .trimStart()[0];
 
-    if (isLikelyDeclaration(prefix, match.index)) {
+    if (
+      nextCharacter !== "(" &&
+      isLikelyDeclaration(prefix, match.index, typeName)
+    ) {
       variables.set(variableName.toLowerCase(), typeName);
     }
   }
@@ -223,9 +266,56 @@ function collectDeclaredVariables(prefix: string): Map<string, string> {
   return variables;
 }
 
-function isLikelyDeclaration(prefix: string, matchIndex: number): boolean {
+function isLikelyDeclaration(
+  prefix: string,
+  matchIndex: number,
+  typeName: string,
+): boolean {
   const before = prefix.slice(Math.max(0, matchIndex - 24), matchIndex);
-  return !/\b(class|interface|enum|new)\s+$/i.test(before);
+  return (
+    !/\b(class|interface|enum|new)\s+$/i.test(before) &&
+    !isApexKeyword(typeName)
+  );
+}
+
+function isApexKeyword(value: string): boolean {
+  return new Set([
+    "abstract",
+    "break",
+    "catch",
+    "class",
+    "continue",
+    "do",
+    "else",
+    "enum",
+    "extends",
+    "final",
+    "finally",
+    "for",
+    "global",
+    "if",
+    "implements",
+    "inherited",
+    "interface",
+    "new",
+    "override",
+    "private",
+    "protected",
+    "public",
+    "return",
+    "sharing",
+    "static",
+    "super",
+    "switch",
+    "this",
+    "throw",
+    "try",
+    "virtual",
+    "when",
+    "while",
+    "with",
+    "without",
+  ]).has(value.toLowerCase());
 }
 
 function completionsForType(typeName: string): CompletionItem[] {
@@ -247,6 +337,10 @@ function completionsForType(typeName: string): CompletionItem[] {
     return memberCompletions(listMembers());
   }
 
+  if (/^func<.+>$/i.test(normalized)) {
+    return memberCompletions(funcMembers(typeName));
+  }
+
   const sObjectFields = getSObjectFields(typeName, workspaceRoot);
   if (sObjectFields) {
     return memberCompletions(sObjectMembers(typeName, sObjectFields));
@@ -263,6 +357,7 @@ function topLevelCompletions(): CompletionItem[] {
     typeCompletion("Integer"),
     typeCompletion("Boolean"),
     typeCompletion("List"),
+    typeCompletion("Func"),
     {
       label: "filter",
       kind: CompletionItemKind.Method,
@@ -320,6 +415,26 @@ function sObjectMembers(
         ? fieldInfo.label
         : undefined,
   }));
+}
+
+function funcMembers(typeName: string): CompletionItem[] {
+  const args = parseFuncTypeArguments(typeName);
+  const parameterTypes = args.slice(0, -1).map(toApexType);
+  const returnType = toApexType(args.at(-1) ?? "Object");
+  const signature = `${returnType} invoke(${parameterTypes
+    .map((parameterType, index) => `${parameterType} arg${index}`)
+    .join(", ")})`;
+  const insertText =
+    parameterTypes.length === 0
+      ? "invoke()"
+      : `invoke(${parameterTypes.map((_, index) => `\${${index + 1}:arg${index}}`).join(", ")})`;
+
+  return [method("invoke", signature, insertText)];
+}
+
+function parseFuncTypeArguments(typeName: string): string[] {
+  const match = /^Func\s*<\s*(.+)\s*>$/i.exec(typeName.trim());
+  return match ? splitCommaList(match[1]) : [];
 }
 
 function apexTypeForField(fieldInfo: SObjectFieldInfo): string {
@@ -446,4 +561,32 @@ function uriToFilePath(uri: string | undefined): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+function splitCommaList(source: string): string[] {
+  return source
+    .split(",")
+    .map(part => part.trim())
+    .filter(part => part.length > 0);
+}
+
+function toApexType(typeName: string): string {
+  const normalized = normalizeType(typeName);
+  const aliases: Record<string, string> = {
+    bool: "Boolean",
+    boolean: "Boolean",
+    int: "Integer",
+    integer: "Integer",
+    long: "Long",
+    decimal: "Decimal",
+    double: "Double",
+    string: "String",
+    object: "Object",
+    id: "Id",
+    date: "Date",
+    datetime: "Datetime",
+    time: "Time",
+  };
+
+  return aliases[normalized.toLowerCase()] ?? normalized;
 }
