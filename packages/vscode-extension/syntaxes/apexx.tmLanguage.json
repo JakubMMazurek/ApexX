@@ -1,9 +1,10 @@
 {
   "scopeName": "source.apexx",
   "patterns": [
+    { "include": "#lambda" },
+    { "include": "source.apex" },
     { "include": "#comments" },
     { "include": "#strings" },
-    { "include": "#lambda" },
     { "include": "#keywords" }
   ],
   "repository": {
@@ -51,4 +52,3 @@
     }
   }
 }
-

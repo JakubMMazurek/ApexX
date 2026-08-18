@@ -10,6 +10,7 @@
     "vscode": "^1.90.0"
   },
   "activationEvents": [
+    "onStartupFinished",
     "onLanguage:apexx",
     "onCommand:apexx.buildCurrentFile"
   ],

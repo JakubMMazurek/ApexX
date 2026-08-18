@@ -15,7 +15,8 @@
     "clean": "node scripts/clean.mjs",
     "smoke": "node scripts/smoke-test.mjs",
     "test": "npm run build && npm run smoke",
-    "apexx": "node packages/cli/dist/index.js"
+    "apexx": "node packages/cli/dist/index.js",
+    "vscode:install": "powershell -ExecutionPolicy Bypass -File scripts/install-vscode-extension.ps1"
   },
   "dependencies": {
     "@apexdevtools/apex-parser": "5.1.0",
