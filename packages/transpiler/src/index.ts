@@ -8,11 +8,14 @@ import type {
 } from "@apexx/ast";
 import { findFuncInvocations, parseApex, parseApexX } from "@apexx/parser";
 import {
+  collectDeclaredVariables,
   collectIdentifiers,
   collectListVariables,
+  createApexTypeProvider,
   extractListElementType,
   findEnclosingListReturnElementType,
   findAvailableName,
+  inferListMethodChainTypes,
 } from "@apexx/semantics";
 
 export function transpileApexX(
@@ -22,6 +25,10 @@ export function transpileApexX(
   const parseResult = parseApexX(source, options.sourceFileName);
   const diagnostics: ApexXDiagnostic[] = [...parseResult.diagnostics];
   const listVariables = collectListVariables(source);
+  const declaredVariables = collectDeclaredVariables(source);
+  const typeProvider = createApexTypeProvider({
+    workspaceRoot: options.workspaceRoot,
+  });
   const usedNames = collectIdentifiers(source);
   const listMethodCalls = parseResult.listMethodCalls.map(call => ({ ...call }));
   const funcLambdaAssignments = parseResult.funcLambdaAssignments.map(assignment => ({
@@ -51,40 +58,30 @@ export function transpileApexX(
     }
 
     call.elementType = listType.elementType;
-    call.resultElementType = inferListMethodResultElementType(
+    const expectedResultElementType = inferExpectedListResultElementType(
       source,
       call,
-      listType.elementType,
     );
-
-    if (!call.resultElementType) {
-      diagnostics.push({
-        severity: "error",
-        source: "apexx-semantics",
-        message: "Cannot infer List<R> result type for map(...). Assign to a List<R> variable or return from a method declared as List<R>.",
-        range: call.range,
-      });
-      continue;
-    }
-
-    const stepTypes = inferListMethodStepTypes(
+    const chainTypes = inferListMethodChainTypes({
+      source,
       call,
-      listType.elementType,
-      call.resultElementType,
+      receiverElementType: listType.elementType,
+      expectedResultElementType,
+      variables: declaredVariables,
+      typeProvider,
+    });
+    const chainErrors = chainTypes.diagnostics.filter(
+      diagnostic => diagnostic.severity === "error",
     );
+    diagnostics.push(...chainTypes.diagnostics);
 
-    if (!stepTypes) {
-      diagnostics.push({
-        severity: "error",
-        source: "apexx-semantics",
-        message: "v0.1 can infer one map(...) per list chain. Split the chain into typed intermediate List<T> variables.",
-        range: call.range,
-      });
+    if (chainErrors.length > 0) {
       continue;
     }
 
-    call.stepInputTypes = stepTypes.inputTypes;
-    call.stepResultTypes = stepTypes.resultTypes;
+    call.resultElementType = chainTypes.finalElementType;
+    call.stepInputTypes = chainTypes.inputTypes;
+    call.stepResultTypes = chainTypes.resultTypes;
     call.resultTempNames = call.steps.map(step =>
       findAvailableName(step.methodName === "map" ? "apexxMap" : "apexxFilter", usedNames),
     );
@@ -216,20 +213,10 @@ function lowerListMethodCall(
   return lines.join("\n");
 }
 
-interface ListMethodStepTypes {
-  inputTypes: string[];
-  resultTypes: string[];
-}
-
-function inferListMethodResultElementType(
+function inferExpectedListResultElementType(
   source: string,
   call: ListMethodCallExpression,
-  receiverElementType: string,
 ): string | undefined {
-  if (!call.steps.some(step => step.methodName === "map")) {
-    return receiverElementType;
-  }
-
   if (call.statementKind === "assignment") {
     return extractListElementType(call.targetType ?? "");
   }
@@ -238,35 +225,7 @@ function inferListMethodResultElementType(
     return findEnclosingListReturnElementType(source, call.range.start.offset);
   }
 
-  return "Object";
-}
-
-function inferListMethodStepTypes(
-  call: ListMethodCallExpression,
-  receiverElementType: string,
-  resultElementType: string,
-): ListMethodStepTypes | undefined {
-  const mapCount = call.steps.filter(step => step.methodName === "map").length;
-
-  if (mapCount > 1) {
-    return undefined;
-  }
-
-  const inputTypes: string[] = [];
-  const resultTypes: string[] = [];
-  let currentType = receiverElementType;
-
-  for (const step of call.steps) {
-    inputTypes.push(currentType);
-
-    if (step.methodName === "map") {
-      currentType = resultElementType;
-    }
-
-    resultTypes.push(currentType);
-  }
-
-  return { inputTypes, resultTypes };
+  return undefined;
 }
 
 function lowerFuncLambdaAssignment(assignment: FuncLambdaAssignment): string {

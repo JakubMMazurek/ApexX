@@ -16,8 +16,8 @@ import { transpileApexX } from "@apexx/transpiler";
 import type { ApexXDiagnostic } from "@apexx/ast";
 import {
   collectListVariables,
-  extractListElementType,
-  findEnclosingListReturnElementType,
+  createApexTypeProvider,
+  inferExpressionType,
   normalizeType,
 } from "@apexx/semantics";
 import {
@@ -77,6 +77,7 @@ async function validateDocument(document: TextDocument): Promise<void> {
   try {
     const result = transpileApexX(document.getText(), {
       sourceFileName: document.uri.split("/").at(-1),
+      workspaceRoot,
     });
 
     connection.sendDiagnostics({
@@ -215,19 +216,16 @@ function inferListMethodLambdaInputType(
     return undefined;
   }
 
-  const mapResultType = inferListMethodChainResultElementType(
-    source,
-    statementPrefix,
-    chainStart,
-  );
   const methodOffsetInStatement = methodStartOffset - chainStart;
   const lambdaPattern =
     /\.(filter|map)\s*\(\s*([A-Za-z][A-Za-z0-9_]*)\s*=>/g;
   let match: RegExpExecArray | null;
   let currentType = baseType;
+  const typeProvider = createApexTypeProvider({ workspaceRoot });
 
   while ((match = lambdaPattern.exec(statementPrefix)) !== null) {
     const methodName = match[1];
+    const parameterName = match[2];
 
     if (match.index === methodOffsetInStatement) {
       return currentType;
@@ -238,36 +236,83 @@ function inferListMethodLambdaInputType(
     }
 
     if (methodName === "map") {
-      if (!mapResultType) {
+      const bodyStart = match.index + match[0].length;
+      const bodyEnd = findLambdaBodyEnd(statementPrefix, bodyStart);
+
+      if (bodyEnd === undefined || bodyEnd > methodOffsetInStatement) {
         return undefined;
       }
 
-      currentType = mapResultType;
+      const variables = collectDeclaredVariables(source);
+      variables.set(parameterName.toLowerCase(), currentType);
+      const bodyType = inferExpressionType(
+        statementPrefix.slice(bodyStart, bodyEnd),
+        { variables, typeProvider },
+      );
+
+      if (!bodyType) {
+        return undefined;
+      }
+
+      currentType = bodyType;
     }
   }
 
   return undefined;
 }
 
-function inferListMethodChainResultElementType(
+function findLambdaBodyEnd(
   source: string,
-  statementPrefix: string,
-  statementStartOffset: number,
-): string | undefined {
-  const assignmentMatch =
-    /^\s*List\s*<\s*[^>\r\n]+\s*>\s+[A-Za-z][A-Za-z0-9_]*\s*=/.exec(
-      statementPrefix,
-    );
+  startOffset: number,
+): number | undefined {
+  let cursor = startOffset;
+  let depth = 0;
+  let inString = false;
 
-  if (assignmentMatch) {
-    return extractListElementType(assignmentMatch[0]);
+  while (cursor < source.length) {
+    const current = source[cursor];
+    const next = source[cursor + 1];
+
+    if (inString) {
+      if (current === "\\" && next) {
+        cursor += 2;
+        continue;
+      }
+
+      if (current === "'") {
+        inString = false;
+      }
+
+      cursor += 1;
+      continue;
+    }
+
+    if (current === "'") {
+      inString = true;
+      cursor += 1;
+      continue;
+    }
+
+    if (current === "(") {
+      depth += 1;
+      cursor += 1;
+      continue;
+    }
+
+    if (current === ")") {
+      if (depth === 0) {
+        return cursor;
+      }
+
+      depth -= 1;
+      cursor += 1;
+      continue;
+    }
+
+    cursor += 1;
   }
 
-  if (/^\s*return\b/.test(statementPrefix)) {
-    return findEnclosingListReturnElementType(source, statementStartOffset);
-  }
-
-  return "Object";
+  return undefined;
 }
 
 function inferFuncLambdaParameterType(

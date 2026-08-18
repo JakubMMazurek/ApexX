@@ -171,6 +171,93 @@ assert.match(mapFilterReturnResult.output, /List<String> apexxMap0 = new List<St
 assert.match(mapFilterReturnResult.output, /for \(String value : apexxMap0\)/);
 assert.match(mapFilterReturnResult.output, /return apexxFilter0;/);
 
+const multiMapReturnSource = `public with sharing class AccountService {
+    public static List<String> upperAccountNumbers(List<Account> accounts) {
+        return accounts
+            .map(a => a.AccountNumber)
+            .map(accountNumber => accountNumber.toUpperCase());
+    }
+}
+`;
+const multiMapReturnResult = transpileApexX(multiMapReturnSource, {
+  sourceFileName: "AccountService.clsx",
+});
+const multiMapReturnErrors = multiMapReturnResult.diagnostics.filter(
+  diagnostic => diagnostic.severity === "error",
+);
+assert.deepEqual(multiMapReturnErrors, []);
+assert.match(multiMapReturnResult.output, /List<String> apexxMap0 = new List<String>\(\);/);
+assert.match(multiMapReturnResult.output, /for \(Account a : accounts\)/);
+assert.match(multiMapReturnResult.output, /apexxMap0\.add\(a\.AccountNumber\);/);
+assert.match(multiMapReturnResult.output, /List<String> apexxMap1 = new List<String>\(\);/);
+assert.match(multiMapReturnResult.output, /for \(String accountNumber : apexxMap0\)/);
+assert.match(multiMapReturnResult.output, /apexxMap1\.add\(accountNumber\.toUpperCase\(\)\);/);
+assert.match(multiMapReturnResult.output, /return apexxMap1;/);
+
+const dateMapReturnSource = `public with sharing class AccountService {
+    public static List<Integer> createdYears(List<Account> accounts) {
+        return accounts
+            .map(a => a.CreatedDate.date())
+            .map(createdDate => createdDate.year());
+    }
+}
+`;
+const dateMapReturnResult = transpileApexX(dateMapReturnSource, {
+  sourceFileName: "AccountService.clsx",
+});
+const dateMapReturnErrors = dateMapReturnResult.diagnostics.filter(
+  diagnostic => diagnostic.severity === "error",
+);
+assert.deepEqual(dateMapReturnErrors, []);
+assert.match(dateMapReturnResult.output, /List<Date> apexxMap0 = new List<Date>\(\);/);
+assert.match(dateMapReturnResult.output, /for \(Date createdDate : apexxMap0\)/);
+assert.match(dateMapReturnResult.output, /List<Integer> apexxMap1 = new List<Integer>\(\);/);
+assert.match(dateMapReturnResult.output, /return apexxMap1;/);
+
+const staticCallMapSource = `public with sharing class AccountService {
+    public static List<String> ownerLabels(List<Account> accounts) {
+        return accounts.map(a => String.valueOf(a.OwnerId).toUpperCase());
+    }
+}
+`;
+const staticCallMapResult = transpileApexX(staticCallMapSource, {
+  sourceFileName: "AccountService.clsx",
+});
+const staticCallMapErrors = staticCallMapResult.diagnostics.filter(
+  diagnostic => diagnostic.severity === "error",
+);
+assert.deepEqual(staticCallMapErrors, []);
+assert.match(staticCallMapResult.output, /List<String> apexxMap0 = new List<String>\(\);/);
+assert.match(staticCallMapResult.output, /apexxMap0\.add\(String\.valueOf\(a\.OwnerId\)\.toUpperCase\(\)\);/);
+
+const invalidFilterPredicateSource = `public with sharing class AccountService {
+    public static List<Account> invalid(List<Account> accounts) {
+        return accounts.filter(a => a.Name);
+    }
+}
+`;
+const invalidFilterPredicateResult = transpileApexX(invalidFilterPredicateSource, {
+  sourceFileName: "AccountService.clsx",
+});
+assert.match(
+  invalidFilterPredicateResult.diagnostics.map(diagnostic => diagnostic.message).join("\n"),
+  /filter\(\.\.\.\) expects a Boolean predicate, but this lambda returns String\./,
+);
+
+const mismatchedMapResultSource = `public with sharing class AccountService {
+    public static List<Integer> invalid(List<Account> accounts) {
+        return accounts.map(a => a.Name);
+    }
+}
+`;
+const mismatchedMapResult = transpileApexX(mismatchedMapResultSource, {
+  sourceFileName: "AccountService.clsx",
+});
+assert.match(
+  mismatchedMapResult.diagnostics.map(diagnostic => diagnostic.message).join("\n"),
+  /List chain returns List<String>, but the surrounding context expects List<Integer>\./,
+);
+
 const funcLambdaSource = `public with sharing class EqualityService {
     public static Boolean compare(Integer left, Integer right) {
         Func<int, int, bool> testForEquality = (x, y) => x == y;

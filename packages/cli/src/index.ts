@@ -61,6 +61,7 @@ async function build(args: ParsedArgs): Promise<void> {
     const source = await fs.readFile(file, "utf8");
     const result = transpileApexX(source, {
       sourceFileName: path.basename(file),
+      workspaceRoot: process.cwd(),
     });
     const errors = result.diagnostics.filter(
       diagnostic => diagnostic.severity === "error",
@@ -101,7 +102,10 @@ async function parse(args: ParsedArgs): Promise<void> {
 
   const file = path.resolve(process.cwd(), input);
   const source = await fs.readFile(file, "utf8");
-  const result = transpileApexX(source, { sourceFileName: path.basename(file) });
+  const result = transpileApexX(source, {
+    sourceFileName: path.basename(file),
+    workspaceRoot: process.cwd(),
+  });
   printDiagnostics(file, result.diagnostics);
 
   if (result.diagnostics.some(diagnostic => diagnostic.severity === "error")) {

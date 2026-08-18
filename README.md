@@ -8,7 +8,7 @@ The first milestone is intentionally small:
 - lambda arguments parse on `List<T>.filter(item => predicate)` and `List<T>.map(item => result)` calls
 - `filter` lowers to a typed Apex loop, avoiding `Object` casts in generated code
 - `map` lowers to a typed Apex loop that produces `List<R>`
-- chained filters preserve the original `List<T>` type
+- chained `filter` and `map` calls are typed step by step
 - standalone `List<T>.filter(...)` expression statements parse while editing, even when the result is not assigned
 - `Func<T1, T2, TResult> name = (x, y) => expression` lowers to a generated invokable inner class
 - `Func` variables can be called directly in `.clsx`; generated Apex emits `.invoke(...)`
@@ -85,7 +85,7 @@ public with sharing class AccountService {
 }
 ```
 
-`map` returns a new list type when ApexX can see the result type from an assignment or method return:
+`map` returns a new list type by inferring the lambda body, with the assignment or method return type used as context:
 
 ```apex
 public static List<String> hotAccountNames(List<Account> accounts) {
@@ -108,6 +108,16 @@ for (Account a : apexxFilter0) {
     apexxMap0.add(a.Name);
 }
 return apexxMap0;
+```
+
+Map chains use a small expression type inferencer for fields, literals, comparisons, common primitive methods, and static calls:
+
+```apex
+public static List<String> upperAccountNumbers(List<Account> accounts) {
+    return accounts
+        .map(a => a.AccountNumber)
+        .map(accountNumber => accountNumber.toUpperCase());
+}
 ```
 
 `Func` lambda assignments are also supported as a first proof of concept. ApexX accepts C#-style lowercase aliases such as `int` and `bool` and emits Salesforce Apex type names:

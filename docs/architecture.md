@@ -67,7 +67,7 @@ accounts.filter(a => a.Rating == 'Hot');
 
 The receiver must currently begin as a simple variable whose type is discoverable as `List<T>` in the same file. Every chained `filter` preserves that same `List<T>` type, so each lambda parameter is typed as `T` and each generated loop produces another `List<T>`.
 
-`map` transforms `List<T>` into `List<R>`. ApexX infers `R` from an assignment target such as `List<String> names = ...` or from an enclosing method return type such as `public static List<String> names(...)`. The current implementation supports one `map(...)` per chain; split multiple maps into typed intermediate variables.
+`map` transforms `List<T>` into `List<R>`. ApexX infers `R` from the lambda body when the expression is in the supported semantic subset: local identifiers, literals, sObject fields, equality/comparison/logical expressions, common primitive methods, and static calls such as `String.valueOf(...)`. An assignment target or enclosing method return type is still used as context and as a result-type sanity check.
 
 Source-level function values are supported for local assignments:
 

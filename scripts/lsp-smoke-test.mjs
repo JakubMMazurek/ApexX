@@ -121,6 +121,34 @@ try {
   assertHasLabels(assignmentMappedValueMembers, ["contains", "length", "toUpperCase"]);
   assertNoLabels(assignmentMappedValueMembers, ["AccountNumber", "Rating"]);
 
+  const secondMapStringMembers = await completionsFor(
+    "SecondMapStringProbe",
+    withCursor(`public with sharing class SecondMapStringProbe {
+    public static List<String> upperAccountNumbers(List<Account> accounts) {
+        return accounts
+            .map(a => a.AccountNumber)
+            .map(accountNumber => accountNumber.__CURSOR__);
+    }
+}
+`),
+  );
+  assertHasLabels(secondMapStringMembers, ["contains", "length", "toUpperCase"]);
+  assertNoLabels(secondMapStringMembers, ["AccountNumber", "Rating"]);
+
+  const secondMapDateMembers = await completionsFor(
+    "SecondMapDateProbe",
+    withCursor(`public with sharing class SecondMapDateProbe {
+    public static List<Integer> createdYears(List<Account> accounts) {
+        return accounts
+            .map(a => a.CreatedDate.date())
+            .map(createdDate => createdDate.__CURSOR__);
+    }
+}
+`),
+  );
+  assertHasLabels(secondMapDateMembers, ["addDays", "month", "year"]);
+  assertNoLabels(secondMapDateMembers, ["AccountNumber", "Rating", "toUpperCase"]);
+
   const intermediateListMembers = await completionsFor(
     "IntermediateListProbe",
     withCursor(`public with sharing class IntermediateListProbe {

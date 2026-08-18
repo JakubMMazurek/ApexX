@@ -128,6 +128,7 @@ async function buildDocument(document: vscode.TextDocument): Promise<void> {
   const apiVersion = config.get<string>("apiVersion", "").trim();
   const result = transpileApexX(document.getText(), {
     sourceFileName: path.basename(filePath),
+    workspaceRoot,
   });
   const errors = result.diagnostics.filter(
     diagnostic => diagnostic.severity === "error",

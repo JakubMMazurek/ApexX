@@ -103,6 +103,7 @@ export interface ApexXParseResult {
 
 export interface TranspileOptions {
   sourceFileName?: string;
+  workspaceRoot?: string;
 }
 
 export interface TranspileResult {
