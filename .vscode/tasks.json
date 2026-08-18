@@ -1,0 +1,23 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "ApexX: build",
+      "type": "npm",
+      "script": "build",
+      "group": "build",
+      "problemMatcher": "$tsc",
+      "presentation": {
+        "reveal": "silent"
+      }
+    },
+    {
+      "label": "ApexX: test",
+      "type": "npm",
+      "script": "test",
+      "group": "test",
+      "problemMatcher": "$tsc"
+    }
+  ]
+}
+
