@@ -11,7 +11,7 @@ npm run build
 ## Run The PoC
 
 ```powershell
-npm run apexx -- build examples
+npm run apexx -- build
 ```
 
 Outside a Salesforce DX project, this writes Salesforce source-format files under `generated/force-app/main/default/classes`.
@@ -22,12 +22,12 @@ Outside a Salesforce DX project, this writes Salesforce source-format files unde
 npm run test
 ```
 
-The smoke test builds the examples and checks that the generated output contains the expected typed loop.
+The smoke test builds `apexx/classes` and checks that the generated output contains the expected typed loop.
 
 ## Parse A Single File
 
 ```powershell
-npm run apexx -- parse examples\AccountService.clsx
+npm run apexx -- parse apexx\classes\AccountService.clsx
 ```
 
 `parse` runs the ApexX lowering path and validates the generated Apex through `@apexdevtools/apex-parser`.
@@ -36,7 +36,7 @@ npm run apexx -- parse examples\AccountService.clsx
 
 The extension package contributes the `apexx` language for `.clsx` files and starts the minimal ApexX language server in local development after the repo is built.
 
-It also compiles on save by default. In a Salesforce DX workspace, a saved `.clsx` file generates:
+It also compiles on save by default. In a Salesforce DX workspace, a saved `apexx/classes/<ClassName>.clsx` file generates:
 
 ```text
 force-app/main/default/classes/<ClassName>.cls

@@ -33,7 +33,10 @@ async function main(argv: string[]): Promise<void> {
 }
 
 async function build(args: ParsedArgs): Promise<void> {
-  const input = path.resolve(process.cwd(), args.positional[0] ?? "src");
+  const input = path.resolve(
+    process.cwd(),
+    args.positional[0] ?? (await defaultSourcePath(process.cwd())),
+  );
   const explicitOut = args.options.get("out");
   const explicitApiVersion = args.options.get("api-version");
   const buildTarget = await resolveBuildTarget({
@@ -159,6 +162,15 @@ async function collectClsxFiles(input: string): Promise<string[]> {
   return files.sort();
 }
 
+async function defaultSourcePath(rootDir: string): Promise<string> {
+  const apexXClasses = path.join(rootDir, "apexx", "classes");
+  if (await exists(apexXClasses)) {
+    return apexXClasses;
+  }
+
+  return "src";
+}
+
 async function exists(filePath: string): Promise<boolean> {
   try {
     await fs.access(filePath);
@@ -188,7 +200,7 @@ function printHelp(): void {
   console.log(`ApexX
 
 Usage:
-  apexx build [path]
+  apexx build [path=apexx/classes]
   apexx build [path] --out force-app/main/default/classes
   apexx build [path] --api-version 67.0
   apexx parse <file.clsx>

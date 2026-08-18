@@ -58,6 +58,12 @@ The transpiler checks existing identifiers and increments the numeric suffix unt
 ApexX writes Apex classes in Salesforce source format:
 
 ```text
+apexx/classes/ClassName.clsx
+```
+
+to:
+
+```text
 force-app/main/default/classes/ClassName.cls
 force-app/main/default/classes/ClassName.cls-meta.xml
 ```

@@ -16,7 +16,7 @@ cd C:\Users\qba05\Documents\ApexX
 npm install
 npm run build
 npm run test
-npm run apexx -- build examples
+npm run apexx -- build
 ```
 
 Example `.clsx`:
@@ -29,7 +29,22 @@ public with sharing class AccountService {
 }
 ```
 
-Generated Salesforce DX files:
+Recommended project layout:
+
+```text
+apexx/
+  classes/
+    AccountService.clsx
+
+force-app/
+  main/
+    default/
+      classes/
+        AccountService.cls
+        AccountService.cls-meta.xml
+```
+
+Outside a Salesforce DX project, ApexX writes generated Salesforce source-format files under:
 
 ```text
 generated/
@@ -70,7 +85,7 @@ See [docs/architecture.md](docs/architecture.md) and [docs/development.md](docs/
 
 ## VS Code
 
-The VS Code extension contributes `.clsx` language support and compiles on save by default. In a Salesforce DX project, saving `AccountService.clsx` writes:
+The VS Code extension contributes `.clsx` language support and compiles on save by default. In a Salesforce DX project, saving `apexx/classes/AccountService.clsx` writes:
 
 ```text
 force-app/main/default/classes/AccountService.cls

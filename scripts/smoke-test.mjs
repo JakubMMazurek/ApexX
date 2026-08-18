@@ -9,7 +9,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 execFileSync(
   process.execPath,
-  ["packages/cli/dist/index.js", "build", "examples"],
+  ["packages/cli/dist/index.js", "build"],
   { cwd: root, stdio: "inherit" },
 );
 
@@ -74,15 +74,15 @@ try {
     ),
     "utf8",
   );
-  fs.mkdirSync(path.join(tempProject, "src"), { recursive: true });
+  fs.mkdirSync(path.join(tempProject, "apexx", "classes"), { recursive: true });
   fs.copyFileSync(
-    path.join(root, "examples", "AccountService.clsx"),
-    path.join(tempProject, "src", "AccountService.clsx"),
+    path.join(root, "apexx", "classes", "AccountService.clsx"),
+    path.join(tempProject, "apexx", "classes", "AccountService.clsx"),
   );
 
   execFileSync(
     process.execPath,
-    [path.join(root, "packages", "cli", "dist", "index.js"), "build", "src"],
+    [path.join(root, "packages", "cli", "dist", "index.js"), "build"],
     { cwd: tempProject, stdio: "inherit" },
   );
 

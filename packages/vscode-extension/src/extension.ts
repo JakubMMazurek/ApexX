@@ -138,6 +138,7 @@ async function buildDocument(document: vscode.TextDocument): Promise<void> {
     explicitClassesDir: outputDirectory.length > 0 ? outputDirectory : undefined,
     explicitApiVersion: apiVersion.length > 0 ? apiVersion : undefined,
   });
+  warnIfSourceIsInGeneratedClasses(filePath, target.classesDir);
   const className = inferApexClassName(result.output, path.basename(filePath));
   const written = await writeApexClassFiles({
     classesDir: target.classesDir,
@@ -152,6 +153,20 @@ async function buildDocument(document: vscode.TextDocument): Promise<void> {
     `ApexX generated ${path.basename(written.classFile)}`,
     3500,
   );
+}
+
+function warnIfSourceIsInGeneratedClasses(
+  sourcePath: string,
+  classesDir: string,
+): void {
+  const sourceDir = path.resolve(path.dirname(sourcePath)).toLowerCase();
+  const generatedDir = path.resolve(classesDir).toLowerCase();
+
+  if (sourceDir === generatedDir) {
+    outputChannel?.appendLine(
+      "warning: .clsx source is inside the generated Salesforce classes folder. Prefer apexx/classes for source files.",
+    );
+  }
 }
 
 function reportBuildError(error: unknown): void {
