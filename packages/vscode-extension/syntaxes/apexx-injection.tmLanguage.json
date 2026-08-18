@@ -1,0 +1,15 @@
+{
+  "scopeName": "source.apex.apexx.injection",
+  "injectionSelector": "L:source.apex -comment -string",
+  "patterns": [
+    {
+      "name": "keyword.operator.lambda.apexx",
+      "match": "=>"
+    },
+    {
+      "name": "support.function.collection.apexx",
+      "match": "\\bfilter\\b"
+    }
+  ]
+}
+

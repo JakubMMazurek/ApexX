@@ -31,7 +31,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     },
   };
   const clientOptions: LanguageClientOptions = {
-    documentSelector: [{ scheme: "file", language: "apexx" }],
+    documentSelector: [
+      { scheme: "file", language: "apexx" },
+      { scheme: "file", language: "apex", pattern: "**/*.clsx" },
+    ],
   };
 
   client = new LanguageClient(

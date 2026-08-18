@@ -85,7 +85,7 @@ See [docs/architecture.md](docs/architecture.md) and [docs/development.md](docs/
 
 ## VS Code
 
-The VS Code extension contributes `.clsx` language support and compiles on save by default. In a Salesforce DX project, saving `apexx/classes/AccountService.clsx` writes:
+The VS Code extension associates `.clsx` with Salesforce Apex language mode so Apex IntelliSense still works, then watches `.clsx` saves to generate Apex. In a Salesforce DX project, saving `apexx/classes/AccountService.clsx` writes:
 
 ```text
 force-app/main/default/classes/AccountService.cls

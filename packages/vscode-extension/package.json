@@ -22,7 +22,6 @@
       {
         "id": "apexx",
         "aliases": ["ApexX", "Apex Extended"],
-        "extensions": [".clsx"],
         "configuration": "./language-configuration.json"
       }
     ],
@@ -31,8 +30,18 @@
         "language": "apexx",
         "scopeName": "source.apexx",
         "path": "./syntaxes/apexx.tmLanguage.json"
+      },
+      {
+        "scopeName": "source.apex.apexx.injection",
+        "path": "./syntaxes/apexx-injection.tmLanguage.json",
+        "injectTo": ["source.apex"]
       }
     ],
+    "configurationDefaults": {
+      "files.associations": {
+        "*.clsx": "apex"
+      }
+    },
     "commands": [
       {
         "command": "apexx.buildCurrentFile",
