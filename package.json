@@ -16,6 +16,7 @@
     "smoke": "node scripts/smoke-test.mjs",
     "test": "npm run build && npm run smoke",
     "apexx": "node packages/cli/dist/index.js",
+    "schema:refresh": "node scripts/refresh-sobject-schema.mjs",
     "vscode:install": "powershell -ExecutionPolicy Bypass -File scripts/install-vscode-extension.ps1"
   },
   "dependencies": {

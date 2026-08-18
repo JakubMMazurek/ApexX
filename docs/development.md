@@ -43,6 +43,14 @@ force-app/main/default/classes/<ClassName>.cls
 force-app/main/default/classes/<ClassName>.cls-meta.xml
 ```
 
+The language server infers a lambda parameter from the receiver list. For example, in `accounts.filter(a => a.)`, `a` is treated as `Account` when `accounts` is declared as `List<Account>`. sObject field completions use built-in fallbacks first, and they can use a local org schema cache:
+
+```powershell
+npm run schema:refresh -- --target-org apexx Account
+```
+
+The generated cache lives under `.apexx/schema/sobjects` and is intentionally ignored by Git because it is org-specific.
+
 The extension uses the default `packageDirectories` entry and `sourceApiVersion` from `sfdx-project.json`. The same behavior is available manually through `ApexX: Build Current File`.
 
 Open `packages/vscode-extension` as an extension development host target after running:

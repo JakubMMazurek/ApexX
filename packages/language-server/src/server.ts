@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { fileURLToPath } from "node:url";
 import {
   CompletionItem,
   CompletionItemKind,
@@ -14,19 +15,30 @@ import { TextDocument } from "vscode-languageserver-textdocument";
 import { transpileApexX } from "@apexx/transpiler";
 import type { ApexXDiagnostic } from "@apexx/ast";
 import { collectListVariables, normalizeType } from "@apexx/semantics";
+import {
+  getSObjectFields,
+  type SObjectFieldInfo,
+} from "./sobjectSchema.js";
 
 const connection = createConnection(ProposedFeatures.all);
 const documents = new TextDocuments(TextDocument);
+let workspaceRoot: string | undefined;
 
-connection.onInitialize(() => ({
-  capabilities: {
-    textDocumentSync: TextDocumentSyncKind.Incremental,
-    completionProvider: {
-      triggerCharacters: ["."],
-      resolveProvider: false,
+connection.onInitialize(params => {
+  workspaceRoot = uriToFilePath(
+    params.workspaceFolders?.[0]?.uri ?? params.rootUri ?? undefined,
+  );
+
+  return {
+    capabilities: {
+      textDocumentSync: TextDocumentSyncKind.Incremental,
+      completionProvider: {
+        triggerCharacters: ["."],
+        resolveProvider: false,
+      },
     },
-  },
-}));
+  };
+});
 
 connection.onCompletion(params => {
   try {
@@ -219,6 +231,11 @@ function completionsForType(typeName: string): CompletionItem[] {
     return memberCompletions(listMembers());
   }
 
+  const sObjectFields = getSObjectFields(typeName, workspaceRoot);
+  if (sObjectFields) {
+    return memberCompletions(sObjectMembers(typeName, sObjectFields));
+  }
+
   return [];
 }
 
@@ -272,6 +289,55 @@ function property(label: string, detail: string): CompletionItem {
     kind: CompletionItemKind.Property,
     detail,
   };
+}
+
+function sObjectMembers(
+  typeName: string,
+  fields: SObjectFieldInfo[],
+): CompletionItem[] {
+  return fields.map(fieldInfo => ({
+    label: fieldInfo.name,
+    kind: CompletionItemKind.Field,
+    detail: `${typeName}.${fieldInfo.name}: ${apexTypeForField(fieldInfo)}`,
+    documentation:
+      fieldInfo.label && fieldInfo.label !== fieldInfo.name
+        ? fieldInfo.label
+        : undefined,
+  }));
+}
+
+function apexTypeForField(fieldInfo: SObjectFieldInfo): string {
+  if (fieldInfo.referenceTo && fieldInfo.referenceTo.length > 0) {
+    return `Id (${fieldInfo.referenceTo.join(" | ")})`;
+  }
+
+  switch (fieldInfo.type.toLowerCase()) {
+    case "id":
+    case "reference":
+      return "Id";
+    case "boolean":
+      return "Boolean";
+    case "int":
+      return "Integer";
+    case "double":
+    case "currency":
+    case "percent":
+      return "Decimal";
+    case "date":
+      return "Date";
+    case "datetime":
+      return "Datetime";
+    case "phone":
+    case "picklist":
+    case "textarea":
+    case "email":
+    case "url":
+    case "encryptedstring":
+    case "string":
+      return "String";
+    default:
+      return fieldInfo.type;
+  }
 }
 
 function datetimeMembers(): CompletionItem[] {
@@ -352,4 +418,16 @@ function listMembers(): CompletionItem[] {
 
 function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function uriToFilePath(uri: string | undefined): string | undefined {
+  if (!uri) {
+    return undefined;
+  }
+
+  try {
+    return fileURLToPath(uri);
+  } catch {
+    return undefined;
+  }
 }

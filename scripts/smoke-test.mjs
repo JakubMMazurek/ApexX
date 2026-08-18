@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
+import { transpileApexX } from "../packages/transpiler/dist/index.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -59,6 +60,21 @@ assert.match(
   /<ApexClass xmlns="http:\/\/soap\.sforce\.com\/2006\/04\/metadata">/,
 );
 assert.match(accountMetadata, /<status>Active<\/status>/);
+
+const editingSourceWithoutSemicolon = `public with sharing class AccountService {
+    public static List<Account> hotAccounts(List<Account> accounts) {
+        return accounts.filter(a => a.Rating == 'Hot')
+    }
+}
+`;
+const editingResult = transpileApexX(editingSourceWithoutSemicolon, {
+  sourceFileName: "AccountService.clsx",
+});
+const editingErrors = editingResult.diagnostics.filter(
+  diagnostic => diagnostic.severity === "error",
+);
+assert.deepEqual(editingErrors, []);
+assert.match(editingResult.output, /return apexxFilter0;/);
 
 const tempProject = fs.mkdtempSync(path.join(os.tmpdir(), "apexx-sfdx-"));
 try {

@@ -93,3 +93,10 @@ force-app/main/default/classes/AccountService.cls-meta.xml
 ```
 
 The output package directory and API version come from `sfdx-project.json` when present. Outside a Salesforce DX project, ApexX writes to `generated/force-app/main/default/classes`.
+
+For `List<Account>.filter(a => a.)` completions, ApexX includes a small built-in Account fallback and can also read org schema cached under `.apexx/schema/sobjects`. Refresh the local cache from your default org or a specific alias:
+
+```powershell
+npm run schema:refresh -- Account
+npm run schema:refresh -- --target-org apexx Account
+```

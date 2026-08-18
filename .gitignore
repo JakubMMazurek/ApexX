@@ -1,6 +1,7 @@
 node_modules/
 dist/
 generated/
+.apexx/schema/
 .sf/
 .sfdx/
 *.tsbuildinfo

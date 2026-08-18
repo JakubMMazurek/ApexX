@@ -10,10 +10,10 @@ import type {
 import { createRange, isApexIdentifier } from "@apexx/semantics";
 
 const returnFilterPattern =
-  /^([ \t]*)return\s+([A-Za-z][A-Za-z0-9_]*)\.filter\s*\(\s*([A-Za-z][A-Za-z0-9_]*)\s*=>\s*(.+?)\s*\)\s*;/gm;
+  /^([ \t]*)return\s+([A-Za-z][A-Za-z0-9_]*)\.filter\s*\(\s*([A-Za-z][A-Za-z0-9_]*)\s*=>\s*(.+?)\s*\)\s*;?[ \t]*(?=\r?$)/gm;
 
 const assignmentFilterPattern =
-  /^([ \t]*)(List\s*<\s*[^>\r\n]+\s*>\s+([A-Za-z][A-Za-z0-9_]*))\s*=\s*([A-Za-z][A-Za-z0-9_]*)\.filter\s*\(\s*([A-Za-z][A-Za-z0-9_]*)\s*=>\s*(.+?)\s*\)\s*;/gm;
+  /^([ \t]*)(List\s*<\s*[^>\r\n]+\s*>\s+([A-Za-z][A-Za-z0-9_]*))\s*=\s*([A-Za-z][A-Za-z0-9_]*)\.filter\s*\(\s*([A-Za-z][A-Za-z0-9_]*)\s*=>\s*(.+?)\s*\)\s*;?[ \t]*(?=\r?$)/gm;
 
 export interface ApexParseResult {
   ok: boolean;
@@ -74,7 +74,7 @@ export function parseApexX(source: string, fileName?: string): ApexXParseResult 
         severity: "error",
         source: "apexx-parser",
         message:
-          "Unsupported lambda form. v0.1 supports simple List<T>.filter(item => predicate) statements only.",
+          "Unsupported lambda form. v0.1 supports simple return or assignment List<T>.filter(item => predicate) forms only.",
         range: createRange(source, offset, offset + match[0].length),
       });
     }
