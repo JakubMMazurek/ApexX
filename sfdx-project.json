@@ -1,0 +1,12 @@
+{
+  "packageDirectories": [
+    {
+      "path": "force-app",
+      "default": true
+    }
+  ],
+  "name": "ApexX",
+  "namespace": "",
+  "sourceApiVersion": "67.0"
+}
+
