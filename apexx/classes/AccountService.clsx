@@ -1,7 +1,28 @@
 public with sharing class AccountService {
+    @AuraEnabled(cacheable=true)
+    @UserFriendlyError
+    public static ShowcaseData loadShowcase() {
+        List<Account> accounts = [
+            SELECT Id, Name, Rating, AccountNumber, AnnualRevenue,
+                (SELECT Id, FirstName, LastName, Email FROM Contacts)
+            FROM Account
+            WHERE Name LIKE 'ApexX Demo%'
+            ORDER BY Name
+            LIMIT 50
+        ];
+        List<Account> hot = hotAccounts(accounts, 'Hot');
+        List<String> emails = hotContactEmails(accounts);
+        AccountSummary summary = summarize(accounts);
+        List<Account> withRevenue = accounts.filter(account => account.AnnualRevenue != null);
+        Boolean revenueWithinTolerance = withRevenue.size() > 1
+            && compareRevenue(withRevenue.get(0), withRevenue.get(1), 1000);
+
+        return new ShowcaseData(accounts.size(), hot, emails, summary, revenueWithinTolerance);
+    }
+
     @AuraEnabled
     @UserFriendlyError
-    public static List<Account> hotAccounts(List<Account> accounts, String rating = 'Hot') {
+    public static List<Account> hotAccounts(List<Account> accounts, String rating) {
         return accounts
             .filter(account => account.Rating == rating)
             .filter(account => account.AccountNumber != null);
@@ -9,7 +30,7 @@ public with sharing class AccountService {
 
     @AuraEnabled
     @UserFriendlyError(message = 'Unable to save account.')
-    public static Account save(Account account, Boolean validate = true) {
+    public static Account save(Account account, Boolean validate) {
         if (validate) {
             account.Name = account.Name.trim();
         }
@@ -43,10 +64,10 @@ public with sharing class AccountService {
     }
 
     public class AccountSummary {
-        public Integer hotCount;
-        public Boolean allHaveNumbers;
-        public Account firstHot;
-        public List<String> names;
+        @AuraEnabled public Integer hotCount { get; set; }
+        @AuraEnabled public Boolean allHaveNumbers { get; set; }
+        @AuraEnabled public Account firstHot { get; set; }
+        @AuraEnabled public List<String> names { get; set; }
 
         public AccountSummary(
             Integer hotCount,
@@ -58,6 +79,28 @@ public with sharing class AccountService {
             this.allHaveNumbers = allHaveNumbers;
             this.firstHot = firstHot;
             this.names = names;
+        }
+    }
+
+    public class ShowcaseData {
+        @AuraEnabled public Integer totalAccounts { get; set; }
+        @AuraEnabled public List<Account> hotAccounts { get; set; }
+        @AuraEnabled public List<String> hotContactEmails { get; set; }
+        @AuraEnabled public AccountSummary summary { get; set; }
+        @AuraEnabled public Boolean revenueWithinTolerance { get; set; }
+
+        public ShowcaseData(
+            Integer totalAccounts,
+            List<Account> hotAccounts,
+            List<String> hotContactEmails,
+            AccountSummary summary,
+            Boolean revenueWithinTolerance
+        ) {
+            this.totalAccounts = totalAccounts;
+            this.hotAccounts = hotAccounts;
+            this.hotContactEmails = hotContactEmails;
+            this.summary = summary;
+            this.revenueWithinTolerance = revenueWithinTolerance;
         }
     }
 }

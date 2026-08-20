@@ -26,6 +26,9 @@ npm install
 npm run build
 npm run test
 npm run apexx -- build
+npm run sf:deploy -- --target-org apexx
+npm run sf:seed -- --target-org apexx
+npm run sf:open:showcase -- --target-org apexx
 ```
 
 Example `.clsx`:
@@ -241,6 +244,12 @@ force-app/main/default/classes/AccountService.cls-meta.xml
 ```
 
 The output package directory and API version come from `sfdx-project.json` when present. Outside a Salesforce DX project, ApexX writes to `generated/force-app/main/default/classes`.
+
+The project includes an `apexxShowcase` Lightning Web Component and an `ApexX Showcase` Lightning tab. The tab calls `AccountService.loadShowcase()`, which is written in `.clsx` and exercises decorators, `filter`, `flatMap`, `map`, `count`, `all`, `find`, and regular Apex default-argument helpers. Seed demo data with:
+
+```powershell
+npm run sf:seed -- --target-org apexx
+```
 
 For `List<Account>.filter(a => a.)`, `List<Account>.map(a => a.)`, and the other ApexX list helpers, completions infer the lambda parameter from the receiver list. ApexX includes a small built-in Account/Contact fallback and can also read org schema cached under `.apexx/schema/sobjects`. Refresh the local cache from your default org or a specific alias:
 

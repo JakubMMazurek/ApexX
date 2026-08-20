@@ -26,6 +26,19 @@ The smoke test builds `apexx/classes` and checks that the generated output conta
 
 The `apexx/classes` directory is the living showcase. It contains collection helpers, default arguments, `Func` lambdas, generated decorators, and the user-defined `UserFriendlyError` policy class.
 
+## Salesforce Showcase
+
+Build, deploy, seed test data, and open the Lightning tab:
+
+```powershell
+npm run apexx -- build
+npm run sf:deploy -- --target-org apexx
+npm run sf:seed -- --target-org apexx
+npm run sf:open:showcase -- --target-org apexx
+```
+
+The `apexxShowcase` LWC calls `AccountService.loadShowcase()`. That method queries demo Accounts and Contacts, then uses ApexX collection helpers to filter hot accounts, flatten contacts, map emails, count matches, find the first hot account, and summarize the result for the tab.
+
 ## Parse A Single File
 
 ```powershell

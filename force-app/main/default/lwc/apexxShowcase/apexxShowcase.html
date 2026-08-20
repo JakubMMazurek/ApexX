@@ -1,0 +1,97 @@
+<template>
+    <lightning-card title="ApexX Showcase" icon-name="custom:custom63">
+        <div class="toolbar">
+            <div>
+                <p class="eyebrow">Live org data</p>
+                <h1>Collection helpers, decorators, and default args</h1>
+            </div>
+            <lightning-button-icon
+                icon-name="utility:refresh"
+                alternative-text="Refresh"
+                title="Refresh"
+                onclick={refresh}
+                disabled={loading}
+            ></lightning-button-icon>
+        </div>
+
+        <template lwc:if={loading}>
+            <div class="state">
+                <lightning-spinner alternative-text="Loading ApexX showcase"></lightning-spinner>
+            </div>
+        </template>
+
+        <template lwc:elseif={errorMessage}>
+            <div class="state error">
+                <lightning-icon icon-name="utility:error" size="small"></lightning-icon>
+                <p>{errorMessage}</p>
+            </div>
+        </template>
+
+        <template lwc:else>
+            <section class="metrics">
+                <template for:each={metrics} for:item="metric">
+                    <article class="metric" key={metric.label}>
+                        <span>{metric.label}</span>
+                        <strong>{metric.value}</strong>
+                    </article>
+                </template>
+            </section>
+
+            <section class="grid">
+                <article>
+                    <div class="sectionHeader">
+                        <h2>Hot accounts</h2>
+                        <span>{hotCount}</span>
+                    </div>
+                    <template lwc:if={hasHotAccounts}>
+                        <ul class="rows">
+                            <template for:each={hotAccounts} for:item="account">
+                                <li key={account.Id}>
+                                    <a href={account.url}>{account.Name}</a>
+                                    <span>{account.AccountNumber}</span>
+                                </li>
+                            </template>
+                        </ul>
+                    </template>
+                    <template lwc:else>
+                        <p class="empty">No hot demo accounts found.</p>
+                    </template>
+                </article>
+
+                <article>
+                    <div class="sectionHeader">
+                        <h2>Flattened contact emails</h2>
+                        <span>{emailCount}</span>
+                    </div>
+                    <template lwc:if={hasEmails}>
+                        <ul class="rows">
+                            <template for:each={emails} for:item="email">
+                                <li key={email}>
+                                    <span>{email}</span>
+                                </li>
+                            </template>
+                        </ul>
+                    </template>
+                    <template lwc:else>
+                        <p class="empty">No contact emails matched the hot-account chain.</p>
+                    </template>
+                </article>
+            </section>
+
+            <section class="summary">
+                <p>
+                    <strong>First hot account:</strong>
+                    <span>{firstHotName}</span>
+                </p>
+                <p>
+                    <strong>All demo accounts have numbers:</strong>
+                    <span>{allHaveNumbersLabel}</span>
+                </p>
+                <p>
+                    <strong>First two revenue values within tolerance:</strong>
+                    <span>{revenueWithinToleranceLabel}</span>
+                </p>
+            </section>
+        </template>
+    </lightning-card>
+</template>

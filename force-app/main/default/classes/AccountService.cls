@@ -13,33 +13,65 @@ public with sharing class AccountService {
         }
     }
 
-    @AuraEnabled
-    public static List<Account> hotAccounts(List<Account> accounts) {
-        return hotAccounts(accounts, 'Hot');
+    @AuraEnabled(cacheable=true)
+    public static ShowcaseData loadShowcase() {
+        return (ShowcaseData) new UserFriendlyError().handle(new ApexX.Invocation('AccountService', 'loadShowcase', new List<String>{  }, new List<Object>{  }, new Map<String, Object>()), new ApexXNext0());
     }
-    @AuraEnabled
-    public static List<Account> hotAccounts(List<Account> accounts, String rating) {
-        return (List<Account>) new UserFriendlyError().handle(new ApexX.Invocation('AccountService', 'hotAccounts', new List<String>{ 'accounts', 'rating' }, new List<Object>{ accounts, rating }, new Map<String, Object>()), new ApexXNext0(accounts, rating));
-    }
-    private static List<Account> hotAccounts_ApexXBody0(List<Account> accounts, String rating) {
+    private static ShowcaseData loadShowcase_ApexXBody0() {
+            List<Account> accounts = [
+                SELECT Id, Name, Rating, AccountNumber, AnnualRevenue,
+                    (SELECT Id, FirstName, LastName, Email FROM Contacts)
+                FROM Account
+                WHERE Name LIKE 'ApexX Demo%'
+                ORDER BY Name
+                LIMIT 50
+            ];
+            List<Account> hot = hotAccounts(accounts, 'Hot');
+            List<String> emails = hotContactEmails(accounts);
+            AccountSummary summary = summarize(accounts);
             List<Account> apexxFilter0 = new List<Account>();
             for (Account account : accounts) {
-                if (account.Rating == rating) {
+                if (account.AnnualRevenue != null) {
                     apexxFilter0.add(account);
                 }
             }
+            List<Account> withRevenue = apexxFilter0;
+            Boolean revenueWithinTolerance = withRevenue.size() > 1
+                && compareRevenue(withRevenue.get(0), withRevenue.get(1), 1000);
+    
+            return new ShowcaseData(accounts.size(), hot, emails, summary, revenueWithinTolerance);
+    }
+    private class ApexXNext0 implements ApexX.Next {
+        private ApexXNext0() {
+        }
+        public Object call() {
+            return AccountService.loadShowcase_ApexXBody0();
+        }
+    }
+
+    @AuraEnabled
+    public static List<Account> hotAccounts(List<Account> accounts, String rating) {
+        return (List<Account>) new UserFriendlyError().handle(new ApexX.Invocation('AccountService', 'hotAccounts', new List<String>{ 'accounts', 'rating' }, new List<Object>{ accounts, rating }, new Map<String, Object>()), new ApexXNext1(accounts, rating));
+    }
+    private static List<Account> hotAccounts_ApexXBody0(List<Account> accounts, String rating) {
             List<Account> apexxFilter1 = new List<Account>();
-            for (Account account : apexxFilter0) {
-                if (account.AccountNumber != null) {
+            for (Account account : accounts) {
+                if (account.Rating == rating) {
                     apexxFilter1.add(account);
                 }
             }
-            return apexxFilter1;
+            List<Account> apexxFilter2 = new List<Account>();
+            for (Account account : apexxFilter1) {
+                if (account.AccountNumber != null) {
+                    apexxFilter2.add(account);
+                }
+            }
+            return apexxFilter2;
     }
-    private class ApexXNext0 implements ApexX.Next {
+    private class ApexXNext1 implements ApexX.Next {
         private List<Account> accounts;
         private String rating;
-        private ApexXNext0(List<Account> accounts, String rating) {
+        private ApexXNext1(List<Account> accounts, String rating) {
             this.accounts = accounts;
             this.rating = rating;
         }
@@ -49,12 +81,8 @@ public with sharing class AccountService {
     }
 
     @AuraEnabled
-    public static Account save(Account account) {
-        return save(account, true);
-    }
-    @AuraEnabled
     public static Account save(Account account, Boolean validate) {
-        return (Account) new UserFriendlyError().handle(new ApexX.Invocation('AccountService', 'save', new List<String>{ 'account', 'validate' }, new List<Object>{ account, validate }, new Map<String, Object>{ 'message' => 'Unable to save account.' }), new ApexXNext1(account, validate));
+        return (Account) new UserFriendlyError().handle(new ApexX.Invocation('AccountService', 'save', new List<String>{ 'account', 'validate' }, new List<Object>{ account, validate }, new Map<String, Object>{ 'message' => 'Unable to save account.' }), new ApexXNext2(account, validate));
     }
     private static Account save_ApexXBody0(Account account, Boolean validate) {
             if (validate) {
@@ -63,10 +91,10 @@ public with sharing class AccountService {
             update account;
             return account;
     }
-    private class ApexXNext1 implements ApexX.Next {
+    private class ApexXNext2 implements ApexX.Next {
         private Account account;
         private Boolean validate;
-        private ApexXNext1(Account account, Boolean validate) {
+        private ApexXNext2(Account account, Boolean validate) {
             this.account = account;
             this.validate = validate;
         }
@@ -76,24 +104,24 @@ public with sharing class AccountService {
     }
 
     public static List<String> hotContactEmails(List<Account> accounts) {
-        List<Account> apexxFilter2 = new List<Account>();
+        List<Account> apexxFilter3 = new List<Account>();
         for (Account account : accounts) {
             if (account.Rating == 'Hot') {
-                apexxFilter2.add(account);
+                apexxFilter3.add(account);
             }
         }
         List<Contact> apexxFlatMap0 = new List<Contact>();
-        for (Account account : apexxFilter2) {
+        for (Account account : apexxFilter3) {
             apexxFlatMap0.addAll(account.Contacts);
         }
-        List<Contact> apexxFilter3 = new List<Contact>();
+        List<Contact> apexxFilter4 = new List<Contact>();
         for (Contact contact : apexxFlatMap0) {
             if (contact.Email != null) {
-                apexxFilter3.add(contact);
+                apexxFilter4.add(contact);
             }
         }
         List<String> apexxMap0 = new List<String>();
-        for (Contact contact : apexxFilter3) {
+        for (Contact contact : apexxFilter4) {
             apexxMap0.add(contact.Email.toLowerCase());
         }
         return apexxMap0;
@@ -123,14 +151,14 @@ public with sharing class AccountService {
             }
         }
         Account firstHot = apexxFind0;
-        List<Account> apexxFilter4 = new List<Account>();
+        List<Account> apexxFilter5 = new List<Account>();
         for (Account account : accounts) {
             if (account.Name != null) {
-                apexxFilter4.add(account);
+                apexxFilter5.add(account);
             }
         }
         List<String> apexxMap1 = new List<String>();
-        for (Account account : apexxFilter4) {
+        for (Account account : apexxFilter5) {
             apexxMap1.add(account.Name);
         }
         List<String> names = apexxMap1;
@@ -148,10 +176,10 @@ public with sharing class AccountService {
     }
 
     public class AccountSummary {
-        public Integer hotCount;
-        public Boolean allHaveNumbers;
-        public Account firstHot;
-        public List<String> names;
+        @AuraEnabled public Integer hotCount { get; set; }
+        @AuraEnabled public Boolean allHaveNumbers { get; set; }
+        @AuraEnabled public Account firstHot { get; set; }
+        @AuraEnabled public List<String> names { get; set; }
 
         public AccountSummary(
             Integer hotCount,
@@ -163,6 +191,28 @@ public with sharing class AccountService {
             this.allHaveNumbers = allHaveNumbers;
             this.firstHot = firstHot;
             this.names = names;
+        }
+    }
+
+    public class ShowcaseData {
+        @AuraEnabled public Integer totalAccounts { get; set; }
+        @AuraEnabled public List<Account> hotAccounts { get; set; }
+        @AuraEnabled public List<String> hotContactEmails { get; set; }
+        @AuraEnabled public AccountSummary summary { get; set; }
+        @AuraEnabled public Boolean revenueWithinTolerance { get; set; }
+
+        public ShowcaseData(
+            Integer totalAccounts,
+            List<Account> hotAccounts,
+            List<String> hotContactEmails,
+            AccountSummary summary,
+            Boolean revenueWithinTolerance
+        ) {
+            this.totalAccounts = totalAccounts;
+            this.hotAccounts = hotAccounts;
+            this.hotContactEmails = hotContactEmails;
+            this.summary = summary;
+            this.revenueWithinTolerance = revenueWithinTolerance;
         }
     }
 }

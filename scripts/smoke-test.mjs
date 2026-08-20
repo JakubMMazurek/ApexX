@@ -83,8 +83,10 @@ const lwcUtilOutput = fs.readFileSync(
 );
 
 assert.match(accountOutput, /List<Account> apexxFilter0 = new List<Account>\(\);/);
-assert.match(accountOutput, /public static List<Account> hotAccounts\(List<Account> accounts\)/);
-assert.match(accountOutput, /return hotAccounts\(accounts, 'Hot'\);/);
+assert.match(accountOutput, /public static ShowcaseData loadShowcase\(\)/);
+assert.match(accountOutput, /new UserFriendlyError\(\)\.handle\(new ApexX\.Invocation\('AccountService', 'loadShowcase'/);
+assert.match(accountOutput, /return new ShowcaseData\(accounts\.size\(\), hot, emails, summary, revenueWithinTolerance\);/);
+assert.match(accountOutput, /public static List<Account> hotAccounts\(List<Account> accounts, String rating\)/);
 assert.match(accountOutput, /new UserFriendlyError\(\)\.handle\(new ApexX\.Invocation\('AccountService', 'hotAccounts'/);
 assert.match(accountOutput, /new Map<String, Object>\(\)/);
 assert.match(accountOutput, /'message' => 'Unable to save account\.'/);
