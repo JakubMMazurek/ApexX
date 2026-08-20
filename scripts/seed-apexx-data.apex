@@ -13,24 +13,28 @@ List<Account> accounts = new List<Account>{
         Name = 'ApexX Demo - Northern Trail',
         Rating = 'Hot',
         AccountNumber = 'APXX-001',
-        AnnualRevenue = 250000
+        AnnualRevenue = 250000,
+        NumberOfEmployees = 18
     ),
     new Account(
         Name = 'ApexX Demo - Cloud Kicks',
         Rating = 'Hot',
         AccountNumber = 'APXX-002',
-        AnnualRevenue = 250750
+        AnnualRevenue = 250750,
+        NumberOfEmployees = 60
     ),
     new Account(
         Name = 'ApexX Demo - Ursa Major',
         Rating = 'Warm',
         AccountNumber = 'APXX-003',
-        AnnualRevenue = 98000
+        AnnualRevenue = 98000,
+        NumberOfEmployees = 7
     ),
     new Account(
         Name = 'ApexX Demo - No Number Yet',
         Rating = 'Hot',
-        AnnualRevenue = 120000
+        AnnualRevenue = 120000,
+        NumberOfEmployees = 20
     )
 };
 insert accounts;

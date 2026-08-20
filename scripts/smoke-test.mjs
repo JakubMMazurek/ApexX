@@ -83,13 +83,14 @@ const lwcUtilOutput = fs.readFileSync(
 );
 
 assert.match(accountOutput, /List<Account> apexxFilter0 = new List<Account>\(\);/);
-assert.match(accountOutput, /public static List<Account> loadHotAccounts\(\)/);
+assert.match(accountOutput, /public static List<Account> loadPriorityAccounts\(\)/);
 assert.match(accountOutput, /public static List<String> loadHotContactEmails\(\)/);
 assert.match(accountOutput, /public static AccountSummary loadAccountSummary\(\)/);
 assert.match(accountOutput, /public static Boolean loadRevenueComparison\(\)/);
-assert.match(accountOutput, /new UserFriendlyError\(\)\.handle\(new ApexX\.Invocation\('AccountService', 'loadHotAccounts'/);
-assert.match(accountOutput, /public static List<Account> hotAccounts\(List<Account> accounts, String rating\)/);
-assert.match(accountOutput, /new UserFriendlyError\(\)\.handle\(new ApexX\.Invocation\('AccountService', 'hotAccounts'/);
+assert.match(accountOutput, /public static void triggerUserFriendlyError\(\)/);
+assert.match(accountOutput, /new UserFriendlyError\(\)\.handle\(new ApexX\.Invocation\('AccountService', 'loadPriorityAccounts'/);
+assert.match(accountOutput, /account\.AnnualRevenue \/ account\.NumberOfEmployees > 10000/);
+assert.match(accountOutput, /contact\.FirstName\.length\(\) <= contact\.LastName\.length\(\)/);
 assert.match(accountOutput, /new Map<String, Object>\(\)/);
 assert.match(accountOutput, /'message' => 'Unable to save account\.'/);
 assert.match(accountOutput, /List<Contact> apexxFlatMap0 = new List<Contact>\(\);/);

@@ -14,24 +14,17 @@ public with sharing class AccountService {
     }
 
     @AuraEnabled(cacheable=true)
-    public static List<Account> loadHotAccounts() {
-        return (List<Account>) new UserFriendlyError().handle(new ApexX.Invocation('AccountService', 'loadHotAccounts', new List<String>{  }, new List<Object>{  }, new Map<String, Object>()), new ApexXNext0());
+    public static List<Account> loadPriorityAccounts() {
+        return (List<Account>) new UserFriendlyError().handle(new ApexX.Invocation('AccountService', 'loadPriorityAccounts', new List<String>{  }, new List<Object>{  }, new Map<String, Object>()), new ApexXNext0());
     }
-    private static List<Account> loadHotAccounts_ApexXBody0() {
-            List<Account> accounts = [
-                SELECT Id, Name, Rating, AccountNumber
-                FROM Account
-                WHERE Name LIKE 'ApexX Demo%' AND Rating = 'Hot'
-                ORDER BY Name
-            ];
-    
-            return hotAccounts(accounts, 'Hot');
+    private static List<Account> loadPriorityAccounts_ApexXBody0() {
+            return priorityAccounts(demoAccounts());
     }
     private class ApexXNext0 implements ApexX.Next {
         private ApexXNext0() {
         }
         public Object call() {
-            return AccountService.loadHotAccounts_ApexXBody0();
+            return AccountService.loadPriorityAccounts_ApexXBody0();
         }
     }
 
@@ -91,33 +84,20 @@ public with sharing class AccountService {
     }
 
     @AuraEnabled
-    public static List<Account> hotAccounts(List<Account> accounts, String rating) {
-        return (List<Account>) new UserFriendlyError().handle(new ApexX.Invocation('AccountService', 'hotAccounts', new List<String>{ 'accounts', 'rating' }, new List<Object>{ accounts, rating }, new Map<String, Object>()), new ApexXNext4(accounts, rating));
+    public static void triggerUserFriendlyError() {
+        new UserFriendlyError().handle(new ApexX.Invocation('AccountService', 'triggerUserFriendlyError', new List<String>{  }, new List<Object>{  }, new Map<String, Object>()), new ApexXNext4());
+        return;
     }
-    private static List<Account> hotAccounts_ApexXBody0(List<Account> accounts, String rating) {
-            List<Account> apexxFilter1 = new List<Account>();
-            for (Account account : accounts) {
-                if (account.Rating == rating) {
-                    apexxFilter1.add(account);
-                }
-            }
-            List<Account> apexxFilter2 = new List<Account>();
-            for (Account account : apexxFilter1) {
-                if (account.AccountNumber != null) {
-                    apexxFilter2.add(account);
-                }
-            }
-            return apexxFilter2;
+    private static void triggerUserFriendlyError_ApexXBody0() {
+            String missingValue = null;
+            missingValue.trim();
     }
     private class ApexXNext4 implements ApexX.Next {
-        private List<Account> accounts;
-        private String rating;
-        private ApexXNext4(List<Account> accounts, String rating) {
-            this.accounts = accounts;
-            this.rating = rating;
+        private ApexXNext4() {
         }
         public Object call() {
-            return AccountService.hotAccounts_ApexXBody0(accounts, rating);
+            AccountService.triggerUserFriendlyError_ApexXBody0();
+            return null;
         }
     }
 
@@ -146,7 +126,7 @@ public with sharing class AccountService {
 
     public static List<Account> demoAccounts() {
         return [
-            SELECT Id, Name, Rating, AccountNumber, AnnualRevenue
+            SELECT Id, Name, Rating, AccountNumber, AnnualRevenue, NumberOfEmployees
             FROM Account
             WHERE Name LIKE 'ApexX Demo%'
             ORDER BY Name
@@ -156,7 +136,7 @@ public with sharing class AccountService {
 
     public static List<Account> demoAccountsWithContacts() {
         return [
-            SELECT Id, Name, Rating, AccountNumber, AnnualRevenue,
+            SELECT Id, Name, Rating, AccountNumber, AnnualRevenue, NumberOfEmployees,
                 (SELECT Id, FirstName, LastName, Email FROM Contacts)
             FROM Account
             WHERE Name LIKE 'ApexX Demo%'
@@ -165,25 +145,47 @@ public with sharing class AccountService {
         ];
     }
 
-    public static List<String> hotContactEmails(List<Account> accounts) {
-        List<Account> apexxFilter3 = new List<Account>();
+    public static List<Account> priorityAccounts(List<Account> accounts) {
+        List<Account> apexxFilter1 = new List<Account>();
         for (Account account : accounts) {
-            if (account.Rating == 'Hot') {
+            if (account.AccountNumber != null) {
+                apexxFilter1.add(account);
+            }
+        }
+        List<Account> apexxFilter2 = new List<Account>();
+        for (Account account : apexxFilter1) {
+            if (account.AnnualRevenue != null) {
+                apexxFilter2.add(account);
+            }
+        }
+        List<Account> apexxFilter3 = new List<Account>();
+        for (Account account : apexxFilter2) {
+            if (account.NumberOfEmployees != null) {
                 apexxFilter3.add(account);
             }
         }
-        List<Contact> apexxFlatMap0 = new List<Contact>();
+        List<Account> apexxFilter4 = new List<Account>();
         for (Account account : apexxFilter3) {
+            if (account.AnnualRevenue / account.NumberOfEmployees > 10000) {
+                apexxFilter4.add(account);
+            }
+        }
+        return apexxFilter4;
+    }
+
+    public static List<String> hotContactEmails(List<Account> accounts) {
+        List<Contact> apexxFlatMap0 = new List<Contact>();
+        for (Account account : accounts) {
             apexxFlatMap0.addAll(account.Contacts);
         }
-        List<Contact> apexxFilter4 = new List<Contact>();
+        List<Contact> apexxFilter5 = new List<Contact>();
         for (Contact contact : apexxFlatMap0) {
-            if (contact.Email != null) {
-                apexxFilter4.add(contact);
+            if (contact.Email != null && contact.FirstName.length() <= contact.LastName.length()) {
+                apexxFilter5.add(contact);
             }
         }
         List<String> apexxMap0 = new List<String>();
-        for (Contact contact : apexxFilter4) {
+        for (Contact contact : apexxFilter5) {
             apexxMap0.add(contact.Email.toLowerCase());
         }
         return apexxMap0;
@@ -213,14 +215,14 @@ public with sharing class AccountService {
             }
         }
         Account firstHot = apexxFind0;
-        List<Account> apexxFilter5 = new List<Account>();
+        List<Account> apexxFilter6 = new List<Account>();
         for (Account account : accounts) {
             if (account.Name != null) {
-                apexxFilter5.add(account);
+                apexxFilter6.add(account);
             }
         }
         List<String> apexxMap1 = new List<String>();
-        for (Account account : apexxFilter5) {
+        for (Account account : apexxFilter6) {
             apexxMap1.add(account.Name);
         }
         List<String> names = apexxMap1;

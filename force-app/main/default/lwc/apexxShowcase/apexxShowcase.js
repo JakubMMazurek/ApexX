@@ -1,16 +1,19 @@
 import { LightningElement } from 'lwc';
 import loadAccountSummary from '@salesforce/apex/AccountService.loadAccountSummary';
-import loadHotAccounts from '@salesforce/apex/AccountService.loadHotAccounts';
 import loadHotContactEmails from '@salesforce/apex/AccountService.loadHotContactEmails';
+import loadPriorityAccounts from '@salesforce/apex/AccountService.loadPriorityAccounts';
 import loadRevenueComparison from '@salesforce/apex/AccountService.loadRevenueComparison';
+import triggerUserFriendlyError from '@salesforce/apex/AccountService.triggerUserFriendlyError';
 
 export default class ApexxShowcase extends LightningElement {
-    hotAccountsData = [];
+    priorityAccountsData = [];
     emails = [];
     summary;
     revenueWithinTolerance = false;
     errorMessage;
+    handledErrorMessage;
     loading = false;
+    triggeringError = false;
 
     connectedCallback() {
         this.refresh();
@@ -21,25 +24,39 @@ export default class ApexxShowcase extends LightningElement {
         this.errorMessage = undefined;
 
         try {
-            const [hotAccounts, emails, summary, revenueWithinTolerance] = await Promise.all([
-                loadHotAccounts(),
+            const [priorityAccounts, emails, summary, revenueWithinTolerance] = await Promise.all([
+                loadPriorityAccounts(),
                 loadHotContactEmails(),
                 loadAccountSummary(),
                 loadRevenueComparison()
             ]);
 
-            this.hotAccountsData = hotAccounts ?? [];
+            this.priorityAccountsData = priorityAccounts ?? [];
             this.emails = emails ?? [];
             this.summary = summary;
             this.revenueWithinTolerance = revenueWithinTolerance;
         } catch (error) {
-            this.hotAccountsData = [];
+            this.priorityAccountsData = [];
             this.emails = [];
             this.summary = undefined;
             this.revenueWithinTolerance = false;
             this.errorMessage = this.normalizeError(error);
         } finally {
             this.loading = false;
+        }
+    }
+
+    async triggerError() {
+        this.triggeringError = true;
+        this.handledErrorMessage = undefined;
+
+        try {
+            await triggerUserFriendlyError();
+            this.handledErrorMessage = 'No error was thrown.';
+        } catch (error) {
+            this.handledErrorMessage = this.normalizeError(error);
+        } finally {
+            this.triggeringError = false;
         }
     }
 
@@ -50,8 +67,8 @@ export default class ApexxShowcase extends LightningElement {
                 value: this.summary?.names?.length ?? 0
             },
             {
-                label: 'Hot accounts',
-                value: this.hotCount
+                label: 'Priority accounts',
+                value: this.priorityCount
             },
             {
                 label: 'Contact emails',
@@ -60,11 +77,15 @@ export default class ApexxShowcase extends LightningElement {
         ];
     }
 
-    get hotAccounts() {
-        return this.hotAccountsData.map((account) => ({
+    get priorityAccounts() {
+        return this.priorityAccountsData.map((account) => ({
             ...account,
             url: `/${account.Id}`
         }));
+    }
+
+    get priorityCount() {
+        return this.priorityAccounts.length;
     }
 
     get hotCount() {
@@ -75,8 +96,8 @@ export default class ApexxShowcase extends LightningElement {
         return this.emails.length;
     }
 
-    get hasHotAccounts() {
-        return this.hotAccounts.length > 0;
+    get hasPriorityAccounts() {
+        return this.priorityAccounts.length > 0;
     }
 
     get hasEmails() {

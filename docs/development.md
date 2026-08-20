@@ -37,7 +37,7 @@ npm run sf:seed -- --target-org apexx
 npm run sf:open:showcase -- --target-org apexx
 ```
 
-The `apexxShowcase` LWC calls several focused `AccountService` methods. `loadHotAccounts()` demonstrates filtering and decorators, `loadHotContactEmails()` demonstrates `filter` + `flatMap` + `map`, `loadAccountSummary()` demonstrates `count` + `all` + `find`, and `loadRevenueComparison()` demonstrates `Func` plus a default-argument helper.
+The `apexxShowcase` LWC calls several focused `AccountService` methods. `loadPriorityAccounts()` demonstrates computed filtering and decorators, `loadHotContactEmails()` demonstrates `filter` + `flatMap` + `map`, `loadAccountSummary()` demonstrates `count` + `all` + `find`, `loadRevenueComparison()` demonstrates `Func` plus a default-argument helper, and `triggerUserFriendlyError()` demonstrates the decorator error boundary.
 
 ## Parse A Single File
 

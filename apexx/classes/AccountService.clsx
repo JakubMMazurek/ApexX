@@ -1,15 +1,8 @@
 public with sharing class AccountService {
     @AuraEnabled(cacheable=true)
     @UserFriendlyError
-    public static List<Account> loadHotAccounts() {
-        List<Account> accounts = [
-            SELECT Id, Name, Rating, AccountNumber
-            FROM Account
-            WHERE Name LIKE 'ApexX Demo%' AND Rating = 'Hot'
-            ORDER BY Name
-        ];
-
-        return hotAccounts(accounts, 'Hot');
+    public static List<Account> loadPriorityAccounts() {
+        return priorityAccounts(demoAccounts());
     }
 
     @AuraEnabled(cacheable=true)
@@ -37,10 +30,9 @@ public with sharing class AccountService {
 
     @AuraEnabled
     @UserFriendlyError
-    public static List<Account> hotAccounts(List<Account> accounts, String rating) {
-        return accounts
-            .filter(account => account.Rating == rating)
-            .filter(account => account.AccountNumber != null);
+    public static void triggerUserFriendlyError() {
+        String missingValue = null;
+        missingValue.trim();
     }
 
     @AuraEnabled
@@ -55,7 +47,7 @@ public with sharing class AccountService {
 
     public static List<Account> demoAccounts() {
         return [
-            SELECT Id, Name, Rating, AccountNumber, AnnualRevenue
+            SELECT Id, Name, Rating, AccountNumber, AnnualRevenue, NumberOfEmployees
             FROM Account
             WHERE Name LIKE 'ApexX Demo%'
             ORDER BY Name
@@ -65,7 +57,7 @@ public with sharing class AccountService {
 
     public static List<Account> demoAccountsWithContacts() {
         return [
-            SELECT Id, Name, Rating, AccountNumber, AnnualRevenue,
+            SELECT Id, Name, Rating, AccountNumber, AnnualRevenue, NumberOfEmployees,
                 (SELECT Id, FirstName, LastName, Email FROM Contacts)
             FROM Account
             WHERE Name LIKE 'ApexX Demo%'
@@ -74,11 +66,18 @@ public with sharing class AccountService {
         ];
     }
 
+    public static List<Account> priorityAccounts(List<Account> accounts) {
+        return accounts
+            .filter(account => account.AccountNumber != null)
+            .filter(account => account.AnnualRevenue != null)
+            .filter(account => account.NumberOfEmployees != null)
+            .filter(account => account.AnnualRevenue / account.NumberOfEmployees > 10000);
+    }
+
     public static List<String> hotContactEmails(List<Account> accounts) {
         return accounts
-            .filter(account => account.Rating == 'Hot')
             .flatMap(account => account.Contacts)
-            .filter(contact => contact.Email != null)
+            .filter(contact => contact.Email != null && contact.FirstName.length() <= contact.LastName.length())
             .map(contact => contact.Email.toLowerCase());
     }
 

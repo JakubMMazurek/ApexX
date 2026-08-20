@@ -5,13 +5,21 @@
                 <p class="eyebrow">Live org data</p>
                 <h1>Focused ApexX methods powering one tab</h1>
             </div>
-            <lightning-button-icon
-                icon-name="utility:refresh"
-                alternative-text="Refresh"
-                title="Refresh"
-                onclick={refresh}
-                disabled={loading}
-            ></lightning-button-icon>
+            <div class="actions">
+                <lightning-button
+                    label="Trigger handled error"
+                    variant="neutral"
+                    onclick={triggerError}
+                    disabled={triggeringError}
+                ></lightning-button>
+                <lightning-button-icon
+                    icon-name="utility:refresh"
+                    alternative-text="Refresh"
+                    title="Refresh"
+                    onclick={refresh}
+                    disabled={loading}
+                ></lightning-button-icon>
+            </div>
         </div>
 
         <template lwc:if={loading}>
@@ -40,13 +48,13 @@
             <section class="grid">
                 <article>
                     <div class="sectionHeader">
-                        <h2>Hot accounts</h2>
-                        <span>{hotCount}</span>
+                        <h2>Priority accounts</h2>
+                        <span>{priorityCount}</span>
                     </div>
-                    <p class="method">loadHotAccounts -> filter + decorator</p>
-                    <template lwc:if={hasHotAccounts}>
+                    <p class="method">loadPriorityAccounts -> computed filter + decorator</p>
+                    <template lwc:if={hasPriorityAccounts}>
                         <ul class="rows">
-                            <template for:each={hotAccounts} for:item="account">
+                            <template for:each={priorityAccounts} for:item="account">
                                 <li key={account.Id}>
                                     <a href={account.url}>{account.Name}</a>
                                     <span>{account.AccountNumber}</span>
@@ -55,7 +63,7 @@
                         </ul>
                     </template>
                     <template lwc:else>
-                        <p class="empty">No hot demo accounts found.</p>
+                        <p class="empty">No priority demo accounts matched the computed rule.</p>
                     </template>
                 </article>
 
@@ -64,7 +72,7 @@
                         <h2>Flattened contact emails</h2>
                         <span>{emailCount}</span>
                     </div>
-                    <p class="method">loadHotContactEmails -> filter + flatMap + map</p>
+                    <p class="method">loadHotContactEmails -> flatMap + computed contact filter + map</p>
                     <template lwc:if={hasEmails}>
                         <ul class="rows">
                             <template for:each={emails} for:item="email">
@@ -95,6 +103,16 @@
                     <span>{revenueWithinToleranceLabel}</span>
                 </p>
                 <p class="method">loadRevenueComparison -> default arg + Func</p>
+            </section>
+
+            <section class="errorDemo">
+                <div>
+                    <h2>Decorated error boundary</h2>
+                    <p class="method">triggerUserFriendlyError -> decorator returns the default friendly message</p>
+                </div>
+                <template lwc:if={handledErrorMessage}>
+                    <p class="handledError">{handledErrorMessage}</p>
+                </template>
             </section>
         </template>
     </lightning-card>
