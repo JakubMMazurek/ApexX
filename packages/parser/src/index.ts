@@ -21,6 +21,8 @@ const assignmentStatementPattern =
 const expressionStatementPattern = /^([ \t]*)([A-Za-z][A-Za-z0-9_]*)/gm;
 const funcLambdaAssignmentPattern =
   /^([ \t]*)(Func\s*<\s*([^>\r\n]+?)\s*>)\s+([A-Za-z][A-Za-z0-9_]*)\s*=\s*\(([^)\r\n]*)\)\s*=>\s*([\s\S]*?)\s*;[ \t]*(?=\r?$)/gm;
+const funcLambdaReassignmentPattern =
+  /^([ \t]*)([A-Za-z][A-Za-z0-9_]*)\s*=\s*\(([^)\r\n]*)\)\s*=>\s*([\s\S]*?)\s*;[ \t]*(?=\r?$)/gm;
 
 export interface ApexParseResult {
   ok: boolean;
@@ -91,7 +93,7 @@ export function parseApexX(source: string, fileName?: string): ApexXParseResult 
     const expectedParameterCount = assignment.parameterTypes.length;
     const actualParameterCount = assignment.lambda.parameters.length;
 
-    if (expectedParameterCount !== actualParameterCount) {
+    if (!assignment.isReassignment && expectedParameterCount !== actualParameterCount) {
       diagnostics.push({
         severity: "error",
         source: "apexx-parser",
@@ -173,7 +175,54 @@ export function findFuncLambdaAssignments(
     });
   }
 
+  for (const match of source.matchAll(funcLambdaReassignmentPattern)) {
+    const start = match.index ?? 0;
+
+    if (rangesOverlapExistingAssignment(assignments, start, start + match[0].length)) {
+      continue;
+    }
+
+    const parameterListStart = start + match[0].indexOf("(") + 1;
+    const parameters = parseLambdaParameters(
+      source,
+      parameterListStart,
+      match[3],
+    );
+    const bodyStart = match[0].indexOf("=>") + 2 + start;
+    const bodyEnd = start + match[0].replace(/[ \t]*;[ \t]*$/, "").length;
+
+    assignments.push({
+      kind: "funcLambdaAssignment",
+      indent: match[1],
+      sourceFuncType: "",
+      parameterTypes: [],
+      returnType: "Object",
+      variableName: match[2],
+      isReassignment: true,
+      lambda: {
+        parameterName: parameters[0]?.name ?? "",
+        parameters,
+        body: source.slice(bodyStart, bodyEnd).trim(),
+        range: createRange(source, parameterListStart, bodyEnd),
+      },
+      originalText: match[0],
+      range: createRange(source, start, start + match[0].length),
+    });
+  }
+
   return assignments.sort((left, right) => left.range.start.offset - right.range.start.offset);
+}
+
+function rangesOverlapExistingAssignment(
+  assignments: FuncLambdaAssignment[],
+  start: number,
+  end: number,
+): boolean {
+  return assignments.some(
+    assignment =>
+      start >= assignment.range.start.offset &&
+      end <= assignment.range.end.offset,
+  );
 }
 
 export function findFuncInvocations(
@@ -251,7 +300,8 @@ export function findFuncInvocations(
     const previous = previousNonWhitespace(source, identifier.startOffset);
 
     if (
-      funcVariableNames.has(identifier.name) &&
+      (funcVariableNames.has(identifier.name) ||
+        funcVariableNames.has(identifier.name.toLowerCase())) &&
       previous !== "." &&
       source[openParen] === "("
     ) {

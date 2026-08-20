@@ -85,6 +85,7 @@ const lwcUtilOutput = fs.readFileSync(
 assert.match(accountOutput, /List<Account> apexxFilter0 = new List<Account>\(\);/);
 assert.match(accountOutput, /public static List<Account> loadPriorityAccounts\(\)/);
 assert.match(accountOutput, /public static List<String> loadNormalizedContactEmails\(\)/);
+assert.match(accountOutput, /public static List<AccountWorkItem> loadRenewalWork\(\)/);
 assert.match(accountOutput, /public static AccountSummary loadAccountSummary\(\)/);
 assert.match(accountOutput, /public static Boolean loadRevenueComparison\(\)/);
 assert.match(accountOutput, /public static void triggerUserFriendlyError\(\)/);
@@ -95,11 +96,18 @@ assert.match(accountOutput, /account\.AnnualRevenue \/ account\.NumberOfEmployee
 assert.match(accountOutput, /contact\.Email\.contains\('@'\)/);
 assert.match(accountOutput, /contact\.Email\.trim\(\)\.toLowerCase\(\)/);
 assert.doesNotMatch(accountOutput, /account\.AccountNumber != null\)\s*\{\s*apexxFilter\d+\.add\(account\);\s*\}\s*\}\s*List<Account> apexxFilter\d+/s);
+assert.match(
+  accountOutput,
+  /public static List<AccountWorkItem> buildRenewalWork\(\s*List<Account> accounts,\s*ApexXFunc0 shouldEscalate\s*\)/,
+);
+assert.match(accountOutput, /ApexXFunc0 shouldEscalate;/);
+assert.match(accountOutput, /Boolean escalate = shouldEscalate\.invoke\(account\);/);
+assert.match(accountOutput, /apexxMap\d+\.add\(new AccountWorkItem\(/);
 assert.match(accountOutput, /new Map<String, Object>\(\)/);
 assert.match(accountOutput, /'message' => 'Unable to save account\.'/);
 assert.match(accountOutput, /List<Contact> apexxFlatMap0 = new List<Contact>\(\);/);
 assert.match(accountOutput, /Integer apexxCount0 = 0;/);
-assert.match(accountOutput, /ApexXFunc0 isHot = new ApexXLambda0\(\);/);
+assert.match(accountOutput, /ApexXFunc0 isHot = new ApexXLambda\d+\(\);/);
 assert.match(accountOutput, /if \(isHot\.invoke\(account\)\) \{/);
 assert.match(accountOutput, /Boolean apexxAll0 = true;/);
 assert.match(accountOutput, /Account apexxFind0 = null;/);
@@ -442,7 +450,7 @@ const funcLambdaErrors = funcLambdaResult.diagnostics.filter(
 );
 assert.deepEqual(funcLambdaErrors, []);
 assert.match(funcLambdaResult.output, /public interface ApexXFunc0/);
-assert.match(funcLambdaResult.output, /Boolean invoke\(Integer x, Integer y\);/);
+assert.match(funcLambdaResult.output, /Boolean invoke\(Integer arg0, Integer arg1\);/);
 assert.match(funcLambdaResult.output, /private class ApexXLambda0 implements ApexXFunc0/);
 assert.match(funcLambdaResult.output, /return x == y;/);
 assert.match(
@@ -480,6 +488,56 @@ assert.match(
 assert.match(
   capturedFuncLambdaResult.output,
   /return actual == expected \|\| \(actual - expected\)\.abs\(\) <= tolerance;/,
+);
+
+const funcParameterBlockMapSource = `public with sharing class WorkService {
+    public static List<WorkItem> buildWork(List<Account> accounts, Func<Account, Boolean> shouldEscalate) {
+        return accounts.map(account => {
+            Boolean escalate = shouldEscalate(account);
+            return new WorkItem(account.Id, escalate ? 'High' : 'Normal');
+        });
+    }
+
+    public static List<WorkItem> loadWork(List<Account> accounts, String mode) {
+        Func<Account, Boolean> shouldEscalate;
+        if (mode == 'Revenue') {
+            shouldEscalate = (account) => account.AnnualRevenue != null && account.AnnualRevenue > 100000;
+        } else {
+            shouldEscalate = (account) => account.Rating == 'Hot';
+        }
+
+        return buildWork(accounts, shouldEscalate);
+    }
+
+    public class WorkItem {
+        public Id accountId;
+        public String priority;
+
+        public WorkItem(Id accountId, String priority) {
+            this.accountId = accountId;
+            this.priority = priority;
+        }
+    }
+}
+`;
+const funcParameterBlockMapResult = transpileApexX(funcParameterBlockMapSource, {
+  sourceFileName: "WorkService.clsx",
+});
+const funcParameterBlockMapErrors = funcParameterBlockMapResult.diagnostics.filter(
+  diagnostic => diagnostic.severity === "error",
+);
+assert.deepEqual(funcParameterBlockMapErrors, []);
+assert.match(
+  funcParameterBlockMapResult.output,
+  /public static List<WorkItem> buildWork\(List<Account> accounts, ApexXFunc0 shouldEscalate\)/,
+);
+assert.match(funcParameterBlockMapResult.output, /ApexXFunc0 shouldEscalate;/);
+assert.match(funcParameterBlockMapResult.output, /shouldEscalate = new ApexXLambda0\(\);/);
+assert.match(funcParameterBlockMapResult.output, /shouldEscalate = new ApexXLambda1\(\);/);
+assert.match(funcParameterBlockMapResult.output, /Boolean escalate = shouldEscalate\.invoke\(account\);/);
+assert.match(
+  funcParameterBlockMapResult.output,
+  /apexxMap0\.add\(new WorkItem\(account\.Id, escalate \? 'High' : 'Normal'\)\);/,
 );
 
 const nestedFuncCallSource = `public with sharing class EqualityService {

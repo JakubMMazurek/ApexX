@@ -24,7 +24,7 @@ npm run test
 
 The smoke test builds `apexx/classes` and checks that the generated output contains the expected typed loops, default-argument overloads, decorator lowering, generated `ApexX.cls` support, and unresolved decorator diagnostics. The LSP smoke test opens in-memory `.clsx` documents against the real ApexX language server and checks completion labels for list chains and lambda parameters.
 
-The `apexx/classes` directory is the living showcase. It contains collection helpers, default arguments, `Func` lambdas, generated decorators, and the user-defined `UserFriendlyError` policy class.
+The `apexx/classes` directory is the living showcase. It contains collection helpers, default arguments, first-class `Func` lambdas, block `map` lambdas, generated decorators, and the user-defined `UserFriendlyError` policy class.
 
 ## Salesforce Showcase
 
@@ -37,7 +37,7 @@ npm run sf:seed -- --target-org apexx
 npm run sf:open:showcase -- --target-org apexx
 ```
 
-The `apexxShowcase` LWC calls several focused `AccountService` methods. `loadPriorityAccounts()` demonstrates computed filtering and decorators, `loadNormalizedContactEmails()` demonstrates `filter` + `flatMap` + `map`, `loadAccountSummary()` demonstrates a reused `Func` predicate with `count` + `all` + `find`, `loadRevenueComparison()` demonstrates a default-argument helper, and `triggerUserFriendlyError()` demonstrates the decorator error boundary.
+The `apexxShowcase` LWC calls several focused `AccountService` methods. `loadPriorityAccounts()` demonstrates computed filtering and decorators, `loadNormalizedContactEmails()` demonstrates `filter` + `flatMap` + `map`, `loadRenewalWork()` demonstrates selecting a `Func`, passing it into a workflow method, and using a block `map` lambda, `loadAccountSummary()` demonstrates a reused `Func` predicate with `count` + `all` + `find`, `loadRevenueComparison()` demonstrates a default-argument helper, and `triggerUserFriendlyError()` demonstrates the decorator error boundary.
 
 ## Parse A Single File
 

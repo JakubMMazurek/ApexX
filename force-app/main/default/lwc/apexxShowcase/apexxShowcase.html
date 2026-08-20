@@ -88,6 +88,28 @@
                 </article>
             </section>
 
+            <section class="workPanel">
+                <div class="sectionHeader">
+                    <h2>Renewal work queue</h2>
+                    <span>{renewalWorkCount}</span>
+                </div>
+                <p class="method">loadRenewalWork -> selected Func + workflow method + block map</p>
+                <template lwc:if={hasRenewalWork}>
+                    <ul class="workItems">
+                        <template for:each={renewalWork} for:item="item">
+                            <li key={item.accountId}>
+                                <a href={item.url}>{item.accountName}</a>
+                                <strong>{item.priority}</strong>
+                                <span>{item.reason}</span>
+                            </li>
+                        </template>
+                    </ul>
+                </template>
+                <template lwc:else>
+                    <p class="empty">No renewal work generated.</p>
+                </template>
+            </section>
+
             <section class="summary">
                 <p class="method">loadAccountSummary -> reused Func + count + all + find + map</p>
                 <p>

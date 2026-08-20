@@ -95,6 +95,7 @@ export interface FuncLambdaAssignment {
   lambda: LambdaExpression;
   originalText: string;
   range: SourceRange;
+  isReassignment?: boolean;
   captures?: CapturedVariable[];
   interfaceName?: string;
   implementationName?: string;

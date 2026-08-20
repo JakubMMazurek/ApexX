@@ -13,7 +13,9 @@ The first milestone is intentionally small:
 - chained list helpers are typed step by step
 - standalone `List<T>.filter(...)` expression statements parse while editing, even when the result is not assigned
 - `Func<T1, T2, TResult> name = (x, y) => expression` lowers to a generated invokable inner class
+- `Func` values can be declared, reassigned with lambdas, and passed as method parameters
 - `Func` variables can be called directly in `.clsx`; generated Apex emits `.invoke(...)`
+- `map` supports block lambdas for short multi-statement projections
 - trailing default method arguments generate ordinary Apex overloads
 - custom method decorators resolve from classes that implement `ApexX.Decorator`
 - upstream Apex parsing is reused to validate generated `.cls`
@@ -140,7 +142,7 @@ List<String> emails = accounts
     .map(c => c.Email);
 ```
 
-`Func` lambda assignments are also supported as a first proof of concept. ApexX accepts C#-style lowercase aliases such as `int` and `bool` and emits Salesforce Apex type names:
+`Func` lambda assignments are also supported. ApexX accepts C#-style lowercase aliases such as `int` and `bool` and emits Salesforce Apex type names:
 
 ```apex
 Func<int, int, bool> testForEquality = (x, y) => x == y;
@@ -151,7 +153,7 @@ Generated Apex:
 
 ```apex
 public interface ApexXFunc0 {
-    Boolean invoke(Integer x, Integer y);
+    Boolean invoke(Integer arg0, Integer arg1);
 }
 
 private class ApexXLambda0 implements ApexXFunc0 {
@@ -162,6 +164,20 @@ private class ApexXLambda0 implements ApexXFunc0 {
 
 ApexXFunc0 testForEquality = new ApexXLambda0();
 return testForEquality.invoke(left, right);
+```
+
+`Func` can also cross method boundaries. This lets a caller choose behavior and pass it into a workflow method:
+
+```apex
+public static List<AccountWorkItem> buildRenewalWork(
+    List<Account> accounts,
+    Func<Account, Boolean> shouldEscalate
+) {
+    return accounts.map(account => {
+        Boolean escalate = shouldEscalate(account);
+        return new AccountWorkItem(account.Id, escalate ? 'High' : 'Normal');
+    });
+}
 ```
 
 Default method arguments generate overloads:
@@ -245,7 +261,7 @@ force-app/main/default/classes/AccountService.cls-meta.xml
 
 The output package directory and API version come from `sfdx-project.json` when present. Outside a Salesforce DX project, ApexX writes to `generated/force-app/main/default/classes`.
 
-The project includes an `apexxShowcase` Lightning Web Component and an `ApexX Showcase` Lightning tab. The tab calls focused `.clsx` methods such as `loadPriorityAccounts()`, `loadNormalizedContactEmails()`, `loadAccountSummary()`, `loadRevenueComparison()`, and `triggerUserFriendlyError()` so each section demonstrates a different ApexX feature: decorators, computed `filter`, `flatMap`, `map`, reused `Func` predicates, `count`, `all`, `find`, default-argument helpers, and decorated error handling. Seed demo data with:
+The project includes an `apexxShowcase` Lightning Web Component and an `ApexX Showcase` Lightning tab. The tab calls focused `.clsx` methods such as `loadPriorityAccounts()`, `loadNormalizedContactEmails()`, `loadRenewalWork()`, `loadAccountSummary()`, `loadRevenueComparison()`, and `triggerUserFriendlyError()` so each section demonstrates a different ApexX feature: decorators, computed `filter`, `flatMap`, `map`, block lambdas, first-class `Func` parameters, reused `Func` predicates, `count`, `all`, `find`, default-argument helpers, and decorated error handling. Seed demo data with:
 
 ```powershell
 npm run sf:seed -- --target-org apexx

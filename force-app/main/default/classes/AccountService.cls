@@ -4,10 +4,24 @@
 
 public with sharing class AccountService {
     public interface ApexXFunc0 {
-        Boolean invoke(Account account);
+        Boolean invoke(Account arg0);
     }
 
     private class ApexXLambda0 implements ApexXFunc0 {
+        public Boolean invoke(Account account) {
+            return account.AnnualRevenue != null
+                && account.AnnualRevenue >= 250000;
+        }
+    }
+
+    private class ApexXLambda1 implements ApexXFunc0 {
+        public Boolean invoke(Account account) {
+            return account.Rating == 'Hot'
+                && account.AccountNumber != null;
+        }
+    }
+
+    private class ApexXLambda2 implements ApexXFunc0 {
         public Boolean invoke(Account account) {
             return account.Rating == 'Hot';
         }
@@ -46,14 +60,29 @@ public with sharing class AccountService {
     }
 
     @AuraEnabled(cacheable=true)
+    public static List<AccountWorkItem> loadRenewalWork() {
+        return (List<AccountWorkItem>) new UserFriendlyError().handle(new ApexX.Invocation('AccountService', 'loadRenewalWork', new List<String>{  }, new List<Object>{  }, new Map<String, Object>()), new ApexXNext2());
+    }
+    private static List<AccountWorkItem> loadRenewalWork_ApexXBody0() {
+            return renewalWork(demoAccounts(), 'Revenue Risk');
+    }
+    private class ApexXNext2 implements ApexX.Next {
+        private ApexXNext2() {
+        }
+        public Object call() {
+            return AccountService.loadRenewalWork_ApexXBody0();
+        }
+    }
+
+    @AuraEnabled(cacheable=true)
     public static AccountSummary loadAccountSummary() {
-        return (AccountSummary) new UserFriendlyError().handle(new ApexX.Invocation('AccountService', 'loadAccountSummary', new List<String>{  }, new List<Object>{  }, new Map<String, Object>()), new ApexXNext2());
+        return (AccountSummary) new UserFriendlyError().handle(new ApexX.Invocation('AccountService', 'loadAccountSummary', new List<String>{  }, new List<Object>{  }, new Map<String, Object>()), new ApexXNext3());
     }
     private static AccountSummary loadAccountSummary_ApexXBody0() {
             return summarize(demoAccountsWithContacts());
     }
-    private class ApexXNext2 implements ApexX.Next {
-        private ApexXNext2() {
+    private class ApexXNext3 implements ApexX.Next {
+        private ApexXNext3() {
         }
         public Object call() {
             return AccountService.loadAccountSummary_ApexXBody0();
@@ -62,7 +91,7 @@ public with sharing class AccountService {
 
     @AuraEnabled(cacheable=true)
     public static Boolean loadRevenueComparison() {
-        return (Boolean) new UserFriendlyError().handle(new ApexX.Invocation('AccountService', 'loadRevenueComparison', new List<String>{  }, new List<Object>{  }, new Map<String, Object>()), new ApexXNext3());
+        return (Boolean) new UserFriendlyError().handle(new ApexX.Invocation('AccountService', 'loadRevenueComparison', new List<String>{  }, new List<Object>{  }, new Map<String, Object>()), new ApexXNext4());
     }
     private static Boolean loadRevenueComparison_ApexXBody0() {
             List<Account> accounts = demoAccounts();
@@ -77,8 +106,8 @@ public with sharing class AccountService {
             return withRevenue.size() > 1
                 && compareRevenue(withRevenue.get(0), withRevenue.get(1), 1000);
     }
-    private class ApexXNext3 implements ApexX.Next {
-        private ApexXNext3() {
+    private class ApexXNext4 implements ApexX.Next {
+        private ApexXNext4() {
         }
         public Object call() {
             return AccountService.loadRevenueComparison_ApexXBody0();
@@ -87,15 +116,15 @@ public with sharing class AccountService {
 
     @AuraEnabled
     public static void triggerUserFriendlyError() {
-        new UserFriendlyError().handle(new ApexX.Invocation('AccountService', 'triggerUserFriendlyError', new List<String>{  }, new List<Object>{  }, new Map<String, Object>()), new ApexXNext4());
+        new UserFriendlyError().handle(new ApexX.Invocation('AccountService', 'triggerUserFriendlyError', new List<String>{  }, new List<Object>{  }, new Map<String, Object>()), new ApexXNext5());
         return;
     }
     private static void triggerUserFriendlyError_ApexXBody0() {
             String missingValue = null;
             missingValue.trim();
     }
-    private class ApexXNext4 implements ApexX.Next {
-        private ApexXNext4() {
+    private class ApexXNext5 implements ApexX.Next {
+        private ApexXNext5() {
         }
         public Object call() {
             AccountService.triggerUserFriendlyError_ApexXBody0();
@@ -105,7 +134,7 @@ public with sharing class AccountService {
 
     @AuraEnabled
     public static Account save(Account account, Boolean validate) {
-        return (Account) new UserFriendlyError().handle(new ApexX.Invocation('AccountService', 'save', new List<String>{ 'account', 'validate' }, new List<Object>{ account, validate }, new Map<String, Object>{ 'message' => 'Unable to save account.' }), new ApexXNext5(account, validate));
+        return (Account) new UserFriendlyError().handle(new ApexX.Invocation('AccountService', 'save', new List<String>{ 'account', 'validate' }, new List<Object>{ account, validate }, new Map<String, Object>{ 'message' => 'Unable to save account.' }), new ApexXNext6(account, validate));
     }
     private static Account save_ApexXBody0(Account account, Boolean validate) {
             if (validate) {
@@ -114,10 +143,10 @@ public with sharing class AccountService {
             update account;
             return account;
     }
-    private class ApexXNext5 implements ApexX.Next {
+    private class ApexXNext6 implements ApexX.Next {
         private Account account;
         private Boolean validate;
-        private ApexXNext5(Account account, Boolean validate) {
+        private ApexXNext6(Account account, Boolean validate) {
             this.account = account;
             this.validate = validate;
         }
@@ -128,7 +157,7 @@ public with sharing class AccountService {
 
     public static List<Account> demoAccounts() {
         return [
-            SELECT Id, Name, Rating, AccountNumber, AnnualRevenue, NumberOfEmployees
+            SELECT Id, Name, OwnerId, Rating, AccountNumber, AnnualRevenue, NumberOfEmployees
             FROM Account
             WHERE Name LIKE 'ApexX Demo%'
             ORDER BY Name
@@ -138,7 +167,7 @@ public with sharing class AccountService {
 
     public static List<Account> demoAccountsWithContacts() {
         return [
-            SELECT Id, Name, Rating, AccountNumber, AnnualRevenue, NumberOfEmployees,
+            SELECT Id, Name, OwnerId, Rating, AccountNumber, AnnualRevenue, NumberOfEmployees,
                 (SELECT Id, FirstName, LastName, Email FROM Contacts)
             FROM Account
             WHERE Name LIKE 'ApexX Demo%'
@@ -180,8 +209,41 @@ public with sharing class AccountService {
         return apexxMap0;
     }
 
+    public static List<AccountWorkItem> renewalWork(List<Account> accounts) {
+        return renewalWork(accounts, 'Revenue Risk');
+    }
+    public static List<AccountWorkItem> renewalWork(List<Account> accounts, String mode) {
+            ApexXFunc0 shouldEscalate;
+    
+            if (mode == 'Revenue Risk') {
+                shouldEscalate = new ApexXLambda0();
+            } else {
+                shouldEscalate = new ApexXLambda1();
+            }
+    
+            return buildRenewalWork(accounts, shouldEscalate);
+    }
+
+    public static List<AccountWorkItem> buildRenewalWork(
+        List<Account> accounts,
+        ApexXFunc0 shouldEscalate
+    ) {
+        List<AccountWorkItem> apexxMap1 = new List<AccountWorkItem>();
+        for (Account account : accounts) {
+            Boolean escalate = shouldEscalate.invoke(account);
+            apexxMap1.add(new AccountWorkItem(
+            account.Id,
+            account.Name,
+            account.OwnerId,
+            escalate ? 'High' : 'Normal',
+            escalate ? 'Revenue review' : 'Standard renewal'
+            ));
+        }
+        return apexxMap1;
+    }
+
     public static AccountSummary summarize(List<Account> accounts) {
-        ApexXFunc0 isHot = new ApexXLambda0();
+        ApexXFunc0 isHot = new ApexXLambda2();
 
         Integer apexxCount0 = 0;
         for (Account account : accounts) {
@@ -212,11 +274,11 @@ public with sharing class AccountService {
                 apexxFilter3.add(account);
             }
         }
-        List<String> apexxMap1 = new List<String>();
+        List<String> apexxMap2 = new List<String>();
         for (Account account : apexxFilter3) {
-            apexxMap1.add(account.Name);
+            apexxMap2.add(account.Name);
         }
-        List<String> names = apexxMap1;
+        List<String> names = apexxMap2;
 
         return new AccountSummary(hotCount, allHaveNumbers, firstHot, names);
     }
@@ -245,6 +307,28 @@ public with sharing class AccountService {
             this.allHaveNumbers = allHaveNumbers;
             this.firstHot = firstHot;
             this.names = names;
+        }
+    }
+
+    public class AccountWorkItem {
+        @AuraEnabled public Id accountId { get; set; }
+        @AuraEnabled public String accountName { get; set; }
+        @AuraEnabled public Id ownerId { get; set; }
+        @AuraEnabled public String priority { get; set; }
+        @AuraEnabled public String reason { get; set; }
+
+        public AccountWorkItem(
+            Id accountId,
+            String accountName,
+            Id ownerId,
+            String priority,
+            String reason
+        ) {
+            this.accountId = accountId;
+            this.accountName = accountName;
+            this.ownerId = ownerId;
+            this.priority = priority;
+            this.reason = reason;
         }
     }
 }

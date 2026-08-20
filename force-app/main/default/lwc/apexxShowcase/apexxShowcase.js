@@ -3,10 +3,12 @@ import loadAccountSummary from '@salesforce/apex/AccountService.loadAccountSumma
 import loadNormalizedContactEmails from '@salesforce/apex/AccountService.loadNormalizedContactEmails';
 import loadPriorityAccounts from '@salesforce/apex/AccountService.loadPriorityAccounts';
 import loadRevenueComparison from '@salesforce/apex/AccountService.loadRevenueComparison';
+import loadRenewalWork from '@salesforce/apex/AccountService.loadRenewalWork';
 import triggerUserFriendlyError from '@salesforce/apex/AccountService.triggerUserFriendlyError';
 
 export default class ApexxShowcase extends LightningElement {
     priorityAccountsData = [];
+    renewalWorkData = [];
     emails = [];
     summary;
     revenueWithinTolerance = false;
@@ -24,19 +26,22 @@ export default class ApexxShowcase extends LightningElement {
         this.errorMessage = undefined;
 
         try {
-            const [priorityAccounts, emails, summary, revenueWithinTolerance] = await Promise.all([
+            const [priorityAccounts, renewalWork, emails, summary, revenueWithinTolerance] = await Promise.all([
                 loadPriorityAccounts(),
+                loadRenewalWork(),
                 loadNormalizedContactEmails(),
                 loadAccountSummary(),
                 loadRevenueComparison()
             ]);
 
             this.priorityAccountsData = priorityAccounts ?? [];
+            this.renewalWorkData = renewalWork ?? [];
             this.emails = emails ?? [];
             this.summary = summary;
             this.revenueWithinTolerance = revenueWithinTolerance;
         } catch (error) {
             this.priorityAccountsData = [];
+            this.renewalWorkData = [];
             this.emails = [];
             this.summary = undefined;
             this.revenueWithinTolerance = false;
@@ -73,6 +78,10 @@ export default class ApexxShowcase extends LightningElement {
             {
                 label: 'Contact emails',
                 value: this.emailCount
+            },
+            {
+                label: 'Renewal work',
+                value: this.renewalWorkCount
             }
         ];
     }
@@ -86,6 +95,17 @@ export default class ApexxShowcase extends LightningElement {
 
     get priorityCount() {
         return this.priorityAccounts.length;
+    }
+
+    get renewalWork() {
+        return this.renewalWorkData.map((item) => ({
+            ...item,
+            url: `/${item.accountId}`
+        }));
+    }
+
+    get renewalWorkCount() {
+        return this.renewalWork.length;
     }
 
     get hotCount() {
@@ -102,6 +122,10 @@ export default class ApexxShowcase extends LightningElement {
 
     get hasEmails() {
         return this.emails.length > 0;
+    }
+
+    get hasRenewalWork() {
+        return this.renewalWork.length > 0;
     }
 
     get firstHotName() {

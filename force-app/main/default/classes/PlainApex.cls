@@ -4,7 +4,7 @@
 
 public with sharing class PlainApex {
     public interface ApexXFunc0 {
-        Integer invoke(Integer x);
+        Integer invoke(Integer arg0);
     }
 
     private class ApexXLambda0 implements ApexXFunc0 {

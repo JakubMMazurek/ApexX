@@ -133,6 +133,7 @@ h2 {
 
 .empty,
 .summary,
+.workPanel,
 .errorDemo {
     color: #5c6f82;
 }
@@ -147,6 +148,39 @@ h2 {
     display: grid;
     gap: 0.5rem;
     padding: 1rem;
+}
+
+.workPanel {
+    border-top: 1px solid #eef1f6;
+}
+
+.workItems {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.workItems li {
+    align-items: center;
+    border-bottom: 1px solid #eef1f6;
+    display: grid;
+    gap: 0.5rem;
+    grid-template-columns: minmax(0, 1fr) auto minmax(8rem, 0.6fr);
+    min-height: 2.75rem;
+    padding: 0.5rem 0.75rem;
+}
+
+.workItems li:last-child {
+    border-bottom: 0;
+}
+
+.workItems a,
+.workItems span {
+    overflow-wrap: anywhere;
+}
+
+.workItems strong {
+    color: #032d60;
 }
 
 .errorDemo {
@@ -195,7 +229,8 @@ h2 {
 
 @media (max-width: 720px) {
     .metrics,
-    .grid {
+    .grid,
+    .workItems li {
         grid-template-columns: 1fr;
     }
 

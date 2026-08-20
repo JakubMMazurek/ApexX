@@ -34,16 +34,16 @@ export function transpileApexX(
     workspaceRoot: options.workspaceRoot,
   });
   const usedNames = collectIdentifiers(source);
+  const funcTypeAliases = collectFuncTypeAliases(source, usedNames);
   const listMethodCalls = parseResult.listMethodCalls.map(call => ({ ...call }));
   const funcLambdaAssignments = parseResult.funcLambdaAssignments.map(assignment => ({
     ...assignment,
   }));
-  const funcInvocations = parseResult.funcInvocations.map(invocation => ({
-    ...invocation,
-  }));
-  const funcVariableNames = new Set(
-    funcLambdaAssignments.map(assignment => assignment.variableName),
+  const funcVariableNames = collectFuncVariableNames(
+    declaredVariables,
+    funcLambdaAssignments,
   );
+  const funcInvocations = findFuncInvocations(source, funcVariableNames);
   const transformations: Transformation[] = [];
   let output = "";
   let cursor = 0;
@@ -104,7 +104,10 @@ export function transpileApexX(
   }
 
   for (const assignment of funcLambdaAssignments) {
-    assignment.interfaceName = findAvailableName("ApexXFunc", usedNames);
+    completeFuncLambdaAssignmentTypes(assignment, declaredVariables);
+    const signature = funcSignatureKey(assignment.parameterTypes, assignment.returnType);
+    assignment.interfaceName = funcTypeAliases.get(signature)?.interfaceName
+      ?? findAvailableName("ApexXFunc", usedNames);
     assignment.implementationName = findAvailableName("ApexXLambda", usedNames);
   }
 
@@ -143,7 +146,8 @@ export function transpileApexX(
   }
 
   output += source.slice(cursor);
-  output = addGeneratedFuncTypes(output, funcLambdaAssignments, funcVariableNames);
+  output = replaceFuncTypeReferences(output, funcTypeAliases);
+  output = addGeneratedFuncTypes(output, funcLambdaAssignments, funcVariableNames, funcTypeAliases);
   const methodLowering = lowerApexXMethods(output, {
     workspaceRoot: options.workspaceRoot,
     usedNames,
@@ -175,6 +179,12 @@ interface Transformation {
   start: number;
   end: number;
   replacement: string;
+}
+
+interface FuncTypeAlias {
+  interfaceName: string;
+  parameterTypes: string[];
+  returnType: string;
 }
 
 interface MethodLoweringResult {
@@ -1014,6 +1024,15 @@ function lowerListMethodCall(
         lines.push(
           `${inner}${resultName}.addAll(${rewriteFuncInvocations(lambda.body, funcVariableNames)});`,
         );
+      } else if (isBlockLambdaBody(lambda.body)) {
+        lines.push(
+          ...lowerMapBlockLambda(
+            lambda.body,
+            resultName,
+            inner,
+            funcVariableNames,
+          ),
+        );
       } else {
         lines.push(
           `${inner}${resultName}.add(${rewriteFuncInvocations(lambda.body, funcVariableNames)});`,
@@ -1078,6 +1097,127 @@ function lowerListMethodCall(
   return lines.join("\n");
 }
 
+function isBlockLambdaBody(body: string): boolean {
+  const trimmed = body.trim();
+  return trimmed.startsWith("{") && trimmed.endsWith("}");
+}
+
+function lowerMapBlockLambda(
+  body: string,
+  resultName: string,
+  indent: string,
+  funcVariableNames: Set<string>,
+): string[] {
+  const statements = normalizeBlockLambdaBody(body);
+
+  return statements.map(statement => {
+    const returnMatch = /^return\s+([\s\S]+);$/.exec(statement.trim());
+
+    if (returnMatch) {
+      const expression = formatBlockLambdaExpression(
+        rewriteFuncInvocations(returnMatch[1].trim(), funcVariableNames),
+        indent,
+      );
+      return `${indent}${resultName}.add(${expression});`;
+    }
+
+    return `${indent}${rewriteFuncInvocations(statement, funcVariableNames)}`;
+  });
+}
+
+function formatBlockLambdaExpression(expression: string, continuationIndent: string): string {
+  const lines = expression.split(/\r?\n/);
+
+  if (lines.length === 1) {
+    return lines[0].trim();
+  }
+
+  return [
+    lines[0].trim(),
+    ...lines.slice(1).map(line => `${continuationIndent}${line.trim()}`),
+  ].join("\n");
+}
+
+function normalizeBlockLambdaBody(body: string): string[] {
+  const inner = body.trim().replace(/^\{/, "").replace(/\}$/, "");
+  const lines = inner
+    .split(/\r?\n/)
+    .map(line => line.replace(/\s+$/g, ""))
+    .filter(line => line.trim().length > 0);
+  const indents = lines
+    .filter(line => line.trim().length > 0)
+    .map(line => /^(\s*)/.exec(line)?.[1].length ?? 0);
+  const commonIndent = indents.length > 0 ? Math.min(...indents) : 0;
+
+  return splitBlockStatements(lines.map(line => line.slice(commonIndent)).join("\n"));
+}
+
+function splitBlockStatements(source: string): string[] {
+  const statements: string[] = [];
+  let cursor = 0;
+  let start = 0;
+  let parenDepth = 0;
+  let braceDepth = 0;
+  let angleDepth = 0;
+  let inString = false;
+
+  while (cursor < source.length) {
+    const current = source[cursor];
+    const next = source[cursor + 1];
+
+    if (inString) {
+      if (current === "\\" && next) {
+        cursor += 2;
+        continue;
+      }
+
+      if (current === "'") {
+        inString = false;
+      }
+
+      cursor += 1;
+      continue;
+    }
+
+    if (current === "'") {
+      inString = true;
+      cursor += 1;
+      continue;
+    }
+
+    if (current === "(") {
+      parenDepth += 1;
+    } else if (current === ")" && parenDepth > 0) {
+      parenDepth -= 1;
+    } else if (current === "{") {
+      braceDepth += 1;
+    } else if (current === "}" && braceDepth > 0) {
+      braceDepth -= 1;
+    } else if (current === "<") {
+      angleDepth += 1;
+    } else if (current === ">" && angleDepth > 0) {
+      angleDepth -= 1;
+    } else if (
+      current === ";" &&
+      parenDepth === 0 &&
+      braceDepth === 0 &&
+      angleDepth === 0
+    ) {
+      statements.push(source.slice(start, cursor + 1).trim());
+      start = cursor + 1;
+    }
+
+    cursor += 1;
+  }
+
+  const tail = source.slice(start).trim();
+  if (tail.length > 0) {
+    statements.push(tail);
+  }
+
+  return statements;
+}
+
 function inferExpectedListMethodResultType(
   source: string,
   call: ListMethodCallExpression,
@@ -1117,7 +1257,11 @@ function lowerFuncLambdaAssignment(assignment: FuncLambdaAssignment): string {
     ?.map(capture => capture.name)
     .join(", ") ?? "";
 
-  return `${assignment.indent}${assignment.interfaceName} ${assignment.variableName} = new ${assignment.implementationName}(${captureArguments});`;
+  const declarationPrefix = assignment.isReassignment
+    ? ""
+    : `${assignment.interfaceName} `;
+
+  return `${assignment.indent}${declarationPrefix}${assignment.variableName} = new ${assignment.implementationName}(${captureArguments});`;
 }
 
 function lowerFuncInvocation(
@@ -1131,6 +1275,7 @@ function addGeneratedFuncTypes(
   source: string,
   assignments: FuncLambdaAssignment[],
   funcVariableNames: Set<string>,
+  funcTypeAliases: Map<string, FuncTypeAlias>,
 ): string {
   const supportedAssignments = assignments.filter(
     assignment =>
@@ -1139,7 +1284,7 @@ function addGeneratedFuncTypes(
       assignment.parameterTypes.length === assignment.lambda.parameters.length,
   );
 
-  if (supportedAssignments.length === 0) {
+  if (supportedAssignments.length === 0 && funcTypeAliases.size === 0) {
     return source;
   }
 
@@ -1148,14 +1293,37 @@ function addGeneratedFuncTypes(
     return source;
   }
 
-  const declarations = supportedAssignments
-    .map(assignment => renderFuncTypeDeclaration(assignment, "    ", funcVariableNames))
+  const interfaces = [...funcTypeAliases.values()]
+    .map(alias => renderFuncInterfaceDeclaration(alias, "    "))
+    .join("\n\n");
+  const implementations = supportedAssignments
+    .map(assignment => renderFuncImplementationDeclaration(assignment, "    ", funcVariableNames))
+    .join("\n\n");
+  const declarations = [interfaces, implementations]
+    .filter(part => part.length > 0)
     .join("\n\n");
 
   return `${source.slice(0, classStart)}\n${declarations}\n${source.slice(classStart)}`;
 }
 
-function renderFuncTypeDeclaration(
+function renderFuncInterfaceDeclaration(
+  alias: FuncTypeAlias,
+  indent: string,
+): string {
+  const inner = `${indent}    `;
+  const parameterText = alias.parameterTypes
+    .map((parameterType, index) => `${toApexType(parameterType)} arg${index}`)
+    .join(", ");
+  const returnType = toApexType(alias.returnType);
+
+  return [
+    `${indent}public interface ${alias.interfaceName} {`,
+    `${inner}${returnType} invoke(${parameterText});`,
+    `${indent}}`,
+  ].join("\n");
+}
+
+function renderFuncImplementationDeclaration(
   assignment: FuncLambdaAssignment,
   indent: string,
   funcVariableNames: Set<string>,
@@ -1186,10 +1354,6 @@ function renderFuncTypeDeclaration(
   const returnType = toApexType(assignment.returnType);
 
   return [
-    `${indent}public interface ${assignment.interfaceName} {`,
-    `${inner}${returnType} invoke(${parameterText});`,
-    `${indent}}`,
-    "",
     `${indent}private class ${assignment.implementationName} implements ${assignment.interfaceName} {`,
     ...fields,
     ...(fields.length > 0 ? [""] : []),
@@ -1199,6 +1363,98 @@ function renderFuncTypeDeclaration(
     `${inner}}`,
     `${indent}}`,
   ].join("\n");
+}
+
+function collectFuncTypeAliases(
+  source: string,
+  usedNames: Set<string>,
+): Map<string, FuncTypeAlias> {
+  const aliases = new Map<string, FuncTypeAlias>();
+  const pattern = /Func\s*<\s*([^>\r\n]+?)\s*>/g;
+
+  for (const match of source.matchAll(pattern)) {
+    const typeArguments = splitCommaList(match[1]);
+
+    if (typeArguments.length < 1) {
+      continue;
+    }
+
+    const parameterTypes = typeArguments.slice(0, -1).map(toApexType);
+    const returnType = toApexType(typeArguments.at(-1) ?? "Object");
+    const signature = funcSignatureKey(parameterTypes, returnType);
+
+    if (!aliases.has(signature)) {
+      aliases.set(signature, {
+        interfaceName: findAvailableName("ApexXFunc", usedNames),
+        parameterTypes,
+        returnType,
+      });
+    }
+  }
+
+  return aliases;
+}
+
+function replaceFuncTypeReferences(
+  source: string,
+  aliases: Map<string, FuncTypeAlias>,
+): string {
+  return source.replace(/Func\s*<\s*([^>\r\n]+?)\s*>/g, (original, typeArgumentsText) => {
+    const typeArguments = splitCommaList(typeArgumentsText);
+    const parameterTypes = typeArguments.slice(0, -1).map(toApexType);
+    const returnType = toApexType(typeArguments.at(-1) ?? "Object");
+    const signature = funcSignatureKey(parameterTypes, returnType);
+
+    return aliases.get(signature)?.interfaceName ?? original;
+  });
+}
+
+function collectFuncVariableNames(
+  declaredVariables: Map<string, string>,
+  assignments: FuncLambdaAssignment[],
+): Set<string> {
+  const names = new Set(assignments.map(assignment => assignment.variableName));
+
+  for (const [variableName, typeName] of declaredVariables.entries()) {
+    if (isFuncType(typeName)) {
+      names.add(variableName);
+    }
+  }
+
+  return names;
+}
+
+function completeFuncLambdaAssignmentTypes(
+  assignment: FuncLambdaAssignment,
+  declaredVariables: Map<string, string>,
+): void {
+  if (!assignment.isReassignment) {
+    return;
+  }
+
+  const funcType = declaredVariables.get(assignment.variableName.toLowerCase());
+  const typeArguments = funcType ? extractFuncTypeArguments(funcType) : [];
+
+  if (typeArguments.length === 0) {
+    return;
+  }
+
+  assignment.sourceFuncType = funcType ?? "";
+  assignment.parameterTypes = typeArguments.slice(0, -1);
+  assignment.returnType = typeArguments.at(-1) ?? "Object";
+}
+
+function extractFuncTypeArguments(typeName: string): string[] {
+  const match = /^Func\s*<\s*(.+)\s*>$/i.exec(typeName.trim());
+  return match ? splitCommaList(match[1]).map(toApexType) : [];
+}
+
+function isFuncType(typeName: string): boolean {
+  return /^Func\s*</i.test(typeName.trim());
+}
+
+function funcSignatureKey(parameterTypes: string[], returnType: string): string {
+  return [...parameterTypes.map(toApexType), toApexType(returnType)].join("=>");
 }
 
 function inferCapturedVariables(

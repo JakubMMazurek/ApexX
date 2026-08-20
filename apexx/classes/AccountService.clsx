@@ -15,6 +15,12 @@ public with sharing class AccountService {
 
     @AuraEnabled(cacheable=true)
     @UserFriendlyError
+    public static List<AccountWorkItem> loadRenewalWork() {
+        return renewalWork(demoAccounts(), 'Revenue Risk');
+    }
+
+    @AuraEnabled(cacheable=true)
+    @UserFriendlyError
     public static AccountSummary loadAccountSummary() {
         return summarize(demoAccountsWithContacts());
     }
@@ -49,7 +55,7 @@ public with sharing class AccountService {
 
     public static List<Account> demoAccounts() {
         return [
-            SELECT Id, Name, Rating, AccountNumber, AnnualRevenue, NumberOfEmployees
+            SELECT Id, Name, OwnerId, Rating, AccountNumber, AnnualRevenue, NumberOfEmployees
             FROM Account
             WHERE Name LIKE 'ApexX Demo%'
             ORDER BY Name
@@ -59,7 +65,7 @@ public with sharing class AccountService {
 
     public static List<Account> demoAccountsWithContacts() {
         return [
-            SELECT Id, Name, Rating, AccountNumber, AnnualRevenue, NumberOfEmployees,
+            SELECT Id, Name, OwnerId, Rating, AccountNumber, AnnualRevenue, NumberOfEmployees,
                 (SELECT Id, FirstName, LastName, Email FROM Contacts)
             FROM Account
             WHERE Name LIKE 'ApexX Demo%'
@@ -87,6 +93,38 @@ public with sharing class AccountService {
                 && contact.Email.contains('@')
             )
             .map(contact => contact.Email.trim().toLowerCase());
+    }
+
+    public static List<AccountWorkItem> renewalWork(List<Account> accounts, String mode = 'Revenue Risk') {
+        Func<Account, Boolean> shouldEscalate;
+
+        if (mode == 'Revenue Risk') {
+            shouldEscalate = (account) =>
+                account.AnnualRevenue != null
+                && account.AnnualRevenue >= 250000;
+        } else {
+            shouldEscalate = (account) =>
+                account.Rating == 'Hot'
+                && account.AccountNumber != null;
+        }
+
+        return buildRenewalWork(accounts, shouldEscalate);
+    }
+
+    public static List<AccountWorkItem> buildRenewalWork(
+        List<Account> accounts,
+        Func<Account, Boolean> shouldEscalate
+    ) {
+        return accounts.map(account => {
+            Boolean escalate = shouldEscalate(account);
+            return new AccountWorkItem(
+                account.Id,
+                account.Name,
+                account.OwnerId,
+                escalate ? 'High' : 'Normal',
+                escalate ? 'Revenue review' : 'Standard renewal'
+            );
+        });
     }
 
     public static AccountSummary summarize(List<Account> accounts) {
@@ -123,6 +161,28 @@ public with sharing class AccountService {
             this.allHaveNumbers = allHaveNumbers;
             this.firstHot = firstHot;
             this.names = names;
+        }
+    }
+
+    public class AccountWorkItem {
+        @AuraEnabled public Id accountId { get; set; }
+        @AuraEnabled public String accountName { get; set; }
+        @AuraEnabled public Id ownerId { get; set; }
+        @AuraEnabled public String priority { get; set; }
+        @AuraEnabled public String reason { get; set; }
+
+        public AccountWorkItem(
+            Id accountId,
+            String accountName,
+            Id ownerId,
+            String priority,
+            String reason
+        ) {
+            this.accountId = accountId;
+            this.accountName = accountName;
+            this.ownerId = ownerId;
+            this.priority = priority;
+            this.reason = reason;
         }
     }
 }
