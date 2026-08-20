@@ -18,7 +18,6 @@ execFileSync(
 const accountOutput = fs.readFileSync(
   path.join(
     root,
-    "generated",
     "force-app",
     "main",
     "default",
@@ -30,7 +29,6 @@ const accountOutput = fs.readFileSync(
 const plainOutput = fs.readFileSync(
   path.join(
     root,
-    "generated",
     "force-app",
     "main",
     "default",
@@ -42,20 +40,66 @@ const plainOutput = fs.readFileSync(
 const accountMetadata = fs.readFileSync(
   path.join(
     root,
-    "generated",
     "force-app",
     "main",
     "default",
     "classes",
     "AccountService.cls-meta.xml",
   ),
+    "utf8",
+);
+const supportOutput = fs.readFileSync(
+  path.join(
+    root,
+    "force-app",
+    "main",
+    "default",
+    "classes",
+    "ApexX.cls",
+  ),
+  "utf8",
+);
+const userFriendlyErrorOutput = fs.readFileSync(
+  path.join(
+    root,
+    "force-app",
+    "main",
+    "default",
+    "classes",
+    "UserFriendlyError.cls",
+  ),
+  "utf8",
+);
+const lwcUtilOutput = fs.readFileSync(
+  path.join(
+    root,
+    "force-app",
+    "main",
+    "default",
+    "classes",
+    "LwcUtil.cls",
+  ),
   "utf8",
 );
 
 assert.match(accountOutput, /List<Account> apexxFilter0 = new List<Account>\(\);/);
-assert.match(accountOutput, /for \(Account a : accounts\)/);
-assert.match(accountOutput, /return apexxFilter0;/);
+assert.match(accountOutput, /public static List<Account> hotAccounts\(List<Account> accounts\)/);
+assert.match(accountOutput, /return hotAccounts\(accounts, 'Hot'\);/);
+assert.match(accountOutput, /new UserFriendlyError\(\)\.handle\(new ApexX\.Invocation\('AccountService', 'hotAccounts'/);
+assert.match(accountOutput, /new Map<String, Object>\(\)/);
+assert.match(accountOutput, /'message' => 'Unable to save account\.'/);
+assert.match(accountOutput, /List<Contact> apexxFlatMap0 = new List<Contact>\(\);/);
+assert.match(accountOutput, /Integer apexxCount0 = 0;/);
+assert.match(accountOutput, /Boolean apexxAll0 = true;/);
+assert.match(accountOutput, /Account apexxFind0 = null;/);
+assert.match(accountOutput, /return compareRevenue\(left, right, 0\);/);
 assert.match(plainOutput, /public with sharing class PlainApex/);
+assert.match(plainOutput, /public static String formatStatus\(String subject\)/);
+assert.match(plainOutput, /return formatStatus\(subject, false, 'Info'\);/);
+assert.match(plainOutput, /apexxMap0\.add\(square\.invoke\(numberValue\)\);/);
+assert.match(supportOutput, /public interface Decorator/);
+assert.match(userFriendlyErrorOutput, /ctx\.config\.get\('message'\)/);
+assert.match(lwcUtilOutput, /DEFAULT_UNEXPECTED_ERROR_MESSAGE = 'Unexpected Error'/);
 assert.match(
   accountMetadata,
   /<ApexClass xmlns="http:\/\/soap\.sforce\.com\/2006\/04\/metadata">/,

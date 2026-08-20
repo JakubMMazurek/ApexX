@@ -1,0 +1,65 @@
+public with sharing class LwcUtil {
+    private static final String DEFAULT_UNEXPECTED_ERROR_MESSAGE = 'Unexpected Error';
+
+    public AuraHandledException getUserFriendlyException(Exception ex, List<Type> otherExpectedExceptionTypes) {
+        return getUserFriendlyException(ex, otherExpectedExceptionTypes, null);
+    }
+
+    public AuraHandledException getUserFriendlyException(
+        Exception ex,
+        List<Type> otherExpectedExceptionTypes,
+        String unexpectedErrorMessage
+    ) {
+        if (isAuraHandledException(ex)) {
+            return (AuraHandledException) ex;
+        }
+
+        String message;
+        if (isDmlException(ex)) {
+            message = getDmlExceptionMessage((DmlException) ex);
+        } else if (isOtherExpectedExceptionType(ex, otherExpectedExceptionTypes)) {
+            message = ex.getMessage();
+        } else {
+            message = String.isBlank(unexpectedErrorMessage)
+                ? DEFAULT_UNEXPECTED_ERROR_MESSAGE
+                : unexpectedErrorMessage;
+        }
+
+        return getAuraHandledException(message);
+    }
+
+    public AuraHandledException getUserFriendlyException(Exception ex) {
+        return getUserFriendlyException(ex, new List<Type>());
+    }
+
+    public AuraHandledException getAuraHandledException(String message) {
+        AuraHandledException auraException = new AuraHandledException(message);
+        auraException.setMessage(message);
+        return auraException;
+    }
+
+    private Boolean isAuraHandledException(Exception ex) {
+        return ex instanceof AuraHandledException;
+    }
+
+    private Boolean isDmlException(Exception ex) {
+        return ex instanceof DmlException;
+    }
+
+    private Boolean isOtherExpectedExceptionType(Exception ex, List<Type> otherExpectedExceptionTypes) {
+        for (Type exceptionType : otherExpectedExceptionTypes) {
+            if (ex.getTypeName() == exceptionType.getName()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String getDmlExceptionMessage(DmlException ex) {
+        List<String> messages = new List<String>();
+        for (Integer index = 0; index < ex.getNumDml(); index++) {
+            messages.add(ex.getDmlMessage(index));
+        }
+        return String.join(messages, '; ');
+    }
+}

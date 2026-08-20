@@ -1,6 +1,14 @@
 public with sharing class PlainApex {
-    public static Integer add(Integer leftValue, Integer rightValue) {
-        return leftValue + rightValue;
+    public static String formatStatus(String subject, Boolean urgent = false, String prefix = 'Info') {
+        String status = prefix + ': ' + subject;
+        return urgent ? status.toUpperCase() : status;
+    }
+
+    public static List<Integer> squarePositiveNumbers(List<Integer> numbers) {
+        Func<Integer, Integer> square = (x) => x * x;
+
+        return numbers
+            .filter(numberValue => numberValue > 0)
+            .map(numberValue => square(numberValue));
     }
 }
-

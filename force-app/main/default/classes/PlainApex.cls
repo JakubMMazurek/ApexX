@@ -3,8 +3,41 @@
 // DO NOT EDIT.
 
 public with sharing class PlainApex {
-    public static Integer add(Integer leftValue, Integer rightValue) {
-        return leftValue + rightValue;
+    public interface ApexXFunc0 {
+        Integer invoke(Integer x);
+    }
+
+    private class ApexXLambda0 implements ApexXFunc0 {
+        public Integer invoke(Integer x) {
+            return x * x;
+        }
+    }
+
+    public static String formatStatus(String subject) {
+        return formatStatus(subject, false, 'Info');
+    }
+
+    public static String formatStatus(String subject, Boolean urgent) {
+        return formatStatus(subject, urgent, 'Info');
+    }
+    public static String formatStatus(String subject, Boolean urgent, String prefix) {
+            String status = prefix + ': ' + subject;
+            return urgent ? status.toUpperCase() : status;
+    }
+
+    public static List<Integer> squarePositiveNumbers(List<Integer> numbers) {
+        ApexXFunc0 square = new ApexXLambda0();
+
+        List<Integer> apexxFilter0 = new List<Integer>();
+        for (Integer numberValue : numbers) {
+            if (numberValue > 0) {
+                apexxFilter0.add(numberValue);
+            }
+        }
+        List<Integer> apexxMap0 = new List<Integer>();
+        for (Integer numberValue : apexxFilter0) {
+            apexxMap0.add(square.invoke(numberValue));
+        }
+        return apexxMap0;
     }
 }
-

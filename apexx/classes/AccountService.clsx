@@ -1,6 +1,63 @@
 public with sharing class AccountService {
-    public static List<Account> hotAccounts(List<Account> accounts) {
-        return accounts.filter(a => a.Rating == 'Hot');
+    @AuraEnabled
+    @UserFriendlyError
+    public static List<Account> hotAccounts(List<Account> accounts, String rating = 'Hot') {
+        return accounts
+            .filter(account => account.Rating == rating)
+            .filter(account => account.AccountNumber != null);
+    }
+
+    @AuraEnabled
+    @UserFriendlyError(message = 'Unable to save account.')
+    public static Account save(Account account, Boolean validate = true) {
+        if (validate) {
+            account.Name = account.Name.trim();
+        }
+        update account;
+        return account;
+    }
+
+    public static List<String> hotContactEmails(List<Account> accounts) {
+        return accounts
+            .filter(account => account.Rating == 'Hot')
+            .flatMap(account => account.Contacts)
+            .filter(contact => contact.Email != null)
+            .map(contact => contact.Email.toLowerCase());
+    }
+
+    public static AccountSummary summarize(List<Account> accounts) {
+        Integer hotCount = accounts.count(account => account.Rating == 'Hot');
+        Boolean allHaveNumbers = accounts.all(account => account.AccountNumber != null);
+        Account firstHot = accounts.find(account => account.Rating == 'Hot');
+        List<String> names = accounts
+            .filter(account => account.Name != null)
+            .map(account => account.Name);
+
+        return new AccountSummary(hotCount, allHaveNumbers, firstHot, names);
+    }
+
+    public static Boolean compareRevenue(Account left, Account right, Decimal tolerance = 0) {
+        Func<Decimal, Decimal, Boolean> exactlyEqual = (x, y) => x == y;
+        return exactlyEqual(left.AnnualRevenue, right.AnnualRevenue)
+            || (left.AnnualRevenue - right.AnnualRevenue).abs() <= tolerance;
+    }
+
+    public class AccountSummary {
+        public Integer hotCount;
+        public Boolean allHaveNumbers;
+        public Account firstHot;
+        public List<String> names;
+
+        public AccountSummary(
+            Integer hotCount,
+            Boolean allHaveNumbers,
+            Account firstHot,
+            List<String> names
+        ) {
+            this.hotCount = hotCount;
+            this.allHaveNumbers = allHaveNumbers;
+            this.firstHot = firstHot;
+            this.names = names;
+        }
     }
 }
-

@@ -218,7 +218,7 @@ public static Account save(Account account, Boolean validate = true) {
 }
 ```
 
-ApexX removes the custom annotation, preserves native annotations, generates default-argument overloads, moves the original body behind `ApexX.Next`, and writes the shared `ApexX.cls` support class when needed.
+ApexX removes the custom annotation, preserves native annotations, generates default-argument overloads, moves the original body behind `ApexX.Next`, and writes the shared `ApexX.cls` support class when needed. Decorator arguments are optional; `@UserFriendlyError` can use the policy class default message, while `@UserFriendlyError(message = '...')` overrides it for one method.
 
 ## Upstream Reuse
 

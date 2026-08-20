@@ -3,14 +3,166 @@
 // DO NOT EDIT.
 
 public with sharing class AccountService {
+    public interface ApexXFunc0 {
+        Boolean invoke(Decimal x, Decimal y);
+    }
+
+    private class ApexXLambda0 implements ApexXFunc0 {
+        public Boolean invoke(Decimal x, Decimal y) {
+            return x == y;
+        }
+    }
+
+    @AuraEnabled
     public static List<Account> hotAccounts(List<Account> accounts) {
-        List<Account> apexxFilter0 = new List<Account>();
-        for (Account a : accounts) {
-            if (a.Rating == 'Hot') {
-                apexxFilter0.add(a);
+        return hotAccounts(accounts, 'Hot');
+    }
+    @AuraEnabled
+    public static List<Account> hotAccounts(List<Account> accounts, String rating) {
+        return (List<Account>) new UserFriendlyError().handle(new ApexX.Invocation('AccountService', 'hotAccounts', new List<String>{ 'accounts', 'rating' }, new List<Object>{ accounts, rating }, new Map<String, Object>()), new ApexXNext0(accounts, rating));
+    }
+    private static List<Account> hotAccounts_ApexXBody0(List<Account> accounts, String rating) {
+            List<Account> apexxFilter0 = new List<Account>();
+            for (Account account : accounts) {
+                if (account.Rating == rating) {
+                    apexxFilter0.add(account);
+                }
+            }
+            List<Account> apexxFilter1 = new List<Account>();
+            for (Account account : apexxFilter0) {
+                if (account.AccountNumber != null) {
+                    apexxFilter1.add(account);
+                }
+            }
+            return apexxFilter1;
+    }
+    private class ApexXNext0 implements ApexX.Next {
+        private List<Account> accounts;
+        private String rating;
+        private ApexXNext0(List<Account> accounts, String rating) {
+            this.accounts = accounts;
+            this.rating = rating;
+        }
+        public Object call() {
+            return AccountService.hotAccounts_ApexXBody0(accounts, rating);
+        }
+    }
+
+    @AuraEnabled
+    public static Account save(Account account) {
+        return save(account, true);
+    }
+    @AuraEnabled
+    public static Account save(Account account, Boolean validate) {
+        return (Account) new UserFriendlyError().handle(new ApexX.Invocation('AccountService', 'save', new List<String>{ 'account', 'validate' }, new List<Object>{ account, validate }, new Map<String, Object>{ 'message' => 'Unable to save account.' }), new ApexXNext1(account, validate));
+    }
+    private static Account save_ApexXBody0(Account account, Boolean validate) {
+            if (validate) {
+                account.Name = account.Name.trim();
+            }
+            update account;
+            return account;
+    }
+    private class ApexXNext1 implements ApexX.Next {
+        private Account account;
+        private Boolean validate;
+        private ApexXNext1(Account account, Boolean validate) {
+            this.account = account;
+            this.validate = validate;
+        }
+        public Object call() {
+            return AccountService.save_ApexXBody0(account, validate);
+        }
+    }
+
+    public static List<String> hotContactEmails(List<Account> accounts) {
+        List<Account> apexxFilter2 = new List<Account>();
+        for (Account account : accounts) {
+            if (account.Rating == 'Hot') {
+                apexxFilter2.add(account);
             }
         }
-        return apexxFilter0;
+        List<Contact> apexxFlatMap0 = new List<Contact>();
+        for (Account account : apexxFilter2) {
+            apexxFlatMap0.addAll(account.Contacts);
+        }
+        List<Contact> apexxFilter3 = new List<Contact>();
+        for (Contact contact : apexxFlatMap0) {
+            if (contact.Email != null) {
+                apexxFilter3.add(contact);
+            }
+        }
+        List<String> apexxMap0 = new List<String>();
+        for (Contact contact : apexxFilter3) {
+            apexxMap0.add(contact.Email.toLowerCase());
+        }
+        return apexxMap0;
+    }
+
+    public static AccountSummary summarize(List<Account> accounts) {
+        Integer apexxCount0 = 0;
+        for (Account account : accounts) {
+            if (account.Rating == 'Hot') {
+                apexxCount0++;
+            }
+        }
+        Integer hotCount = apexxCount0;
+        Boolean apexxAll0 = true;
+        for (Account account : accounts) {
+            if (!(account.AccountNumber != null)) {
+                apexxAll0 = false;
+                break;
+            }
+        }
+        Boolean allHaveNumbers = apexxAll0;
+        Account apexxFind0 = null;
+        for (Account account : accounts) {
+            if (account.Rating == 'Hot') {
+                apexxFind0 = account;
+                break;
+            }
+        }
+        Account firstHot = apexxFind0;
+        List<Account> apexxFilter4 = new List<Account>();
+        for (Account account : accounts) {
+            if (account.Name != null) {
+                apexxFilter4.add(account);
+            }
+        }
+        List<String> apexxMap1 = new List<String>();
+        for (Account account : apexxFilter4) {
+            apexxMap1.add(account.Name);
+        }
+        List<String> names = apexxMap1;
+
+        return new AccountSummary(hotCount, allHaveNumbers, firstHot, names);
+    }
+
+    public static Boolean compareRevenue(Account left, Account right) {
+        return compareRevenue(left, right, 0);
+    }
+    public static Boolean compareRevenue(Account left, Account right, Decimal tolerance) {
+            ApexXFunc0 exactlyEqual = new ApexXLambda0();
+            return exactlyEqual.invoke(left.AnnualRevenue, right.AnnualRevenue)
+                || (left.AnnualRevenue - right.AnnualRevenue).abs() <= tolerance;
+    }
+
+    public class AccountSummary {
+        public Integer hotCount;
+        public Boolean allHaveNumbers;
+        public Account firstHot;
+        public List<String> names;
+
+        public AccountSummary(
+            Integer hotCount,
+            Boolean allHaveNumbers,
+            Account firstHot,
+            List<String> names
+        ) {
+            this.hotCount = hotCount;
+            this.allHaveNumbers = allHaveNumbers;
+            this.firstHot = firstHot;
+            this.names = names;
+        }
     }
 }
-

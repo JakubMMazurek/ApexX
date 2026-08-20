@@ -1,0 +1,16 @@
+public with sharing class UserFriendlyError implements ApexX.Decorator {
+    public Object handle(ApexX.Invocation ctx, ApexX.Next next) {
+        try {
+            return next.call();
+        } catch (Exception ex) {
+            List<Type> expectedTypes = (List<Type>) ctx.config.get('expectedTypes');
+            String message = (String) ctx.config.get('message');
+
+            if (expectedTypes == null) {
+                expectedTypes = new List<Type>();
+            }
+
+            throw new LwcUtil().getUserFriendlyException(ex, expectedTypes, message);
+        }
+    }
+}
