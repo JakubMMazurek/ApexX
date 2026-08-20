@@ -341,19 +341,38 @@ function inferFuncLambdaParameterType(
       statementPrefix,
     );
 
-  if (!match) {
+  if (match) {
+    const typeArguments = splitCommaList(match[1]);
+    const parameterNames = splitCommaList(match[2]);
+    const parameterIndex = parameterNames.findIndex(name => name === receiver);
+
+    if (parameterIndex < 0 || parameterIndex >= typeArguments.length - 1) {
+      return undefined;
+    }
+
+    return toApexType(typeArguments[parameterIndex]);
+  }
+
+  const reassignmentMatch =
+    /([A-Za-z][A-Za-z0-9_]*)\s*=\s*\(([^)\r\n]*)\)\s*=>/.exec(
+      statementPrefix,
+    );
+
+  if (!reassignmentMatch) {
     return undefined;
   }
 
-  const typeArguments = splitCommaList(match[1]);
-  const parameterNames = splitCommaList(match[2]);
+  const funcVariableName = reassignmentMatch[1];
+  const funcType = collectDeclaredVariables(prefix).get(funcVariableName.toLowerCase());
+  const funcTypeArguments = funcType ? parseFuncTypeArguments(funcType) : [];
+  const parameterNames = splitCommaList(reassignmentMatch[2]);
   const parameterIndex = parameterNames.findIndex(name => name === receiver);
 
-  if (parameterIndex < 0 || parameterIndex >= typeArguments.length - 1) {
+  if (parameterIndex < 0 || parameterIndex >= funcTypeArguments.length - 1) {
     return undefined;
   }
 
-  return toApexType(typeArguments[parameterIndex]);
+  return toApexType(funcTypeArguments[parameterIndex]);
 }
 
 function inferDeclaredVariableType(

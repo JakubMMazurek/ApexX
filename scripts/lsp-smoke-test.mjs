@@ -208,6 +208,49 @@ try {
   assertHasLabels(intermediateListMembers, ["AccountNumber", "Name", "Rating"]);
   assertNoLabels(intermediateListMembers, ["contains", "toUpperCase"]);
 
+  const blockMapInputMembers = await completionsFor(
+    "BlockMapInputProbe",
+    withCursor(`public with sharing class BlockMapInputProbe {
+    public static List<AccountWorkItem> buildWork(List<Account> accounts, Func<Account, Boolean> shouldEscalate) {
+        return accounts.map(account => {
+            Boolean escalate = shouldEscalate(account);
+            String name = account.__CURSOR__;
+            return new AccountWorkItem(account.Id, name, escalate ? 'High' : 'Normal');
+        });
+    }
+}
+`),
+  );
+  assertHasLabels(blockMapInputMembers, ["AccountNumber", "Name", "Rating"]);
+  assertNoLabels(blockMapInputMembers, ["contains", "toUpperCase"]);
+
+  const funcParameterMembers = await completionsFor(
+    "FuncParameterProbe",
+    withCursor(`public with sharing class FuncParameterProbe {
+    public static List<AccountWorkItem> buildWork(List<Account> accounts, Func<Account, Boolean> shouldEscalate) {
+        shouldEscalate.__CURSOR__
+        return new List<AccountWorkItem>();
+    }
+}
+`),
+  );
+  assertHasLabels(funcParameterMembers, ["invoke"]);
+
+  const reassignedFuncLambdaMembers = await completionsFor(
+    "ReassignedFuncLambdaProbe",
+    withCursor(`public with sharing class ReassignedFuncLambdaProbe {
+    public static List<AccountWorkItem> buildWork(List<Account> accounts, String mode) {
+        Func<Account, Boolean> shouldEscalate;
+        if (mode == 'Revenue') {
+            shouldEscalate = (account) => account.__CURSOR__;
+        }
+        return new List<AccountWorkItem>();
+    }
+}
+`),
+  );
+  assertHasLabels(reassignedFuncLambdaMembers, ["AnnualRevenue", "AccountNumber", "Rating"]);
+
   await request("shutdown", null);
   notify("exit", undefined);
   console.log("LSP smoke test passed.");
