@@ -14,21 +14,63 @@ public with sharing class AccountService {
     }
 
     @AuraEnabled(cacheable=true)
-    public static ShowcaseData loadShowcase() {
-        return (ShowcaseData) new UserFriendlyError().handle(new ApexX.Invocation('AccountService', 'loadShowcase', new List<String>{  }, new List<Object>{  }, new Map<String, Object>()), new ApexXNext0());
+    public static List<Account> loadHotAccounts() {
+        return (List<Account>) new UserFriendlyError().handle(new ApexX.Invocation('AccountService', 'loadHotAccounts', new List<String>{  }, new List<Object>{  }, new Map<String, Object>()), new ApexXNext0());
     }
-    private static ShowcaseData loadShowcase_ApexXBody0() {
+    private static List<Account> loadHotAccounts_ApexXBody0() {
             List<Account> accounts = [
-                SELECT Id, Name, Rating, AccountNumber, AnnualRevenue,
-                    (SELECT Id, FirstName, LastName, Email FROM Contacts)
+                SELECT Id, Name, Rating, AccountNumber
                 FROM Account
-                WHERE Name LIKE 'ApexX Demo%'
+                WHERE Name LIKE 'ApexX Demo%' AND Rating = 'Hot'
                 ORDER BY Name
-                LIMIT 50
             ];
-            List<Account> hot = hotAccounts(accounts, 'Hot');
-            List<String> emails = hotContactEmails(accounts);
-            AccountSummary summary = summarize(accounts);
+    
+            return hotAccounts(accounts, 'Hot');
+    }
+    private class ApexXNext0 implements ApexX.Next {
+        private ApexXNext0() {
+        }
+        public Object call() {
+            return AccountService.loadHotAccounts_ApexXBody0();
+        }
+    }
+
+    @AuraEnabled(cacheable=true)
+    public static List<String> loadHotContactEmails() {
+        return (List<String>) new UserFriendlyError().handle(new ApexX.Invocation('AccountService', 'loadHotContactEmails', new List<String>{  }, new List<Object>{  }, new Map<String, Object>()), new ApexXNext1());
+    }
+    private static List<String> loadHotContactEmails_ApexXBody0() {
+            return hotContactEmails(demoAccountsWithContacts());
+    }
+    private class ApexXNext1 implements ApexX.Next {
+        private ApexXNext1() {
+        }
+        public Object call() {
+            return AccountService.loadHotContactEmails_ApexXBody0();
+        }
+    }
+
+    @AuraEnabled(cacheable=true)
+    public static AccountSummary loadAccountSummary() {
+        return (AccountSummary) new UserFriendlyError().handle(new ApexX.Invocation('AccountService', 'loadAccountSummary', new List<String>{  }, new List<Object>{  }, new Map<String, Object>()), new ApexXNext2());
+    }
+    private static AccountSummary loadAccountSummary_ApexXBody0() {
+            return summarize(demoAccountsWithContacts());
+    }
+    private class ApexXNext2 implements ApexX.Next {
+        private ApexXNext2() {
+        }
+        public Object call() {
+            return AccountService.loadAccountSummary_ApexXBody0();
+        }
+    }
+
+    @AuraEnabled(cacheable=true)
+    public static Boolean loadRevenueComparison() {
+        return (Boolean) new UserFriendlyError().handle(new ApexX.Invocation('AccountService', 'loadRevenueComparison', new List<String>{  }, new List<Object>{  }, new Map<String, Object>()), new ApexXNext3());
+    }
+    private static Boolean loadRevenueComparison_ApexXBody0() {
+            List<Account> accounts = demoAccounts();
             List<Account> apexxFilter0 = new List<Account>();
             for (Account account : accounts) {
                 if (account.AnnualRevenue != null) {
@@ -36,22 +78,21 @@ public with sharing class AccountService {
                 }
             }
             List<Account> withRevenue = apexxFilter0;
-            Boolean revenueWithinTolerance = withRevenue.size() > 1
-                && compareRevenue(withRevenue.get(0), withRevenue.get(1), 1000);
     
-            return new ShowcaseData(accounts.size(), hot, emails, summary, revenueWithinTolerance);
+            return withRevenue.size() > 1
+                && compareRevenue(withRevenue.get(0), withRevenue.get(1), 1000);
     }
-    private class ApexXNext0 implements ApexX.Next {
-        private ApexXNext0() {
+    private class ApexXNext3 implements ApexX.Next {
+        private ApexXNext3() {
         }
         public Object call() {
-            return AccountService.loadShowcase_ApexXBody0();
+            return AccountService.loadRevenueComparison_ApexXBody0();
         }
     }
 
     @AuraEnabled
     public static List<Account> hotAccounts(List<Account> accounts, String rating) {
-        return (List<Account>) new UserFriendlyError().handle(new ApexX.Invocation('AccountService', 'hotAccounts', new List<String>{ 'accounts', 'rating' }, new List<Object>{ accounts, rating }, new Map<String, Object>()), new ApexXNext1(accounts, rating));
+        return (List<Account>) new UserFriendlyError().handle(new ApexX.Invocation('AccountService', 'hotAccounts', new List<String>{ 'accounts', 'rating' }, new List<Object>{ accounts, rating }, new Map<String, Object>()), new ApexXNext4(accounts, rating));
     }
     private static List<Account> hotAccounts_ApexXBody0(List<Account> accounts, String rating) {
             List<Account> apexxFilter1 = new List<Account>();
@@ -68,10 +109,10 @@ public with sharing class AccountService {
             }
             return apexxFilter2;
     }
-    private class ApexXNext1 implements ApexX.Next {
+    private class ApexXNext4 implements ApexX.Next {
         private List<Account> accounts;
         private String rating;
-        private ApexXNext1(List<Account> accounts, String rating) {
+        private ApexXNext4(List<Account> accounts, String rating) {
             this.accounts = accounts;
             this.rating = rating;
         }
@@ -82,7 +123,7 @@ public with sharing class AccountService {
 
     @AuraEnabled
     public static Account save(Account account, Boolean validate) {
-        return (Account) new UserFriendlyError().handle(new ApexX.Invocation('AccountService', 'save', new List<String>{ 'account', 'validate' }, new List<Object>{ account, validate }, new Map<String, Object>{ 'message' => 'Unable to save account.' }), new ApexXNext2(account, validate));
+        return (Account) new UserFriendlyError().handle(new ApexX.Invocation('AccountService', 'save', new List<String>{ 'account', 'validate' }, new List<Object>{ account, validate }, new Map<String, Object>{ 'message' => 'Unable to save account.' }), new ApexXNext5(account, validate));
     }
     private static Account save_ApexXBody0(Account account, Boolean validate) {
             if (validate) {
@@ -91,16 +132,37 @@ public with sharing class AccountService {
             update account;
             return account;
     }
-    private class ApexXNext2 implements ApexX.Next {
+    private class ApexXNext5 implements ApexX.Next {
         private Account account;
         private Boolean validate;
-        private ApexXNext2(Account account, Boolean validate) {
+        private ApexXNext5(Account account, Boolean validate) {
             this.account = account;
             this.validate = validate;
         }
         public Object call() {
             return AccountService.save_ApexXBody0(account, validate);
         }
+    }
+
+    public static List<Account> demoAccounts() {
+        return [
+            SELECT Id, Name, Rating, AccountNumber, AnnualRevenue
+            FROM Account
+            WHERE Name LIKE 'ApexX Demo%'
+            ORDER BY Name
+            LIMIT 50
+        ];
+    }
+
+    public static List<Account> demoAccountsWithContacts() {
+        return [
+            SELECT Id, Name, Rating, AccountNumber, AnnualRevenue,
+                (SELECT Id, FirstName, LastName, Email FROM Contacts)
+            FROM Account
+            WHERE Name LIKE 'ApexX Demo%'
+            ORDER BY Name
+            LIMIT 50
+        ];
     }
 
     public static List<String> hotContactEmails(List<Account> accounts) {
@@ -191,28 +253,6 @@ public with sharing class AccountService {
             this.allHaveNumbers = allHaveNumbers;
             this.firstHot = firstHot;
             this.names = names;
-        }
-    }
-
-    public class ShowcaseData {
-        @AuraEnabled public Integer totalAccounts { get; set; }
-        @AuraEnabled public List<Account> hotAccounts { get; set; }
-        @AuraEnabled public List<String> hotContactEmails { get; set; }
-        @AuraEnabled public AccountSummary summary { get; set; }
-        @AuraEnabled public Boolean revenueWithinTolerance { get; set; }
-
-        public ShowcaseData(
-            Integer totalAccounts,
-            List<Account> hotAccounts,
-            List<String> hotContactEmails,
-            AccountSummary summary,
-            Boolean revenueWithinTolerance
-        ) {
-            this.totalAccounts = totalAccounts;
-            this.hotAccounts = hotAccounts;
-            this.hotContactEmails = hotContactEmails;
-            this.summary = summary;
-            this.revenueWithinTolerance = revenueWithinTolerance;
         }
     }
 }

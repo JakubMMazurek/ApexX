@@ -3,7 +3,7 @@
         <div class="toolbar">
             <div>
                 <p class="eyebrow">Live org data</p>
-                <h1>Collection helpers, decorators, and default args</h1>
+                <h1>Focused ApexX methods powering one tab</h1>
             </div>
             <lightning-button-icon
                 icon-name="utility:refresh"
@@ -43,6 +43,7 @@
                         <h2>Hot accounts</h2>
                         <span>{hotCount}</span>
                     </div>
+                    <p class="method">loadHotAccounts -> filter + decorator</p>
                     <template lwc:if={hasHotAccounts}>
                         <ul class="rows">
                             <template for:each={hotAccounts} for:item="account">
@@ -63,6 +64,7 @@
                         <h2>Flattened contact emails</h2>
                         <span>{emailCount}</span>
                     </div>
+                    <p class="method">loadHotContactEmails -> filter + flatMap + map</p>
                     <template lwc:if={hasEmails}>
                         <ul class="rows">
                             <template for:each={emails} for:item="email">
@@ -79,6 +81,7 @@
             </section>
 
             <section class="summary">
+                <p class="method">loadAccountSummary -> count + all + find + map</p>
                 <p>
                     <strong>First hot account:</strong>
                     <span>{firstHotName}</span>
@@ -91,6 +94,7 @@
                     <strong>First two revenue values within tolerance:</strong>
                     <span>{revenueWithinToleranceLabel}</span>
                 </p>
+                <p class="method">loadRevenueComparison -> default arg + Func</p>
             </section>
         </template>
     </lightning-card>

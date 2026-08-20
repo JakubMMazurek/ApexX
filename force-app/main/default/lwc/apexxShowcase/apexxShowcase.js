@@ -1,8 +1,14 @@
 import { LightningElement } from 'lwc';
-import loadShowcase from '@salesforce/apex/AccountService.loadShowcase';
+import loadAccountSummary from '@salesforce/apex/AccountService.loadAccountSummary';
+import loadHotAccounts from '@salesforce/apex/AccountService.loadHotAccounts';
+import loadHotContactEmails from '@salesforce/apex/AccountService.loadHotContactEmails';
+import loadRevenueComparison from '@salesforce/apex/AccountService.loadRevenueComparison';
 
 export default class ApexxShowcase extends LightningElement {
-    data;
+    hotAccountsData = [];
+    emails = [];
+    summary;
+    revenueWithinTolerance = false;
     errorMessage;
     loading = false;
 
@@ -15,9 +21,22 @@ export default class ApexxShowcase extends LightningElement {
         this.errorMessage = undefined;
 
         try {
-            this.data = await loadShowcase();
+            const [hotAccounts, emails, summary, revenueWithinTolerance] = await Promise.all([
+                loadHotAccounts(),
+                loadHotContactEmails(),
+                loadAccountSummary(),
+                loadRevenueComparison()
+            ]);
+
+            this.hotAccountsData = hotAccounts ?? [];
+            this.emails = emails ?? [];
+            this.summary = summary;
+            this.revenueWithinTolerance = revenueWithinTolerance;
         } catch (error) {
-            this.data = undefined;
+            this.hotAccountsData = [];
+            this.emails = [];
+            this.summary = undefined;
+            this.revenueWithinTolerance = false;
             this.errorMessage = this.normalizeError(error);
         } finally {
             this.loading = false;
@@ -27,8 +46,8 @@ export default class ApexxShowcase extends LightningElement {
     get metrics() {
         return [
             {
-                label: 'Accounts scanned',
-                value: this.data?.totalAccounts ?? 0
+                label: 'Demo accounts',
+                value: this.summary?.names?.length ?? 0
             },
             {
                 label: 'Hot accounts',
@@ -42,18 +61,14 @@ export default class ApexxShowcase extends LightningElement {
     }
 
     get hotAccounts() {
-        return (this.data?.hotAccounts ?? []).map((account) => ({
+        return this.hotAccountsData.map((account) => ({
             ...account,
             url: `/${account.Id}`
         }));
     }
 
-    get emails() {
-        return this.data?.hotContactEmails ?? [];
-    }
-
     get hotCount() {
-        return this.data?.summary?.hotCount ?? 0;
+        return this.summary?.hotCount ?? 0;
     }
 
     get emailCount() {
@@ -69,15 +84,15 @@ export default class ApexxShowcase extends LightningElement {
     }
 
     get firstHotName() {
-        return this.data?.summary?.firstHot?.Name ?? 'None';
+        return this.summary?.firstHot?.Name ?? 'None';
     }
 
     get allHaveNumbersLabel() {
-        return this.data?.summary?.allHaveNumbers ? 'Yes' : 'No';
+        return this.summary?.allHaveNumbers ? 'Yes' : 'No';
     }
 
     get revenueWithinToleranceLabel() {
-        return this.data?.revenueWithinTolerance ? 'Yes' : 'No';
+        return this.revenueWithinTolerance ? 'Yes' : 'No';
     }
 
     normalizeError(error) {

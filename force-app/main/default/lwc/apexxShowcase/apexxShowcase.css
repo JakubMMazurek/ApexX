@@ -89,6 +89,17 @@ h2 {
     text-align: center;
 }
 
+.method {
+    background: #f7f9fb;
+    border-bottom: 1px solid #eef1f6;
+    color: #5c6f82;
+    font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+    font-size: 0.75rem;
+    margin: 0;
+    overflow-wrap: anywhere;
+    padding: 0.5rem 0.75rem;
+}
+
 .rows {
     list-style: none;
     margin: 0;
@@ -129,6 +140,12 @@ h2 {
     display: grid;
     gap: 0.5rem;
     padding: 1rem;
+}
+
+.summary .method {
+    border: 0;
+    border-radius: 6px;
+    padding: 0.5rem;
 }
 
 .summary p {

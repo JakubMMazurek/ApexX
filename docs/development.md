@@ -37,7 +37,7 @@ npm run sf:seed -- --target-org apexx
 npm run sf:open:showcase -- --target-org apexx
 ```
 
-The `apexxShowcase` LWC calls `AccountService.loadShowcase()`. That method queries demo Accounts and Contacts, then uses ApexX collection helpers to filter hot accounts, flatten contacts, map emails, count matches, find the first hot account, and summarize the result for the tab.
+The `apexxShowcase` LWC calls several focused `AccountService` methods. `loadHotAccounts()` demonstrates filtering and decorators, `loadHotContactEmails()` demonstrates `filter` + `flatMap` + `map`, `loadAccountSummary()` demonstrates `count` + `all` + `find`, and `loadRevenueComparison()` demonstrates `Func` plus a default-argument helper.
 
 ## Parse A Single File
 

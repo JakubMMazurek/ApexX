@@ -1,23 +1,38 @@
 public with sharing class AccountService {
     @AuraEnabled(cacheable=true)
     @UserFriendlyError
-    public static ShowcaseData loadShowcase() {
+    public static List<Account> loadHotAccounts() {
         List<Account> accounts = [
-            SELECT Id, Name, Rating, AccountNumber, AnnualRevenue,
-                (SELECT Id, FirstName, LastName, Email FROM Contacts)
+            SELECT Id, Name, Rating, AccountNumber
             FROM Account
-            WHERE Name LIKE 'ApexX Demo%'
+            WHERE Name LIKE 'ApexX Demo%' AND Rating = 'Hot'
             ORDER BY Name
-            LIMIT 50
         ];
-        List<Account> hot = hotAccounts(accounts, 'Hot');
-        List<String> emails = hotContactEmails(accounts);
-        AccountSummary summary = summarize(accounts);
-        List<Account> withRevenue = accounts.filter(account => account.AnnualRevenue != null);
-        Boolean revenueWithinTolerance = withRevenue.size() > 1
-            && compareRevenue(withRevenue.get(0), withRevenue.get(1), 1000);
 
-        return new ShowcaseData(accounts.size(), hot, emails, summary, revenueWithinTolerance);
+        return hotAccounts(accounts, 'Hot');
+    }
+
+    @AuraEnabled(cacheable=true)
+    @UserFriendlyError
+    public static List<String> loadHotContactEmails() {
+        return hotContactEmails(demoAccountsWithContacts());
+    }
+
+    @AuraEnabled(cacheable=true)
+    @UserFriendlyError
+    public static AccountSummary loadAccountSummary() {
+        return summarize(demoAccountsWithContacts());
+    }
+
+    @AuraEnabled(cacheable=true)
+    @UserFriendlyError
+    public static Boolean loadRevenueComparison() {
+        List<Account> accounts = demoAccounts();
+        List<Account> withRevenue = accounts
+            .filter(account => account.AnnualRevenue != null);
+
+        return withRevenue.size() > 1
+            && compareRevenue(withRevenue.get(0), withRevenue.get(1), 1000);
     }
 
     @AuraEnabled
@@ -36,6 +51,27 @@ public with sharing class AccountService {
         }
         update account;
         return account;
+    }
+
+    public static List<Account> demoAccounts() {
+        return [
+            SELECT Id, Name, Rating, AccountNumber, AnnualRevenue
+            FROM Account
+            WHERE Name LIKE 'ApexX Demo%'
+            ORDER BY Name
+            LIMIT 50
+        ];
+    }
+
+    public static List<Account> demoAccountsWithContacts() {
+        return [
+            SELECT Id, Name, Rating, AccountNumber, AnnualRevenue,
+                (SELECT Id, FirstName, LastName, Email FROM Contacts)
+            FROM Account
+            WHERE Name LIKE 'ApexX Demo%'
+            ORDER BY Name
+            LIMIT 50
+        ];
     }
 
     public static List<String> hotContactEmails(List<Account> accounts) {
@@ -79,28 +115,6 @@ public with sharing class AccountService {
             this.allHaveNumbers = allHaveNumbers;
             this.firstHot = firstHot;
             this.names = names;
-        }
-    }
-
-    public class ShowcaseData {
-        @AuraEnabled public Integer totalAccounts { get; set; }
-        @AuraEnabled public List<Account> hotAccounts { get; set; }
-        @AuraEnabled public List<String> hotContactEmails { get; set; }
-        @AuraEnabled public AccountSummary summary { get; set; }
-        @AuraEnabled public Boolean revenueWithinTolerance { get; set; }
-
-        public ShowcaseData(
-            Integer totalAccounts,
-            List<Account> hotAccounts,
-            List<String> hotContactEmails,
-            AccountSummary summary,
-            Boolean revenueWithinTolerance
-        ) {
-            this.totalAccounts = totalAccounts;
-            this.hotAccounts = hotAccounts;
-            this.hotContactEmails = hotContactEmails;
-            this.summary = summary;
-            this.revenueWithinTolerance = revenueWithinTolerance;
         }
     }
 }

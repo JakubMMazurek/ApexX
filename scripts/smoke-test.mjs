@@ -83,9 +83,11 @@ const lwcUtilOutput = fs.readFileSync(
 );
 
 assert.match(accountOutput, /List<Account> apexxFilter0 = new List<Account>\(\);/);
-assert.match(accountOutput, /public static ShowcaseData loadShowcase\(\)/);
-assert.match(accountOutput, /new UserFriendlyError\(\)\.handle\(new ApexX\.Invocation\('AccountService', 'loadShowcase'/);
-assert.match(accountOutput, /return new ShowcaseData\(accounts\.size\(\), hot, emails, summary, revenueWithinTolerance\);/);
+assert.match(accountOutput, /public static List<Account> loadHotAccounts\(\)/);
+assert.match(accountOutput, /public static List<String> loadHotContactEmails\(\)/);
+assert.match(accountOutput, /public static AccountSummary loadAccountSummary\(\)/);
+assert.match(accountOutput, /public static Boolean loadRevenueComparison\(\)/);
+assert.match(accountOutput, /new UserFriendlyError\(\)\.handle\(new ApexX\.Invocation\('AccountService', 'loadHotAccounts'/);
 assert.match(accountOutput, /public static List<Account> hotAccounts\(List<Account> accounts, String rating\)/);
 assert.match(accountOutput, /new UserFriendlyError\(\)\.handle\(new ApexX\.Invocation\('AccountService', 'hotAccounts'/);
 assert.match(accountOutput, /new Map<String, Object>\(\)/);
