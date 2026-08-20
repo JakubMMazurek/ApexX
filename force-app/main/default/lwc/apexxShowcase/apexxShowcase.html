@@ -7,12 +7,6 @@
             </div>
             <div class="actions">
                 <lightning-button
-                    label="Save demo account"
-                    variant="brand"
-                    onclick={saveDemoAccount}
-                    disabled={saveDisabled}
-                ></lightning-button>
-                <lightning-button
                     label="Trigger handled error"
                     variant="neutral"
                     onclick={triggerError}
@@ -131,9 +125,40 @@
                     <span>{revenueWithinToleranceLabel}</span>
                 </p>
                 <p class="method">loadRevenueComparison -> default arg + plain comparison</p>
+            </section>
+
+            <section class="savePanel">
+                <div class="sectionHeader">
+                    <h2>Save account</h2>
+                    <span>edit</span>
+                </div>
                 <p class="method">save -> decorator + default error message + validation trim</p>
+                <template lwc:if={hasEditableAccounts}>
+                    <div class="saveForm">
+                        <lightning-combobox
+                            label="Account"
+                            value={selectedAccountId}
+                            options={accountOptions}
+                            onchange={handleSelectedAccountChange}
+                        ></lightning-combobox>
+                        <lightning-input
+                            label="Name"
+                            value={editedAccountName}
+                            onchange={handleAccountNameChange}
+                        ></lightning-input>
+                        <lightning-button
+                            label="Save"
+                            variant="brand"
+                            onclick={saveDemoAccount}
+                            disabled={saveDisabled}
+                        ></lightning-button>
+                    </div>
+                </template>
+                <template lwc:else>
+                    <p class="empty">No priority accounts are available to edit.</p>
+                </template>
                 <template lwc:if={lastSavedAccountName}>
-                    <p>
+                    <p class="saveResult">
                         <strong>Last saved account:</strong>
                         <span>{lastSavedAccountName}</span>
                     </p>

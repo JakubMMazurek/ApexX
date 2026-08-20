@@ -17,6 +17,8 @@ export default class ApexxShowcase extends LightningElement {
     errorMessage;
     handledErrorMessage;
     lastSavedAccountName;
+    selectedAccountId;
+    editedAccountName = '';
     loading = false;
     savingAccount = false;
     triggeringError = false;
@@ -43,6 +45,7 @@ export default class ApexxShowcase extends LightningElement {
             this.emails = emails ?? [];
             this.summary = summary;
             this.revenueWithinTolerance = revenueWithinTolerance;
+            this.syncEditableAccount();
         } catch (error) {
             this.priorityAccountsData = [];
             this.renewalWorkData = [];
@@ -72,10 +75,15 @@ export default class ApexxShowcase extends LightningElement {
     }
 
     async saveDemoAccount() {
-        const account = this.priorityAccountsData[0];
+        const account = this.priorityAccountsData.find((item) => item.Id === this.selectedAccountId);
 
         if (!account) {
-            this.showToast('Nothing to save', 'Load demo accounts before running the save example.', 'warning');
+            this.showToast('Nothing to save', 'Choose a priority account before running the save example.', 'warning');
+            return;
+        }
+
+        if (!this.editedAccountName.trim()) {
+            this.showToast('Name required', 'Enter an account name before saving.', 'warning');
             return;
         }
 
@@ -87,18 +95,53 @@ export default class ApexxShowcase extends LightningElement {
                 account: {
                     sobjectType: 'Account',
                     Id: account.Id,
-                    Name: ` ${account.Name} `
+                    Name: this.editedAccountName
                 },
                 validate: true
             });
 
             this.lastSavedAccountName = savedAccount.Name;
+            this.editedAccountName = savedAccount.Name;
             this.showToast('Account saved', `${savedAccount.Name} was saved through the decorated ApexX method.`, 'success');
             await this.refresh();
         } catch (error) {
             this.showToast('Save failed', this.normalizeError(error), 'error');
         } finally {
             this.savingAccount = false;
+        }
+    }
+
+    handleSelectedAccountChange(event) {
+        this.selectedAccountId = event.detail.value;
+        const account = this.priorityAccountsData.find((item) => item.Id === this.selectedAccountId);
+        this.editedAccountName = account?.Name ?? '';
+    }
+
+    handleAccountNameChange(event) {
+        this.editedAccountName = event.detail.value;
+    }
+
+    syncEditableAccount() {
+        if (this.priorityAccountsData.length === 0) {
+            this.selectedAccountId = undefined;
+            this.editedAccountName = '';
+            return;
+        }
+
+        const selectedStillExists = this.priorityAccountsData.some(
+            (account) => account.Id === this.selectedAccountId
+        );
+
+        if (!selectedStillExists) {
+            this.selectedAccountId = this.priorityAccountsData[0].Id;
+        }
+
+        const selected = this.priorityAccountsData.find(
+            (account) => account.Id === this.selectedAccountId
+        );
+
+        if (!this.editedAccountName || !selectedStillExists) {
+            this.editedAccountName = selected?.Name ?? '';
         }
     }
 
@@ -135,7 +178,18 @@ export default class ApexxShowcase extends LightningElement {
     }
 
     get saveDisabled() {
-        return this.loading || this.savingAccount || this.priorityAccountsData.length === 0;
+        return this.loading || this.savingAccount || !this.selectedAccountId || !this.editedAccountName.trim();
+    }
+
+    get accountOptions() {
+        return this.priorityAccountsData.map((account) => ({
+            label: account.Name,
+            value: account.Id
+        }));
+    }
+
+    get hasEditableAccounts() {
+        return this.accountOptions.length > 0;
     }
 
     get renewalWork() {
