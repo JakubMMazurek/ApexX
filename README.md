@@ -245,7 +245,7 @@ force-app/main/default/classes/AccountService.cls-meta.xml
 
 The output package directory and API version come from `sfdx-project.json` when present. Outside a Salesforce DX project, ApexX writes to `generated/force-app/main/default/classes`.
 
-The project includes an `apexxShowcase` Lightning Web Component and an `ApexX Showcase` Lightning tab. The tab calls focused `.clsx` methods such as `loadPriorityAccounts()`, `loadNormalizedContactEmails()`, `loadAccountSummary()`, `loadRevenueComparison()`, and `triggerUserFriendlyError()` so each section demonstrates a different ApexX feature: decorators, computed `filter`, `flatMap`, `map`, `count`, `all`, `find`, `Func`, default-argument helpers, and decorated error handling. Seed demo data with:
+The project includes an `apexxShowcase` Lightning Web Component and an `ApexX Showcase` Lightning tab. The tab calls focused `.clsx` methods such as `loadPriorityAccounts()`, `loadNormalizedContactEmails()`, `loadAccountSummary()`, `loadRevenueComparison()`, and `triggerUserFriendlyError()` so each section demonstrates a different ApexX feature: decorators, computed `filter`, `flatMap`, `map`, reused `Func` predicates, `count`, `all`, `find`, default-argument helpers, and decorated error handling. Seed demo data with:
 
 ```powershell
 npm run sf:seed -- --target-org apexx

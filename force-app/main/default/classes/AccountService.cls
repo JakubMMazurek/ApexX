@@ -4,18 +4,12 @@
 
 public with sharing class AccountService {
     public interface ApexXFunc0 {
-        Boolean invoke(Decimal actual, Decimal expected);
+        Boolean invoke(Account account);
     }
 
     private class ApexXLambda0 implements ApexXFunc0 {
-        private Decimal tolerance;
-
-        public ApexXLambda0(Decimal tolerance) {
-            this.tolerance = tolerance;
-        }
-
-        public Boolean invoke(Decimal actual, Decimal expected) {
-            return actual == expected || (actual - expected).abs() <= tolerance;
+        public Boolean invoke(Account account) {
+            return account.Rating == 'Hot';
         }
     }
 
@@ -187,9 +181,11 @@ public with sharing class AccountService {
     }
 
     public static AccountSummary summarize(List<Account> accounts) {
+        ApexXFunc0 isHot = new ApexXLambda0();
+
         Integer apexxCount0 = 0;
         for (Account account : accounts) {
-            if (account.Rating == 'Hot') {
+            if (isHot.invoke(account)) {
                 apexxCount0++;
             }
         }
@@ -204,7 +200,7 @@ public with sharing class AccountService {
         Boolean allHaveNumbers = apexxAll0;
         Account apexxFind0 = null;
         for (Account account : accounts) {
-            if (account.Rating == 'Hot') {
+            if (isHot.invoke(account)) {
                 apexxFind0 = account;
                 break;
             }
@@ -229,9 +225,8 @@ public with sharing class AccountService {
         return compareRevenue(left, right, 0);
     }
     public static Boolean compareRevenue(Account left, Account right, Decimal tolerance) {
-            ApexXFunc0 isWithinTolerance = new ApexXLambda0(tolerance);
-    
-            return isWithinTolerance.invoke(left.AnnualRevenue, right.AnnualRevenue);
+            return left.AnnualRevenue == right.AnnualRevenue
+                || (left.AnnualRevenue - right.AnnualRevenue).abs() <= tolerance;
     }
 
     public class AccountSummary {

@@ -90,9 +90,11 @@ public with sharing class AccountService {
     }
 
     public static AccountSummary summarize(List<Account> accounts) {
-        Integer hotCount = accounts.count(account => account.Rating == 'Hot');
+        Func<Account, Boolean> isHot = (account) => account.Rating == 'Hot';
+
+        Integer hotCount = accounts.count(account => isHot(account));
         Boolean allHaveNumbers = accounts.all(account => account.AccountNumber != null);
-        Account firstHot = accounts.find(account => account.Rating == 'Hot');
+        Account firstHot = accounts.find(account => isHot(account));
         List<String> names = accounts
             .filter(account => account.Name != null)
             .map(account => account.Name);
@@ -101,10 +103,8 @@ public with sharing class AccountService {
     }
 
     public static Boolean compareRevenue(Account left, Account right, Decimal tolerance = 0) {
-        Func<Decimal, Decimal, Boolean> isWithinTolerance =
-            (actual, expected) => actual == expected || (actual - expected).abs() <= tolerance;
-
-        return isWithinTolerance(left.AnnualRevenue, right.AnnualRevenue);
+        return left.AnnualRevenue == right.AnnualRevenue
+            || (left.AnnualRevenue - right.AnnualRevenue).abs() <= tolerance;
     }
 
     public class AccountSummary {

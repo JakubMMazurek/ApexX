@@ -223,6 +223,19 @@ export function extractListElementType(typeName: string): string | undefined {
   return match ? normalizeType(match[1]) : undefined;
 }
 
+function extractFuncReturnType(typeName: string): string | undefined {
+  const match = /^Func\s*<\s*(.+)\s*>$/i.exec(typeName);
+
+  if (!match) {
+    return undefined;
+  }
+
+  const typeArguments = splitCommaList(match[1]);
+  const returnType = typeArguments.at(-1);
+
+  return returnType ? toApexType(returnType) : undefined;
+}
+
 export function findEnclosingListReturnElementType(
   source: string,
   offset: number,
@@ -320,6 +333,16 @@ export function inferExpressionType(
   );
   if (newExpression) {
     return normalizeType(newExpression[1]);
+  }
+
+  const funcInvocation = /^([A-Za-z][A-Za-z0-9_]*)\s*\((.*)\)$/.exec(trimmed);
+  if (funcInvocation) {
+    const funcType = lookupVariableType(scope.variables, funcInvocation[1]);
+    const returnType = funcType ? extractFuncReturnType(funcType) : undefined;
+
+    if (returnType) {
+      return returnType;
+    }
   }
 
   return inferChainExpressionType(trimmed, scope);
