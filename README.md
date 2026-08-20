@@ -14,6 +14,8 @@ The first milestone is intentionally small:
 - standalone `List<T>.filter(...)` expression statements parse while editing, even when the result is not assigned
 - `Func<T1, T2, TResult> name = (x, y) => expression` lowers to a generated invokable inner class
 - `Func` variables can be called directly in `.clsx`; generated Apex emits `.invoke(...)`
+- trailing default method arguments generate ordinary Apex overloads
+- custom method decorators resolve from classes that implement `ApexX.Decorator`
 - upstream Apex parsing is reused to validate generated `.cls`
 
 ## Quick Start
@@ -158,6 +160,65 @@ private class ApexXLambda0 implements ApexXFunc0 {
 ApexXFunc0 testForEquality = new ApexXLambda0();
 return testForEquality.invoke(left, right);
 ```
+
+Default method arguments generate overloads:
+
+```apex
+@AuraEnabled
+public static String formatMessage(
+    String subject,
+    Boolean urgent = false,
+    String prefix = 'Info'
+) {
+    return prefix + ': ' + subject;
+}
+```
+
+Generated Apex:
+
+```apex
+@AuraEnabled
+public static String formatMessage(String subject) {
+    return formatMessage(subject, false, 'Info');
+}
+
+@AuraEnabled
+public static String formatMessage(String subject, Boolean urgent) {
+    return formatMessage(subject, urgent, 'Info');
+}
+
+@AuraEnabled
+public static String formatMessage(String subject, Boolean urgent, String prefix) {
+    return prefix + ': ' + subject;
+}
+```
+
+Custom decorators are user-defined classes. ApexX treats an unknown method annotation as a decorator only when a class of the same name implements `ApexX.Decorator`:
+
+```apex
+public with sharing class UserFriendlyError implements ApexX.Decorator {
+    public Object handle(ApexX.Invocation ctx, ApexX.Next next) {
+        try {
+            return next.call();
+        } catch (Exception ex) {
+            throw new LwcUtil().getUserFriendlyException(ex);
+        }
+    }
+}
+```
+
+Source:
+
+```apex
+@AuraEnabled
+@UserFriendlyError(message = 'Unable to save account.')
+public static Account save(Account account, Boolean validate = true) {
+    update account;
+    return account;
+}
+```
+
+ApexX removes the custom annotation, preserves native annotations, generates default-argument overloads, moves the original body behind `ApexX.Next`, and writes the shared `ApexX.cls` support class when needed.
 
 ## Upstream Reuse
 

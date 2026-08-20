@@ -22,7 +22,9 @@ Outside a Salesforce DX project, this writes Salesforce source-format files unde
 npm run test
 ```
 
-The smoke test builds `apexx/classes` and checks that the generated output contains the expected typed loops. The LSP smoke test opens in-memory `.clsx` documents against the real ApexX language server and checks completion labels for list chains and lambda parameters.
+The smoke test builds `apexx/classes` and checks that the generated output contains the expected typed loops, default-argument overloads, decorator lowering, generated `ApexX.cls` support, and unresolved decorator diagnostics. The LSP smoke test opens in-memory `.clsx` documents against the real ApexX language server and checks completion labels for list chains and lambda parameters.
+
+The `examples/` directory contains a compact feature showcase with collection helpers, default arguments, and a user-defined decorator class.
 
 ## Parse A Single File
 

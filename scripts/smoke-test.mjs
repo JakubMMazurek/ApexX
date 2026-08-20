@@ -5,6 +5,7 @@ import path from "node:path";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { transpileApexX } from "../packages/transpiler/dist/index.js";
+import { parseApex } from "../packages/parser/dist/index.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -415,6 +416,137 @@ assert.deepEqual(nestedFuncCallErrors, []);
 assert.match(nestedFuncCallResult.output, /return testForEquality\.invoke\(x, x\);/);
 assert.match(nestedFuncCallResult.output, /return isSelfEqual\.invoke\(left\);/);
 
+const defaultArgumentsSource = `public with sharing class NotificationService {
+    @AuraEnabled
+    public static String formatMessage(String subject, Boolean urgent = false, String prefix = 'Info') {
+        return prefix + ': ' + subject + ':' + urgent;
+    }
+}
+`;
+const defaultArgumentsResult = transpileApexX(defaultArgumentsSource, {
+  sourceFileName: "NotificationService.clsx",
+});
+const defaultArgumentErrors = defaultArgumentsResult.diagnostics.filter(
+  diagnostic => diagnostic.severity === "error",
+);
+assert.deepEqual(defaultArgumentErrors, []);
+assert.match(
+  defaultArgumentsResult.output,
+  /public static String formatMessage\(String subject\) \{\s*return formatMessage\(subject, false, 'Info'\);/s,
+);
+assert.match(
+  defaultArgumentsResult.output,
+  /public static String formatMessage\(String subject, Boolean urgent\) \{\s*return formatMessage\(subject, urgent, 'Info'\);/s,
+);
+assert.match(
+  defaultArgumentsResult.output,
+  /public static String formatMessage\(String subject, Boolean urgent, String prefix\)/,
+);
+assert.doesNotMatch(defaultArgumentsResult.output, /urgent = false/);
+assert.doesNotMatch(defaultArgumentsResult.output, /prefix = 'Info'/);
+
+const invalidDefaultArgumentsSource = `public with sharing class NotificationService {
+    public static String invalid(String subject = 'Hi', Boolean urgent) {
+        return subject;
+    }
+}
+`;
+const invalidDefaultArgumentsResult = transpileApexX(invalidDefaultArgumentsSource, {
+  sourceFileName: "NotificationService.clsx",
+});
+assert.match(
+  invalidDefaultArgumentsResult.diagnostics.map(diagnostic => diagnostic.message).join("\n"),
+  /Default parameter values must be trailing/,
+);
+
+const decoratorWorkspace = fs.mkdtempSync(path.join(os.tmpdir(), "apexx-decorator-"));
+try {
+  const decoratorClassesDir = path.join(
+    decoratorWorkspace,
+    "force-app",
+    "main",
+    "default",
+    "classes",
+  );
+  fs.mkdirSync(decoratorClassesDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(decoratorClassesDir, "UserFriendlyError.cls"),
+    `public with sharing class UserFriendlyError implements ApexX.Decorator {
+    public Object handle(ApexX.Invocation ctx, ApexX.Next next) {
+        try {
+            return next.call();
+        } catch (Exception ex) {
+            throw ex;
+        }
+    }
+}
+`,
+    "utf8",
+  );
+
+  const decoratorSource = `public with sharing class AccountController {
+    @AuraEnabled
+    @UserFriendlyError(message = 'Unable to save account', expectedTypes = new List<Type>{ Type.forName('MyExpectedException') })
+    public static Account save(Account account, Boolean validate = true) {
+        if (validate) {
+            account.Name = account.Name.trim();
+        }
+        update account;
+        return account;
+    }
+}
+`;
+  const decoratorResult = transpileApexX(decoratorSource, {
+    sourceFileName: "AccountController.clsx",
+    workspaceRoot: decoratorWorkspace,
+  });
+  const decoratorErrors = decoratorResult.diagnostics.filter(
+    diagnostic => diagnostic.severity === "error",
+  );
+  assert.deepEqual(decoratorErrors, []);
+  assert.equal(decoratorResult.supportClasses.length, 1);
+  assert.equal(decoratorResult.supportClasses[0].className, "ApexX");
+  assert.match(decoratorResult.supportClasses[0].source, /public interface Decorator/);
+  assert.equal(parseApex(decoratorResult.supportClasses[0].source).ok, true);
+  assert.match(
+    decoratorResult.output,
+    /public static Account save\(Account account\) \{\s*return save\(account, true\);/s,
+  );
+  assert.match(
+    decoratorResult.output,
+    /new UserFriendlyError\(\)\.handle\(new ApexX\.Invocation\('AccountController', 'save'/,
+  );
+  assert.match(
+    decoratorResult.output,
+    /'message' => 'Unable to save account'/,
+  );
+  assert.match(
+    decoratorResult.output,
+    /'expectedTypes' => new List<Type>\{ Type\.forName\('MyExpectedException'\) \}/,
+  );
+  assert.match(decoratorResult.output, /private static Account save_ApexXBody0/);
+  assert.match(decoratorResult.output, /private class ApexXNext0 implements ApexX\.Next/);
+  assert.doesNotMatch(decoratorResult.output, /@UserFriendlyError/);
+
+  const unresolvedDecoratorSource = `public with sharing class AccountController {
+    @MissingDecorator
+    public static Account save(Account account) {
+        return account;
+    }
+}
+`;
+  const unresolvedDecoratorResult = transpileApexX(unresolvedDecoratorSource, {
+    sourceFileName: "AccountController.clsx",
+    workspaceRoot: decoratorWorkspace,
+  });
+  assert.match(
+    unresolvedDecoratorResult.diagnostics.map(diagnostic => diagnostic.message).join("\n"),
+    /Unknown ApexX annotation @MissingDecorator/,
+  );
+} finally {
+  fs.rmSync(decoratorWorkspace, { recursive: true, force: true });
+}
+
 const tempProject = fs.mkdtempSync(path.join(os.tmpdir(), "apexx-sfdx-"));
 try {
   fs.writeFileSync(
@@ -433,6 +565,38 @@ try {
   fs.copyFileSync(
     path.join(root, "apexx", "classes", "AccountService.clsx"),
     path.join(tempProject, "apexx", "classes", "AccountService.clsx"),
+  );
+  fs.mkdirSync(
+    path.join(tempProject, "force-app", "main", "default", "classes"),
+    { recursive: true },
+  );
+  fs.writeFileSync(
+    path.join(
+      tempProject,
+      "force-app",
+      "main",
+      "default",
+      "classes",
+      "UserFriendlyError.cls",
+    ),
+    `public with sharing class UserFriendlyError implements ApexX.Decorator {
+    public Object handle(ApexX.Invocation ctx, ApexX.Next next) {
+        return next.call();
+    }
+}
+`,
+    "utf8",
+  );
+  fs.writeFileSync(
+    path.join(tempProject, "apexx", "classes", "DecoratedController.clsx"),
+    `public with sharing class DecoratedController {
+    @UserFriendlyError
+    public static Account save(Account account, Boolean validate = true) {
+        return account;
+    }
+}
+`,
+    "utf8",
   );
 
   execFileSync(
@@ -453,6 +617,19 @@ try {
     "utf8",
   );
   assert.match(sfdxMetadata, /<apiVersion>66\.0<\/apiVersion>/);
+
+  const supportClass = fs.readFileSync(
+    path.join(
+      tempProject,
+      "force-app",
+      "main",
+      "default",
+      "classes",
+      "ApexX.cls",
+    ),
+    "utf8",
+  );
+  assert.match(supportClass, /public interface Decorator/);
 } finally {
   fs.rmSync(tempProject, { recursive: true, force: true });
 }

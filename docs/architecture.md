@@ -87,6 +87,52 @@ return testForEquality(left, right);
 
 The last `Func` type argument is the return type. Earlier type arguments are lambda parameter types. For deployable Apex, the transpiler emits a generated inner interface plus a generated inner class with an `invoke(...)` method, then initializes the local variable with that generated class. Direct source calls such as `testForEquality(left, right)` are lowered to `testForEquality.invoke(left, right)`.
 
+## Method Sugar
+
+Trailing default method arguments are lowered into ordinary Apex overloads. Required parameters after optional parameters are rejected because ApexX would otherwise need a named-argument call model to disambiguate safe overload generation.
+
+```apex
+public static String label(String value, String prefix = 'Info') {
+    return prefix + ': ' + value;
+}
+```
+
+becomes:
+
+```apex
+public static String label(String value) {
+    return label(value, 'Info');
+}
+
+public static String label(String value, String prefix) {
+    return prefix + ': ' + value;
+}
+```
+
+Custom method decorators are compile-time annotations backed by user classes. ApexX resolves an unknown method annotation as a decorator only when a class with the same name implements `ApexX.Decorator`.
+
+```apex
+@UserFriendlyError(message = 'Unable to save account.')
+public static Account save(Account account) {
+    update account;
+    return account;
+}
+```
+
+The generated public method calls `new UserFriendlyError().handle(ctx, next)`. The original body is moved to a private method, and a generated `ApexX.Next` class calls that body. Decorator arguments are passed through `ctx.config` as `Map<String, Object>`.
+
+For v0.1, decorators are intentionally limited to static methods. This covers common LWC/Aura service methods while leaving instance-method `this` capture as a later design step.
+
+When decorators are used, the CLI and VS Code extension also emit `ApexX.cls`, which contains:
+
+```apex
+public class ApexX {
+    public class Invocation { ... }
+    public interface Next { Object call(); }
+    public interface Decorator { Object handle(Invocation ctx, Next next); }
+}
+```
+
 ## Generated Names
 
 Generated locals use names such as `apexxFilter0`. They intentionally avoid underscores because Apex identifiers cannot begin with an underscore, end with an underscore, or contain consecutive underscores.

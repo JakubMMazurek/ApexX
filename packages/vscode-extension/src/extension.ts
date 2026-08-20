@@ -161,6 +161,18 @@ async function buildDocument(document: vscode.TextDocument): Promise<void> {
 
   outputChannel?.appendLine(`Built ${written.classFile}`);
   outputChannel?.appendLine(`Built ${written.metadataFile}`);
+
+  for (const supportClass of result.supportClasses) {
+    const supportWritten = await writeApexClassFiles({
+      classesDir: target.classesDir,
+      className: supportClass.className,
+      source: supportClass.source,
+      apiVersion: target.apiVersion,
+    });
+    outputChannel?.appendLine(`Built ${supportWritten.classFile}`);
+    outputChannel?.appendLine(`Built ${supportWritten.metadataFile}`);
+  }
+
   vscode.window.setStatusBarMessage(
     `ApexX generated ${path.basename(written.classFile)}`,
     3500,

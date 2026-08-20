@@ -120,9 +120,15 @@ export interface TranspileOptions {
 export interface TranspileResult {
   source: string;
   output: string;
+  supportClasses: GeneratedApexSupportClass[];
   diagnostics: ApexXDiagnostic[];
   listMethodCalls: ListMethodCallExpression[];
   funcLambdaAssignments: FuncLambdaAssignment[];
   funcInvocations: FuncInvocation[];
   filters: FilterLambdaExpression[];
+}
+
+export interface GeneratedApexSupportClass {
+  className: string;
+  source: string;
 }

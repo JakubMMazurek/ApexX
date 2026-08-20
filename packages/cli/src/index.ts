@@ -84,6 +84,17 @@ async function build(args: ParsedArgs): Promise<void> {
 
     console.log(`Wrote ${path.relative(process.cwd(), written.classFile)}`);
     console.log(`Wrote ${path.relative(process.cwd(), written.metadataFile)}`);
+
+    for (const supportClass of result.supportClasses) {
+      const supportWritten = await writeApexClassFiles({
+        classesDir: buildTarget.classesDir,
+        className: supportClass.className,
+        source: supportClass.source,
+        apiVersion: buildTarget.apiVersion,
+      });
+      console.log(`Wrote ${path.relative(process.cwd(), supportWritten.classFile)}`);
+      console.log(`Wrote ${path.relative(process.cwd(), supportWritten.metadataFile)}`);
+    }
   }
 
   if (hadError) {
