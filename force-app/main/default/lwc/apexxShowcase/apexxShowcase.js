@@ -1,9 +1,11 @@
 import { LightningElement } from 'lwc';
+import { ShowToastEvent } from 'lightning/platformShowToastEvent';
 import loadAccountSummary from '@salesforce/apex/AccountService.loadAccountSummary';
 import loadNormalizedContactEmails from '@salesforce/apex/AccountService.loadNormalizedContactEmails';
 import loadPriorityAccounts from '@salesforce/apex/AccountService.loadPriorityAccounts';
 import loadRevenueComparison from '@salesforce/apex/AccountService.loadRevenueComparison';
 import loadRenewalWork from '@salesforce/apex/AccountService.loadRenewalWork';
+import saveAccount from '@salesforce/apex/AccountService.save';
 import triggerUserFriendlyError from '@salesforce/apex/AccountService.triggerUserFriendlyError';
 
 export default class ApexxShowcase extends LightningElement {
@@ -14,7 +16,9 @@ export default class ApexxShowcase extends LightningElement {
     revenueWithinTolerance = false;
     errorMessage;
     handledErrorMessage;
+    lastSavedAccountName;
     loading = false;
+    savingAccount = false;
     triggeringError = false;
 
     connectedCallback() {
@@ -58,10 +62,43 @@ export default class ApexxShowcase extends LightningElement {
         try {
             await triggerUserFriendlyError();
             this.handledErrorMessage = 'No error was thrown.';
+            this.showToast('No error was thrown', 'The demo error method completed successfully.', 'info');
         } catch (error) {
             this.handledErrorMessage = this.normalizeError(error);
+            this.showToast('Handled error', this.handledErrorMessage, 'error');
         } finally {
             this.triggeringError = false;
+        }
+    }
+
+    async saveDemoAccount() {
+        const account = this.priorityAccountsData[0];
+
+        if (!account) {
+            this.showToast('Nothing to save', 'Load demo accounts before running the save example.', 'warning');
+            return;
+        }
+
+        this.savingAccount = true;
+        this.lastSavedAccountName = undefined;
+
+        try {
+            const savedAccount = await saveAccount({
+                account: {
+                    sobjectType: 'Account',
+                    Id: account.Id,
+                    Name: ` ${account.Name} `
+                },
+                validate: true
+            });
+
+            this.lastSavedAccountName = savedAccount.Name;
+            this.showToast('Account saved', `${savedAccount.Name} was saved through the decorated ApexX method.`, 'success');
+            await this.refresh();
+        } catch (error) {
+            this.showToast('Save failed', this.normalizeError(error), 'error');
+        } finally {
+            this.savingAccount = false;
         }
     }
 
@@ -95,6 +132,10 @@ export default class ApexxShowcase extends LightningElement {
 
     get priorityCount() {
         return this.priorityAccounts.length;
+    }
+
+    get saveDisabled() {
+        return this.loading || this.savingAccount || this.priorityAccountsData.length === 0;
     }
 
     get renewalWork() {
@@ -138,6 +179,16 @@ export default class ApexxShowcase extends LightningElement {
 
     get revenueWithinToleranceLabel() {
         return this.revenueWithinTolerance ? 'Yes' : 'No';
+    }
+
+    showToast(title, message, variant) {
+        this.dispatchEvent(
+            new ShowToastEvent({
+                title,
+                message,
+                variant
+            })
+        );
     }
 
     normalizeError(error) {

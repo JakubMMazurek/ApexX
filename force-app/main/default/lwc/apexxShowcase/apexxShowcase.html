@@ -7,6 +7,12 @@
             </div>
             <div class="actions">
                 <lightning-button
+                    label="Save demo account"
+                    variant="brand"
+                    onclick={saveDemoAccount}
+                    disabled={saveDisabled}
+                ></lightning-button>
+                <lightning-button
                     label="Trigger handled error"
                     variant="neutral"
                     onclick={triggerError}
@@ -125,6 +131,13 @@
                     <span>{revenueWithinToleranceLabel}</span>
                 </p>
                 <p class="method">loadRevenueComparison -> default arg + plain comparison</p>
+                <p class="method">save -> decorator + default error message + validation trim</p>
+                <template lwc:if={lastSavedAccountName}>
+                    <p>
+                        <strong>Last saved account:</strong>
+                        <span>{lastSavedAccountName}</span>
+                    </p>
+                </template>
             </section>
 
             <section class="errorDemo">
