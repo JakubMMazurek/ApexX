@@ -4,14 +4,22 @@
 
 public with sharing class AccountService {
     public interface ApexXFunc0 {
-        Boolean invoke(Decimal x, Decimal y);
+        Boolean invoke(Decimal actual, Decimal expected);
     }
 
     private class ApexXLambda0 implements ApexXFunc0 {
-        public Boolean invoke(Decimal x, Decimal y) {
-            return x == y;
+        private Decimal tolerance;
+
+        public ApexXLambda0(Decimal tolerance) {
+            this.tolerance = tolerance;
+        }
+
+        public Boolean invoke(Decimal actual, Decimal expected) {
+            return actual == expected || (actual - expected).abs() <= tolerance;
         }
     }
+
+    private static final Decimal MIN_REVENUE_PER_EMPLOYEE = 10000;
 
     @AuraEnabled(cacheable=true)
     public static List<Account> loadPriorityAccounts() {
@@ -29,17 +37,17 @@ public with sharing class AccountService {
     }
 
     @AuraEnabled(cacheable=true)
-    public static List<String> loadHotContactEmails() {
-        return (List<String>) new UserFriendlyError().handle(new ApexX.Invocation('AccountService', 'loadHotContactEmails', new List<String>{  }, new List<Object>{  }, new Map<String, Object>()), new ApexXNext1());
+    public static List<String> loadNormalizedContactEmails() {
+        return (List<String>) new UserFriendlyError().handle(new ApexX.Invocation('AccountService', 'loadNormalizedContactEmails', new List<String>{  }, new List<Object>{  }, new Map<String, Object>()), new ApexXNext1());
     }
-    private static List<String> loadHotContactEmails_ApexXBody0() {
-            return hotContactEmails(demoAccountsWithContacts());
+    private static List<String> loadNormalizedContactEmails_ApexXBody0() {
+            return normalizedContactEmails(demoAccountsWithContacts());
     }
     private class ApexXNext1 implements ApexX.Next {
         private ApexXNext1() {
         }
         public Object call() {
-            return AccountService.loadHotContactEmails_ApexXBody0();
+            return AccountService.loadNormalizedContactEmails_ApexXBody0();
         }
     }
 
@@ -148,45 +156,32 @@ public with sharing class AccountService {
     public static List<Account> priorityAccounts(List<Account> accounts) {
         List<Account> apexxFilter1 = new List<Account>();
         for (Account account : accounts) {
-            if (account.AccountNumber != null) {
+            if (account.AccountNumber != null
+                && account.AnnualRevenue != null
+                && account.NumberOfEmployees != null
+                && account.NumberOfEmployees > 0
+                && account.AnnualRevenue / account.NumberOfEmployees >= MIN_REVENUE_PER_EMPLOYEE) {
                 apexxFilter1.add(account);
             }
         }
-        List<Account> apexxFilter2 = new List<Account>();
-        for (Account account : apexxFilter1) {
-            if (account.AnnualRevenue != null) {
-                apexxFilter2.add(account);
-            }
-        }
-        List<Account> apexxFilter3 = new List<Account>();
-        for (Account account : apexxFilter2) {
-            if (account.NumberOfEmployees != null) {
-                apexxFilter3.add(account);
-            }
-        }
-        List<Account> apexxFilter4 = new List<Account>();
-        for (Account account : apexxFilter3) {
-            if (account.AnnualRevenue / account.NumberOfEmployees > 10000) {
-                apexxFilter4.add(account);
-            }
-        }
-        return apexxFilter4;
+        return apexxFilter1;
     }
 
-    public static List<String> hotContactEmails(List<Account> accounts) {
+    public static List<String> normalizedContactEmails(List<Account> accounts) {
         List<Contact> apexxFlatMap0 = new List<Contact>();
         for (Account account : accounts) {
             apexxFlatMap0.addAll(account.Contacts);
         }
-        List<Contact> apexxFilter5 = new List<Contact>();
+        List<Contact> apexxFilter2 = new List<Contact>();
         for (Contact contact : apexxFlatMap0) {
-            if (contact.Email != null && contact.FirstName.length() <= contact.LastName.length()) {
-                apexxFilter5.add(contact);
+            if (contact.Email != null
+                && contact.Email.contains('@')) {
+                apexxFilter2.add(contact);
             }
         }
         List<String> apexxMap0 = new List<String>();
-        for (Contact contact : apexxFilter5) {
-            apexxMap0.add(contact.Email.toLowerCase());
+        for (Contact contact : apexxFilter2) {
+            apexxMap0.add(contact.Email.trim().toLowerCase());
         }
         return apexxMap0;
     }
@@ -215,14 +210,14 @@ public with sharing class AccountService {
             }
         }
         Account firstHot = apexxFind0;
-        List<Account> apexxFilter6 = new List<Account>();
+        List<Account> apexxFilter3 = new List<Account>();
         for (Account account : accounts) {
             if (account.Name != null) {
-                apexxFilter6.add(account);
+                apexxFilter3.add(account);
             }
         }
         List<String> apexxMap1 = new List<String>();
-        for (Account account : apexxFilter6) {
+        for (Account account : apexxFilter3) {
             apexxMap1.add(account.Name);
         }
         List<String> names = apexxMap1;
@@ -234,9 +229,9 @@ public with sharing class AccountService {
         return compareRevenue(left, right, 0);
     }
     public static Boolean compareRevenue(Account left, Account right, Decimal tolerance) {
-            ApexXFunc0 exactlyEqual = new ApexXLambda0();
-            return exactlyEqual.invoke(left.AnnualRevenue, right.AnnualRevenue)
-                || (left.AnnualRevenue - right.AnnualRevenue).abs() <= tolerance;
+            ApexXFunc0 isWithinTolerance = new ApexXLambda0(tolerance);
+    
+            return isWithinTolerance.invoke(left.AnnualRevenue, right.AnnualRevenue);
     }
 
     public class AccountSummary {

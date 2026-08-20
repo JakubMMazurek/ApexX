@@ -1,6 +1,6 @@
 import { LightningElement } from 'lwc';
 import loadAccountSummary from '@salesforce/apex/AccountService.loadAccountSummary';
-import loadHotContactEmails from '@salesforce/apex/AccountService.loadHotContactEmails';
+import loadNormalizedContactEmails from '@salesforce/apex/AccountService.loadNormalizedContactEmails';
 import loadPriorityAccounts from '@salesforce/apex/AccountService.loadPriorityAccounts';
 import loadRevenueComparison from '@salesforce/apex/AccountService.loadRevenueComparison';
 import triggerUserFriendlyError from '@salesforce/apex/AccountService.triggerUserFriendlyError';
@@ -26,7 +26,7 @@ export default class ApexxShowcase extends LightningElement {
         try {
             const [priorityAccounts, emails, summary, revenueWithinTolerance] = await Promise.all([
                 loadPriorityAccounts(),
-                loadHotContactEmails(),
+                loadNormalizedContactEmails(),
                 loadAccountSummary(),
                 loadRevenueComparison()
             ]);

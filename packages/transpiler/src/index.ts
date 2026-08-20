@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type {
+  CapturedVariable,
   ApexXDiagnostic,
   FuncInvocation,
   FuncLambdaAssignment,
@@ -105,6 +106,14 @@ export function transpileApexX(
   for (const assignment of funcLambdaAssignments) {
     assignment.interfaceName = findAvailableName("ApexXFunc", usedNames);
     assignment.implementationName = findAvailableName("ApexXLambda", usedNames);
+  }
+
+  for (const assignment of funcLambdaAssignments) {
+    assignment.captures = inferCapturedVariables(
+      assignment,
+      declaredVariables,
+      funcLambdaAssignments,
+    );
 
     if (assignment.parameterTypes.length === assignment.lambda.parameters.length) {
       transformations.push({
@@ -1104,7 +1113,11 @@ function tempPrefixForListMethod(methodName: string): string {
 }
 
 function lowerFuncLambdaAssignment(assignment: FuncLambdaAssignment): string {
-  return `${assignment.indent}${assignment.interfaceName} ${assignment.variableName} = new ${assignment.implementationName}();`;
+  const captureArguments = assignment.captures
+    ?.map(capture => capture.name)
+    .join(", ") ?? "";
+
+  return `${assignment.indent}${assignment.interfaceName} ${assignment.variableName} = new ${assignment.implementationName}(${captureArguments});`;
 }
 
 function lowerFuncInvocation(
@@ -1153,9 +1166,23 @@ function renderFuncTypeDeclaration(
     name: parameter.name,
     type: toApexType(assignment.parameterTypes[index]),
   }));
+  const captures = assignment.captures ?? [];
   const parameterText = parameters
     .map(parameter => `${parameter.type} ${parameter.name}`)
     .join(", ");
+  const constructorText = captures
+    .map(capture => `${capture.type} ${capture.name}`)
+    .join(", ");
+  const fields = captures
+    .map(capture => `${inner}private ${capture.type} ${capture.name};`);
+  const constructor = captures.length > 0
+    ? [
+        `${inner}public ${assignment.implementationName}(${constructorText}) {`,
+        ...captures.map(capture => `${nested}this.${capture.name} = ${capture.name};`),
+        `${inner}}`,
+        "",
+      ]
+    : [];
   const returnType = toApexType(assignment.returnType);
 
   return [
@@ -1164,11 +1191,80 @@ function renderFuncTypeDeclaration(
     `${indent}}`,
     "",
     `${indent}private class ${assignment.implementationName} implements ${assignment.interfaceName} {`,
+    ...fields,
+    ...(fields.length > 0 ? [""] : []),
+    ...constructor,
     `${inner}public ${returnType} invoke(${parameterText}) {`,
     `${nested}return ${rewriteFuncInvocations(assignment.lambda.body, funcVariableNames)};`,
     `${inner}}`,
     `${indent}}`,
   ].join("\n");
+}
+
+function inferCapturedVariables(
+  assignment: FuncLambdaAssignment,
+  declaredVariables: Map<string, string>,
+  funcLambdaAssignments: FuncLambdaAssignment[],
+): CapturedVariable[] {
+  const captures: CapturedVariable[] = [];
+  const capturedNames = new Set<string>();
+  const parameterNames = new Set(
+    assignment.lambda.parameters.map(parameter => parameter.name.toLowerCase()),
+  );
+  const funcAssignmentsByName = new Map(
+    funcLambdaAssignments.map(funcAssignment => [
+      funcAssignment.variableName.toLowerCase(),
+      funcAssignment,
+    ]),
+  );
+  const identifiers = collectIdentifierUsages(assignment.lambda.body);
+
+  for (const identifier of identifiers) {
+    const normalized = identifier.name.toLowerCase();
+
+    if (
+      parameterNames.has(normalized) ||
+      normalized === assignment.variableName.toLowerCase() ||
+      capturedNames.has(normalized) ||
+      identifier.isMemberName
+    ) {
+      continue;
+    }
+
+    const capturedFunc = funcAssignmentsByName.get(normalized);
+    const capturedType = capturedFunc?.interfaceName ?? declaredVariables.get(normalized);
+
+    if (!capturedType) {
+      continue;
+    }
+
+    captures.push({
+      name: identifier.name,
+      type: toApexType(capturedType),
+    });
+    capturedNames.add(normalized);
+  }
+
+  return captures;
+}
+
+function collectIdentifierUsages(
+  source: string,
+): Array<{ name: string; isMemberName: boolean }> {
+  const usages: Array<{ name: string; isMemberName: boolean }> = [];
+  const pattern = /\b[A-Za-z][A-Za-z0-9_]*\b/g;
+
+  for (const match of source.matchAll(pattern)) {
+    const start = match.index ?? 0;
+    const before = source.slice(0, start).trimEnd();
+
+    usages.push({
+      name: match[0],
+      isMemberName: before.endsWith("."),
+    });
+  }
+
+  return usages;
 }
 
 function findClassBodyStart(source: string): number | undefined {

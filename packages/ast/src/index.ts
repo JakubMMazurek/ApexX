@@ -49,6 +49,11 @@ export interface LambdaParameter {
   range: SourceRange;
 }
 
+export interface CapturedVariable {
+  name: string;
+  type: string;
+}
+
 export interface ListMethodCallStep {
   methodName: ListMethodName;
   lambda: LambdaExpression;
@@ -90,6 +95,7 @@ export interface FuncLambdaAssignment {
   lambda: LambdaExpression;
   originalText: string;
   range: SourceRange;
+  captures?: CapturedVariable[];
   interfaceName?: string;
   implementationName?: string;
 }

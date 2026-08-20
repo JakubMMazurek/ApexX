@@ -84,13 +84,17 @@ const lwcUtilOutput = fs.readFileSync(
 
 assert.match(accountOutput, /List<Account> apexxFilter0 = new List<Account>\(\);/);
 assert.match(accountOutput, /public static List<Account> loadPriorityAccounts\(\)/);
-assert.match(accountOutput, /public static List<String> loadHotContactEmails\(\)/);
+assert.match(accountOutput, /public static List<String> loadNormalizedContactEmails\(\)/);
 assert.match(accountOutput, /public static AccountSummary loadAccountSummary\(\)/);
 assert.match(accountOutput, /public static Boolean loadRevenueComparison\(\)/);
 assert.match(accountOutput, /public static void triggerUserFriendlyError\(\)/);
 assert.match(accountOutput, /new UserFriendlyError\(\)\.handle\(new ApexX\.Invocation\('AccountService', 'loadPriorityAccounts'/);
-assert.match(accountOutput, /account\.AnnualRevenue \/ account\.NumberOfEmployees > 10000/);
-assert.match(accountOutput, /contact\.FirstName\.length\(\) <= contact\.LastName\.length\(\)/);
+assert.match(accountOutput, /MIN_REVENUE_PER_EMPLOYEE = 10000/);
+assert.match(accountOutput, /account\.NumberOfEmployees > 0/);
+assert.match(accountOutput, /account\.AnnualRevenue \/ account\.NumberOfEmployees >= MIN_REVENUE_PER_EMPLOYEE/);
+assert.match(accountOutput, /contact\.Email\.contains\('@'\)/);
+assert.match(accountOutput, /contact\.Email\.trim\(\)\.toLowerCase\(\)/);
+assert.doesNotMatch(accountOutput, /account\.AccountNumber != null\)\s*\{\s*apexxFilter\d+\.add\(account\);\s*\}\s*\}\s*List<Account> apexxFilter\d+/s);
 assert.match(accountOutput, /new Map<String, Object>\(\)/);
 assert.match(accountOutput, /'message' => 'Unable to save account\.'/);
 assert.match(accountOutput, /List<Contact> apexxFlatMap0 = new List<Contact>\(\);/);
@@ -447,6 +451,34 @@ assert.match(
   /return testForEquality\.invoke\(left, right\);/,
 );
 
+const capturedFuncLambdaSource = `public with sharing class RevenueService {
+    public static Boolean compare(Decimal left, Decimal right, Decimal tolerance) {
+        Func<Decimal, Decimal, Boolean> isWithinTolerance =
+            (actual, expected) => actual == expected || (actual - expected).abs() <= tolerance;
+
+        return isWithinTolerance(left, right);
+    }
+}
+`;
+const capturedFuncLambdaResult = transpileApexX(capturedFuncLambdaSource, {
+  sourceFileName: "RevenueService.clsx",
+});
+const capturedFuncLambdaErrors = capturedFuncLambdaResult.diagnostics.filter(
+  diagnostic => diagnostic.severity === "error",
+);
+assert.deepEqual(capturedFuncLambdaErrors, []);
+assert.match(capturedFuncLambdaResult.output, /private Decimal tolerance;/);
+assert.match(capturedFuncLambdaResult.output, /public ApexXLambda0\(Decimal tolerance\)/);
+assert.match(capturedFuncLambdaResult.output, /this\.tolerance = tolerance;/);
+assert.match(
+  capturedFuncLambdaResult.output,
+  /ApexXFunc0 isWithinTolerance = new ApexXLambda0\(tolerance\);/,
+);
+assert.match(
+  capturedFuncLambdaResult.output,
+  /return actual == expected \|\| \(actual - expected\)\.abs\(\) <= tolerance;/,
+);
+
 const nestedFuncCallSource = `public with sharing class EqualityService {
     public static Boolean compare(Integer left, Integer right) {
         Func<int, int, bool> testForEquality = (x, y) => x == y;
@@ -462,6 +494,8 @@ const nestedFuncCallErrors = nestedFuncCallResult.diagnostics.filter(
   diagnostic => diagnostic.severity === "error",
 );
 assert.deepEqual(nestedFuncCallErrors, []);
+assert.match(nestedFuncCallResult.output, /private ApexXFunc0 testForEquality;/);
+assert.match(nestedFuncCallResult.output, /ApexXFunc1 isSelfEqual = new ApexXLambda1\(testForEquality\);/);
 assert.match(nestedFuncCallResult.output, /return testForEquality\.invoke\(x, x\);/);
 assert.match(nestedFuncCallResult.output, /return isSelfEqual\.invoke\(left\);/);
 

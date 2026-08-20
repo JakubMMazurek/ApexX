@@ -69,10 +69,10 @@
 
                 <article>
                     <div class="sectionHeader">
-                        <h2>Flattened contact emails</h2>
+                        <h2>Normalized contact emails</h2>
                         <span>{emailCount}</span>
                     </div>
-                    <p class="method">loadHotContactEmails -> flatMap + computed contact filter + map</p>
+                    <p class="method">loadNormalizedContactEmails -> flatMap + filter + map</p>
                     <template lwc:if={hasEmails}>
                         <ul class="rows">
                             <template for:each={emails} for:item="email">

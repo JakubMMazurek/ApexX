@@ -1,4 +1,6 @@
 public with sharing class AccountService {
+    private static final Decimal MIN_REVENUE_PER_EMPLOYEE = 10000;
+
     @AuraEnabled(cacheable=true)
     @UserFriendlyError
     public static List<Account> loadPriorityAccounts() {
@@ -7,8 +9,8 @@ public with sharing class AccountService {
 
     @AuraEnabled(cacheable=true)
     @UserFriendlyError
-    public static List<String> loadHotContactEmails() {
-        return hotContactEmails(demoAccountsWithContacts());
+    public static List<String> loadNormalizedContactEmails() {
+        return normalizedContactEmails(demoAccountsWithContacts());
     }
 
     @AuraEnabled(cacheable=true)
@@ -68,17 +70,23 @@ public with sharing class AccountService {
 
     public static List<Account> priorityAccounts(List<Account> accounts) {
         return accounts
-            .filter(account => account.AccountNumber != null)
-            .filter(account => account.AnnualRevenue != null)
-            .filter(account => account.NumberOfEmployees != null)
-            .filter(account => account.AnnualRevenue / account.NumberOfEmployees > 10000);
+            .filter(account =>
+                account.AccountNumber != null
+                && account.AnnualRevenue != null
+                && account.NumberOfEmployees != null
+                && account.NumberOfEmployees > 0
+                && account.AnnualRevenue / account.NumberOfEmployees >= MIN_REVENUE_PER_EMPLOYEE
+            );
     }
 
-    public static List<String> hotContactEmails(List<Account> accounts) {
+    public static List<String> normalizedContactEmails(List<Account> accounts) {
         return accounts
             .flatMap(account => account.Contacts)
-            .filter(contact => contact.Email != null && contact.FirstName.length() <= contact.LastName.length())
-            .map(contact => contact.Email.toLowerCase());
+            .filter(contact =>
+                contact.Email != null
+                && contact.Email.contains('@')
+            )
+            .map(contact => contact.Email.trim().toLowerCase());
     }
 
     public static AccountSummary summarize(List<Account> accounts) {
@@ -93,9 +101,10 @@ public with sharing class AccountService {
     }
 
     public static Boolean compareRevenue(Account left, Account right, Decimal tolerance = 0) {
-        Func<Decimal, Decimal, Boolean> exactlyEqual = (x, y) => x == y;
-        return exactlyEqual(left.AnnualRevenue, right.AnnualRevenue)
-            || (left.AnnualRevenue - right.AnnualRevenue).abs() <= tolerance;
+        Func<Decimal, Decimal, Boolean> isWithinTolerance =
+            (actual, expected) => actual == expected || (actual - expected).abs() <= tolerance;
+
+        return isWithinTolerance(left.AnnualRevenue, right.AnnualRevenue);
     }
 
     public class AccountSummary {

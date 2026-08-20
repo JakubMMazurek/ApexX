@@ -20,7 +20,7 @@ const assignmentStatementPattern =
   /^([ \t]*)((?:[A-Za-z][A-Za-z0-9_.]*(?:\s*<\s*[^>\r\n]+\s*>)?)\s+([A-Za-z][A-Za-z0-9_]*))\s*=\s*/gm;
 const expressionStatementPattern = /^([ \t]*)([A-Za-z][A-Za-z0-9_]*)/gm;
 const funcLambdaAssignmentPattern =
-  /^([ \t]*)(Func\s*<\s*([^>\r\n]+?)\s*>)\s+([A-Za-z][A-Za-z0-9_]*)\s*=\s*\(([^)\r\n]*)\)\s*=>\s*(.+?)\s*;?[ \t]*(?=\r?$)/gm;
+  /^([ \t]*)(Func\s*<\s*([^>\r\n]+?)\s*>)\s+([A-Za-z][A-Za-z0-9_]*)\s*=\s*\(([^)\r\n]*)\)\s*=>\s*([\s\S]*?)\s*;[ \t]*(?=\r?$)/gm;
 
 export interface ApexParseResult {
   ok: boolean;
