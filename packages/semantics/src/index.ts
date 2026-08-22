@@ -385,7 +385,19 @@ export function inferListMethodChainTypes(
     }
     variables.set(step.lambda.parameterName.toLowerCase(), currentType);
 
-    const bodyType = inferExpressionType(step.lambda.body, {
+    const blockReturnExpression = finalBlockLambdaReturnExpression(step.lambda.body);
+    const invalidBlockLambda = isBlockLambdaBody(step.lambda.body)
+      && blockReturnExpression === undefined;
+    if (invalidBlockLambda) {
+      diagnostics.push({
+        severity: "error",
+        source: "apexx-semantics",
+        message: `${step.methodName}(...) block lambda must finish with one top-level return expression.`,
+        range: step.lambda.range,
+      });
+    }
+
+    const bodyType = inferExpressionType(blockReturnExpression ?? step.lambda.body, {
       variables,
       typeProvider: options.typeProvider,
     });
@@ -480,6 +492,30 @@ export function inferListMethodChainTypes(
     finalKind: currentKind,
     diagnostics,
   };
+}
+
+function isBlockLambdaBody(body: string): boolean {
+  const trimmed = body.trim();
+  return trimmed.startsWith("{") && trimmed.endsWith("}");
+}
+
+function finalBlockLambdaReturnExpression(body: string): string | undefined {
+  if (!isBlockLambdaBody(body)) {
+    return undefined;
+  }
+
+  const inner = body.trim().slice(1, -1).trim();
+  const match = /(?:^|[;}])\s*return\s+([\s\S]+);\s*$/.exec(inner);
+  if (!match) {
+    return undefined;
+  }
+
+  const beforeReturn = inner.slice(0, match.index + (match[0].startsWith("return") ? 0 : 1));
+  if (/\breturn\b/.test(beforeReturn)) {
+    return undefined;
+  }
+
+  return match[1].trim();
 }
 
 export function findAvailableName(prefix: string, usedNames: Set<string>): string {

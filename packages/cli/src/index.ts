@@ -1,8 +1,14 @@
 #!/usr/bin/env node
 import fs from "node:fs/promises";
 import path from "node:path";
-import { transpileApexX } from "@apexx/transpiler";
-import type { ApexXDiagnostic } from "@apexx/ast";
+import {
+  mergeGeneratedSupportClasses,
+  transpileApexX,
+} from "@apexx/transpiler";
+import type {
+  ApexXDiagnostic,
+  GeneratedApexSupportClass,
+} from "@apexx/ast";
 import {
   inferApexClassName,
   resolveBuildTarget,
@@ -56,6 +62,7 @@ async function build(args: ParsedArgs): Promise<void> {
   }
 
   let hadError = false;
+  const generatedSupport: GeneratedApexSupportClass[] = [];
 
   for (const file of files) {
     const source = await fs.readFile(file, "utf8");
@@ -85,16 +92,18 @@ async function build(args: ParsedArgs): Promise<void> {
     console.log(`Wrote ${path.relative(process.cwd(), written.classFile)}`);
     console.log(`Wrote ${path.relative(process.cwd(), written.metadataFile)}`);
 
-    for (const supportClass of result.supportClasses) {
-      const supportWritten = await writeApexClassFiles({
-        classesDir: buildTarget.classesDir,
-        className: supportClass.className,
-        source: supportClass.source,
-        apiVersion: buildTarget.apiVersion,
-      });
-      console.log(`Wrote ${path.relative(process.cwd(), supportWritten.classFile)}`);
-      console.log(`Wrote ${path.relative(process.cwd(), supportWritten.metadataFile)}`);
-    }
+    generatedSupport.push(...result.supportClasses);
+  }
+
+  for (const supportClass of mergeGeneratedSupportClasses(generatedSupport)) {
+    const supportWritten = await writeApexClassFiles({
+      classesDir: buildTarget.classesDir,
+      className: supportClass.className,
+      source: supportClass.source,
+      apiVersion: buildTarget.apiVersion,
+    });
+    console.log(`Wrote ${path.relative(process.cwd(), supportWritten.classFile)}`);
+    console.log(`Wrote ${path.relative(process.cwd(), supportWritten.metadataFile)}`);
   }
 
   if (hadError) {

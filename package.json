@@ -16,10 +16,12 @@
     "smoke": "node scripts/smoke-test.mjs",
     "lsp-smoke": "node scripts/lsp-smoke-test.mjs",
     "test": "npm run build && npm run smoke && npm run lsp-smoke",
+    "demo:check": "npm test && node scripts/demo-check.mjs",
     "apexx": "node packages/cli/dist/index.js",
     "schema:refresh": "node scripts/refresh-sobject-schema.mjs",
     "sf:deploy": "sf project deploy start --source-dir force-app",
     "sf:seed": "sf apex run --file scripts/seed-apexx-data.apex",
+    "sf:test": "sf apex run test --tests AccountServiceTest --wait 15 --code-coverage --result-format human",
     "sf:open:showcase": "sf org open --path lightning/n/ApexX_Showcase",
     "vscode:install": "powershell -ExecutionPolicy Bypass -File scripts/install-vscode-extension.ps1"
   },

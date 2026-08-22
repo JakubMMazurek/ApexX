@@ -1,0 +1,30 @@
+public with sharing class PortfolioRuleProvider {
+    public static (Func<Account, Boolean>, String, Decimal) resolve(
+        String mode
+    ) {
+        Decimal exposureThreshold = 250000;
+        Func<Account, Boolean> rule;
+        String reason;
+
+        if (mode == 'Revenue Exposure') {
+            rule = (account) => {
+                Decimal revenue = account.AnnualRevenue == null
+                    ? 0
+                    : account.AnnualRevenue;
+                return revenue >= exposureThreshold;
+            };
+            reason = 'Revenue exposure';
+        } else if (mode == 'Sales Ready') {
+            rule = (account) => {
+                Boolean hasNumber = account.AccountNumber != null;
+                return account.Rating == 'Hot' && hasNumber;
+            };
+            reason = 'Sales ready';
+        } else {
+            rule = (account) => account.AccountNumber == null;
+            reason = 'Missing account number';
+        }
+
+        return (rule, reason, exposureThreshold);
+    }
+}

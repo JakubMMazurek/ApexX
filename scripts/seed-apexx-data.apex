@@ -18,14 +18,14 @@ List<Account> accounts = new List<Account>{
     ),
     new Account(
         Name = 'ApexX Demo - Cloud Kicks',
-        Rating = 'Hot',
+        Rating = 'Warm',
         AccountNumber = 'APXX-002',
         AnnualRevenue = 250750,
         NumberOfEmployees = 60
     ),
     new Account(
         Name = 'ApexX Demo - Ursa Major',
-        Rating = 'Warm',
+        Rating = 'Hot',
         AccountNumber = 'APXX-003',
         AnnualRevenue = 98000,
         NumberOfEmployees = 7
@@ -49,13 +49,12 @@ insert new List<Contact>{
         AccountId = accountIdsByName.get('ApexX Demo - Northern Trail'),
         FirstName = 'Nina',
         LastName = 'North',
-        Email = 'nina.north@example.com'
+        Email = 'NINA.NORTH@EXAMPLE.COM'
     ),
     new Contact(
         AccountId = accountIdsByName.get('ApexX Demo - Northern Trail'),
         FirstName = 'Theo',
-        LastName = 'Trail',
-        Email = 'theo.trail@example.com'
+        LastName = 'Trail'
     ),
     new Contact(
         AccountId = accountIdsByName.get('ApexX Demo - Cloud Kicks'),
@@ -67,7 +66,7 @@ insert new List<Contact>{
         AccountId = accountIdsByName.get('ApexX Demo - Ursa Major'),
         FirstName = 'Uma',
         LastName = 'Major',
-        Email = 'uma.major@example.com'
+        Email = 'UMA.MAJOR@EXAMPLE.COM'
     )
 };
 

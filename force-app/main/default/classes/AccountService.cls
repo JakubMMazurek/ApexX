@@ -3,27 +3,37 @@
 // DO NOT EDIT.
 
 public with sharing class AccountService {
-    public interface ApexXFunc0 {
-        Boolean invoke(Account arg0);
-    }
-
-    private class ApexXLambda0 implements ApexXFunc0 {
-        public Boolean invoke(Account account) {
-            return account.AnnualRevenue != null
-                && account.AnnualRevenue >= 250000;
-        }
-    }
-
-    private class ApexXLambda1 implements ApexXFunc0 {
-        public Boolean invoke(Account account) {
-            return account.Rating == 'Hot'
-                && account.AccountNumber != null;
-        }
-    }
-
-    private class ApexXLambda2 implements ApexXFunc0 {
+    private class ApexXLambda0 implements ApexXFuncs.ApexXFunc_8420216b86a6 {
         public Boolean invoke(Account account) {
             return account.Rating == 'Hot';
+        }
+    }
+
+    private class ApexXLambda1 implements ApexXFuncs.ApexXFunc_8420216b86a6 {
+        private Decimal exposureThreshold;
+
+        public ApexXLambda1(Decimal exposureThreshold) {
+            this.exposureThreshold = exposureThreshold;
+        }
+
+        public Boolean invoke(Account account) {
+            Decimal revenue = account.AnnualRevenue == null
+                ? 0
+                : account.AnnualRevenue;
+            return revenue >= exposureThreshold;
+        }
+    }
+
+    private class ApexXLambda2 implements ApexXFuncs.ApexXFunc_8420216b86a6 {
+        public Boolean invoke(Account account) {
+            Boolean hasNumber = account.AccountNumber != null;
+            return account.Rating == 'Hot' && hasNumber;
+        }
+    }
+
+    private class ApexXLambda3 implements ApexXFuncs.ApexXFunc_8420216b86a6 {
+        public Boolean invoke(Account account) {
+            return account.AccountNumber == null;
         }
     }
 
@@ -64,7 +74,7 @@ public with sharing class AccountService {
         return (List<AccountWorkItem>) new UserFriendlyError().handle(new ApexX.Invocation('AccountService', 'loadRenewalWork', new List<String>{  }, new List<Object>{  }, new Map<String, Object>()), new ApexXNext2());
     }
     private static List<AccountWorkItem> loadRenewalWork_ApexXBody0() {
-            return renewalWork(demoAccounts(), 'Revenue Risk');
+            return renewalWork(demoAccounts(), 'Revenue Exposure');
     }
     private class ApexXNext2 implements ApexX.Next {
         private ApexXNext2() {
@@ -102,7 +112,7 @@ public with sharing class AccountService {
                 }
             }
             List<Account> withRevenue = apexxFilter0;
-    
+
             return withRevenue.size() > 1
                 && compareRevenue(withRevenue.get(0), withRevenue.get(1), 1000);
     }
@@ -116,7 +126,7 @@ public with sharing class AccountService {
 
     @AuraEnabled
     public static void triggerUserFriendlyError() {
-        new UserFriendlyError().handle(new ApexX.Invocation('AccountService', 'triggerUserFriendlyError', new List<String>{  }, new List<Object>{  }, new Map<String, Object>()), new ApexXNext5());
+        new UserFriendlyError().handle(new ApexX.Invocation('AccountService', 'triggerUserFriendlyError', new List<String>{  }, new List<Object>{  }, new Map<String, Object>{ 'message' => 'The operation failed safely. Internal details were hidden.' }), new ApexXNext5());
         return;
     }
     private static void triggerUserFriendlyError_ApexXBody0() {
@@ -130,6 +140,12 @@ public with sharing class AccountService {
             AccountService.triggerUserFriendlyError_ApexXBody0();
             return null;
         }
+    }
+
+    @AuraEnabled
+    public static void triggerRawError() {
+        String missingValue = null;
+        missingValue.trim();
     }
 
     @AuraEnabled
@@ -210,23 +226,20 @@ public with sharing class AccountService {
     }
 
     public static List<AccountWorkItem> renewalWork(List<Account> accounts) {
-        return renewalWork(accounts, 'Revenue Risk');
+        return renewalWork(accounts, 'Revenue Exposure');
     }
     public static List<AccountWorkItem> renewalWork(List<Account> accounts, String mode) {
-            ApexXFunc0 shouldEscalate;
-    
-            if (mode == 'Revenue Risk') {
-                shouldEscalate = new ApexXLambda0();
-            } else {
-                shouldEscalate = new ApexXLambda1();
-            }
-    
-            return buildRenewalWork(accounts, shouldEscalate);
+            ApexXTuples.ApexXTuple_567e4fc64300 apexxTuple0 = PortfolioRuleProvider.resolve(mode);
+            ApexXFuncs.ApexXFunc_8420216b86a6 shouldEscalate = apexxTuple0.item0;
+            String escalationReason = apexxTuple0.item1;
+
+            return buildRenewalWork(accounts, shouldEscalate, escalationReason);
     }
 
     public static List<AccountWorkItem> buildRenewalWork(
         List<Account> accounts,
-        ApexXFunc0 shouldEscalate
+        ApexXFuncs.ApexXFunc_8420216b86a6 shouldEscalate,
+        String escalationReason
     ) {
         List<AccountWorkItem> apexxMap1 = new List<AccountWorkItem>();
         for (Account account : accounts) {
@@ -236,22 +249,75 @@ public with sharing class AccountService {
             account.Name,
             account.OwnerId,
             escalate ? 'High' : 'Normal',
-            escalate ? 'Revenue review' : 'Standard renewal'
+            escalate ? escalationReason : 'Standard renewal'
             ));
         }
         return apexxMap1;
     }
 
-    public static AccountSummary summarize(List<Account> accounts) {
-        ApexXFunc0 isHot = new ApexXLambda2();
+    public static List<AccountWorkItem> buildSelectedWork(
+        List<Account> accounts,
+        String reason
+    ) {
+        List<AccountWorkItem> apexxMap2 = new List<AccountWorkItem>();
+        for (Account account : accounts) {
+            apexxMap2.add(new AccountWorkItem(
+            account.Id,
+            account.Name,
+            account.OwnerId,
+            'High',
+            reason
+        ));
+        }
+        return apexxMap2;
+    }
 
+    public static StrategyResult evaluateRenewalStrategy(
+        List<Account> accounts,
+        String mode,
+        ApexXFuncs.ApexXFunc_8420216b86a6 shouldEscalate,
+        String escalationReason
+    ) {
         Integer apexxCount0 = 0;
         for (Account account : accounts) {
-            if (isHot.invoke(account)) {
+            if (shouldEscalate.invoke(account)) {
                 apexxCount0++;
             }
         }
-        Integer hotCount = apexxCount0;
+        Integer matchCount = apexxCount0;
+        Account apexxFind0 = null;
+        for (Account account : accounts) {
+            if (shouldEscalate.invoke(account)) {
+                apexxFind0 = account;
+                break;
+            }
+        }
+        Account firstMatch = apexxFind0;
+        List<AccountWorkItem> items = buildRenewalWork(
+            accounts,
+            shouldEscalate,
+            escalationReason
+        );
+
+        return new StrategyResult(
+            mode,
+            accounts.size(),
+            matchCount,
+            firstMatch == null ? null : firstMatch.Name,
+            items
+        );
+    }
+
+    public static AccountSummary summarize(List<Account> accounts) {
+        ApexXFuncs.ApexXFunc_8420216b86a6 isHot = new ApexXLambda0();
+
+        Integer apexxCount1 = 0;
+        for (Account account : accounts) {
+            if (isHot.invoke(account)) {
+                apexxCount1++;
+            }
+        }
+        Integer hotCount = apexxCount1;
         Boolean apexxAll0 = true;
         for (Account account : accounts) {
             if (!(account.AccountNumber != null)) {
@@ -260,35 +326,354 @@ public with sharing class AccountService {
             }
         }
         Boolean allHaveNumbers = apexxAll0;
-        Account apexxFind0 = null;
+        Account apexxFind1 = null;
         for (Account account : accounts) {
             if (isHot.invoke(account)) {
-                apexxFind0 = account;
+                apexxFind1 = account;
                 break;
             }
         }
-        Account firstHot = apexxFind0;
+        Account firstHot = apexxFind1;
         List<Account> apexxFilter3 = new List<Account>();
         for (Account account : accounts) {
             if (account.Name != null) {
                 apexxFilter3.add(account);
             }
         }
-        List<String> apexxMap2 = new List<String>();
+        List<String> apexxMap3 = new List<String>();
         for (Account account : apexxFilter3) {
-            apexxMap2.add(account.Name);
+            apexxMap3.add(account.Name);
         }
-        List<String> names = apexxMap2;
+        List<String> names = apexxMap3;
 
         return new AccountSummary(hotCount, allHaveNumbers, firstHot, names);
     }
 
     public static Boolean compareRevenue(Account left, Account right) {
-        return compareRevenue(left, right, 0);
+        return compareRevenue(left, right, 0, 0);
     }
-    public static Boolean compareRevenue(Account left, Account right, Decimal tolerance) {
-            return left.AnnualRevenue == right.AnnualRevenue
-                || (left.AnnualRevenue - right.AnnualRevenue).abs() <= tolerance;
+
+    public static Boolean compareRevenue(Account left, Account right, Decimal absoluteTolerance) {
+        return compareRevenue(left, right, absoluteTolerance, 0);
+    }
+    public static Boolean compareRevenue(Account left, Account right, Decimal absoluteTolerance, Decimal percentageTolerance) {
+            if (left.AnnualRevenue == null || right.AnnualRevenue == null) {
+                return false;
+            }
+
+            Decimal difference = (left.AnnualRevenue - right.AnnualRevenue).abs();
+            Decimal baseline = left.AnnualRevenue.abs();
+            Decimal percentageDifference = baseline == 0
+                ? (difference == 0 ? 0 : 100)
+                : difference / baseline * 100;
+
+            return difference <= absoluteTolerance
+                || percentageDifference <= percentageTolerance;
+    }
+
+    public static PortfolioBriefing buildPortfolioBriefing(List<Account> accounts) {
+        return buildPortfolioBriefing(accounts, 'Revenue Exposure', 100000);
+    }
+
+    public static PortfolioBriefing buildPortfolioBriefing(List<Account> accounts, String mode) {
+        return buildPortfolioBriefing(accounts, mode, 100000);
+    }
+    public static PortfolioBriefing buildPortfolioBriefing(List<Account> accounts, String mode, Decimal minimumRevenue) {
+            ApexXTuples.ApexXTuple_567e4fc64300 apexxTuple1 = PortfolioRuleProvider.resolve(mode);
+            ApexXFuncs.ApexXFunc_8420216b86a6 matchesStrategy = apexxTuple1.item0;
+            String escalationReason = apexxTuple1.item1;
+            Decimal exposureThreshold = apexxTuple1.item2;
+
+            List<Account> apexxFilter4 = new List<Account>();
+            for (Account account : accounts) {
+                if (account.AnnualRevenue != null
+                    && account.AnnualRevenue >= minimumRevenue) {
+                    apexxFilter4.add(account);
+                }
+            }
+            List<Account> apexxFilter5 = new List<Account>();
+            for (Account account : apexxFilter4) {
+                if (matchesStrategy.invoke(account)) {
+                    apexxFilter5.add(account);
+                }
+            }
+            List<Account> selected = apexxFilter5;
+
+            List<AccountWorkItem> workItems = buildSelectedWork(
+                selected,
+                escalationReason
+            );
+            List<Contact> apexxFlatMap1 = new List<Contact>();
+            for (Account account : selected) {
+                apexxFlatMap1.addAll(account.Contacts);
+            }
+            List<Contact> apexxFilter6 = new List<Contact>();
+            for (Contact contact : apexxFlatMap1) {
+                if (contact.Email != null) {
+                    apexxFilter6.add(contact);
+                }
+            }
+            List<String> apexxMap4 = new List<String>();
+            for (Contact contact : apexxFilter6) {
+                apexxMap4.add(contact.Email.trim().toLowerCase());
+            }
+            List<String> stakeholderEmails = apexxMap4;
+
+            return new PortfolioBriefing(
+                mode,
+                minimumRevenue,
+                exposureThreshold,
+                accounts.size(),
+                selected.size(),
+                workItems,
+                stakeholderEmails
+            );
+    }
+
+    @AuraEnabled(cacheable=true)
+    public static ShowcaseOverview loadShowcaseOverview() {
+        return (ShowcaseOverview) new UserFriendlyError().handle(new ApexX.Invocation('AccountService', 'loadShowcaseOverview', new List<String>{  }, new List<Object>{  }, new Map<String, Object>()), new ApexXNext7());
+    }
+    private static ShowcaseOverview loadShowcaseOverview_ApexXBody0() {
+            List<Account> accounts = demoAccountsWithContacts();
+            List<AccountSnapshot> snapshots = new List<AccountSnapshot>();
+
+            for (Account account : accounts) {
+                snapshots.add(new AccountSnapshot(
+                    account.Id,
+                    account.Name,
+                    account.Rating,
+                    account.AccountNumber,
+                    account.AnnualRevenue,
+                    account.NumberOfEmployees,
+                    account.Contacts.size()
+                ));
+            }
+
+            return new ShowcaseOverview(snapshots);
+    }
+    private class ApexXNext7 implements ApexX.Next {
+        private ApexXNext7() {
+        }
+        public Object call() {
+            return AccountService.loadShowcaseOverview_ApexXBody0();
+        }
+    }
+
+    @AuraEnabled
+    public static EmailPipelineResult runEmailPipeline() {
+        return (EmailPipelineResult) new UserFriendlyError().handle(new ApexX.Invocation('AccountService', 'runEmailPipeline', new List<String>{  }, new List<Object>{  }, new Map<String, Object>()), new ApexXNext8());
+    }
+    private static EmailPipelineResult runEmailPipeline_ApexXBody0() {
+            return inspectPortfolio(demoAccountsWithContacts());
+    }
+    private class ApexXNext8 implements ApexX.Next {
+        private ApexXNext8() {
+        }
+        public Object call() {
+            return AccountService.runEmailPipeline_ApexXBody0();
+        }
+    }
+
+    public static EmailPipelineResult inspectPortfolio(List<Account> accounts) {
+        List<Contact> apexxFlatMap2 = new List<Contact>();
+        for (Account account : accounts) {
+            apexxFlatMap2.addAll(account.Contacts);
+        }
+        List<Contact> contacts = apexxFlatMap2;
+        List<Contact> apexxFilter7 = new List<Contact>();
+        for (Contact contact : contacts) {
+            if (contact.Email != null && contact.Email.contains('@')) {
+                apexxFilter7.add(contact);
+            }
+        }
+        List<String> apexxMap5 = new List<String>();
+        for (Contact contact : apexxFilter7) {
+            apexxMap5.add(contact.Email.trim().toLowerCase());
+        }
+        List<String> emails = apexxMap5;
+        Integer apexxCount2 = 0;
+        for (Account account : accounts) {
+            if (account.Rating == 'Hot') {
+                apexxCount2++;
+            }
+        }
+        Integer hotCount = apexxCount2;
+        Boolean apexxAny0 = false;
+        for (Account account : accounts) {
+            if (account.AccountNumber == null) {
+                apexxAny0 = true;
+                break;
+            }
+        }
+        Boolean anyMissingNumber = apexxAny0;
+        Boolean apexxAll1 = true;
+        for (Account account : accounts) {
+            if (!(account.AnnualRevenue != null)) {
+                apexxAll1 = false;
+                break;
+            }
+        }
+        Boolean allHaveRevenue = apexxAll1;
+        Account apexxFind2 = null;
+        for (Account account : accounts) {
+            if (account.AnnualRevenue != null
+            && account.AnnualRevenue >= 250000) {
+                apexxFind2 = account;
+                break;
+            }
+        }
+        Account firstHighValue = apexxFind2;
+
+        return new EmailPipelineResult(
+            accounts.size(),
+            contacts.size(),
+            emails.size(),
+            emails,
+            hotCount,
+            anyMissingNumber,
+            allHaveRevenue,
+            firstHighValue == null ? null : firstHighValue.Name
+        );
+    }
+
+    @AuraEnabled
+    public static StrategyResult runRenewalStrategy(String mode) {
+        return (StrategyResult) new UserFriendlyError().handle(new ApexX.Invocation('AccountService', 'runRenewalStrategy', new List<String>{ 'mode' }, new List<Object>{ mode }, new Map<String, Object>()), new ApexXNext9(mode));
+    }
+    private static StrategyResult runRenewalStrategy_ApexXBody0(String mode) {
+            return evaluateMode(demoAccounts(), mode);
+    }
+    private class ApexXNext9 implements ApexX.Next {
+        private String mode;
+        private ApexXNext9(String mode) {
+            this.mode = mode;
+        }
+        public Object call() {
+            return AccountService.runRenewalStrategy_ApexXBody0(mode);
+        }
+    }
+
+    public static StrategyResult evaluateMode(
+        List<Account> accounts,
+        String mode
+    ) {
+        Decimal exposureThreshold = 250000;
+        ApexXFuncs.ApexXFunc_8420216b86a6 rule;
+        String reason;
+
+        if (mode == 'Revenue Exposure') {
+            rule = new ApexXLambda1(exposureThreshold);
+            reason = 'Revenue exposure';
+        } else if (mode == 'Sales Ready') {
+            rule = new ApexXLambda2();
+            reason = 'Sales ready';
+        } else {
+            rule = new ApexXLambda3();
+            reason = 'Missing account number';
+        }
+
+        return evaluateRenewalStrategy(
+            accounts,
+            mode,
+            rule,
+            reason
+        );
+    }
+
+    @AuraEnabled
+    public static TupleDemoResult runTupleDemo() {
+        return (TupleDemoResult) new UserFriendlyError().handle(new ApexX.Invocation('AccountService', 'runTupleDemo', new List<String>{  }, new List<Object>{  }, new Map<String, Object>()), new ApexXNext10());
+    }
+    private static TupleDemoResult runTupleDemo_ApexXBody0() {
+            return AccountSignalConsumer.buildResult(demoAccounts());
+    }
+    private class ApexXNext10 implements ApexX.Next {
+        private ApexXNext10() {
+        }
+        public Object call() {
+            return AccountService.runTupleDemo_ApexXBody0();
+        }
+    }
+
+    @AuraEnabled
+    public static RevenueComparisonResult runRevenueComparison(Decimal absoluteTolerance, Decimal percentageTolerance) {
+        return (RevenueComparisonResult) new UserFriendlyError().handle(new ApexX.Invocation('AccountService', 'runRevenueComparison', new List<String>{ 'absoluteTolerance', 'percentageTolerance' }, new List<Object>{ absoluteTolerance, percentageTolerance }, new Map<String, Object>()), new ApexXNext11(absoluteTolerance, percentageTolerance));
+    }
+    private static RevenueComparisonResult runRevenueComparison_ApexXBody0(Decimal absoluteTolerance, Decimal percentageTolerance) {
+            List<Account> accounts = [
+                SELECT Id, Name, AnnualRevenue
+                FROM Account
+                WHERE AccountNumber IN ('APXX-001', 'APXX-002')
+                ORDER BY AccountNumber
+            ];
+
+            Account left = accounts.get(0);
+            Account right = accounts.get(1);
+            Decimal effectiveAbsolute = absoluteTolerance == null ? 0 : absoluteTolerance;
+            Decimal effectivePercentage = percentageTolerance == null ? 0 : percentageTolerance;
+            Boolean matches;
+            String callShape;
+
+            if (absoluteTolerance == null) {
+                matches = compareRevenue(left, right);
+                callShape = 'compareRevenue(left, right)';
+            } else if (percentageTolerance == null) {
+                matches = compareRevenue(left, right, absoluteTolerance);
+                callShape = 'compareRevenue(left, right, absoluteTolerance)';
+            } else {
+                matches = compareRevenue(
+                    left,
+                    right,
+                    absoluteTolerance,
+                    percentageTolerance
+                );
+                callShape = 'compareRevenue(left, right, absoluteTolerance, percentageTolerance)';
+            }
+
+            return new RevenueComparisonResult(
+                left.Name,
+                left.AnnualRevenue,
+                right.Name,
+                right.AnnualRevenue,
+                effectiveAbsolute,
+                effectivePercentage,
+                callShape,
+                matches
+            );
+    }
+    private class ApexXNext11 implements ApexX.Next {
+        private Decimal absoluteTolerance;
+        private Decimal percentageTolerance;
+        private ApexXNext11(Decimal absoluteTolerance, Decimal percentageTolerance) {
+            this.absoluteTolerance = absoluteTolerance;
+            this.percentageTolerance = percentageTolerance;
+        }
+        public Object call() {
+            return AccountService.runRevenueComparison_ApexXBody0(absoluteTolerance, percentageTolerance);
+        }
+    }
+
+    @AuraEnabled
+    public static PortfolioBriefing runPortfolioBriefing(String mode, Decimal minimumRevenue) {
+        return (PortfolioBriefing) new UserFriendlyError().handle(new ApexX.Invocation('AccountService', 'runPortfolioBriefing', new List<String>{ 'mode', 'minimumRevenue' }, new List<Object>{ mode, minimumRevenue }, new Map<String, Object>{ 'message' => 'Unable to build the portfolio briefing.' }), new ApexXNext12(mode, minimumRevenue));
+    }
+    private static PortfolioBriefing runPortfolioBriefing_ApexXBody0(String mode, Decimal minimumRevenue) {
+            List<Account> accounts = demoAccountsWithContacts();
+            return minimumRevenue == null
+                ? buildPortfolioBriefing(accounts, mode)
+                : buildPortfolioBriefing(accounts, mode, minimumRevenue);
+    }
+    private class ApexXNext12 implements ApexX.Next {
+        private String mode;
+        private Decimal minimumRevenue;
+        private ApexXNext12(String mode, Decimal minimumRevenue) {
+            this.mode = mode;
+            this.minimumRevenue = minimumRevenue;
+        }
+        public Object call() {
+            return AccountService.runPortfolioBriefing_ApexXBody0(mode, minimumRevenue);
+        }
     }
 
     public class AccountSummary {
@@ -329,6 +714,189 @@ public with sharing class AccountService {
             this.ownerId = ownerId;
             this.priority = priority;
             this.reason = reason;
+        }
+    }
+
+    public class ShowcaseOverview {
+        @AuraEnabled public List<AccountSnapshot> records { get; set; }
+
+        public ShowcaseOverview(List<AccountSnapshot> records) {
+            this.records = records;
+        }
+    }
+
+    public class AccountSnapshot {
+        @AuraEnabled public Id accountId { get; set; }
+        @AuraEnabled public String name { get; set; }
+        @AuraEnabled public String rating { get; set; }
+        @AuraEnabled public String accountNumber { get; set; }
+        @AuraEnabled public Decimal annualRevenue { get; set; }
+        @AuraEnabled public Integer employees { get; set; }
+        @AuraEnabled public Integer contactCount { get; set; }
+
+        public AccountSnapshot(
+            Id accountId,
+            String name,
+            String rating,
+            String accountNumber,
+            Decimal annualRevenue,
+            Integer employees,
+            Integer contactCount
+        ) {
+            this.accountId = accountId;
+            this.name = name;
+            this.rating = rating;
+            this.accountNumber = accountNumber;
+            this.annualRevenue = annualRevenue;
+            this.employees = employees;
+            this.contactCount = contactCount;
+        }
+    }
+
+    public class EmailPipelineResult {
+        @AuraEnabled public Integer accountCount { get; set; }
+        @AuraEnabled public Integer contactCount { get; set; }
+        @AuraEnabled public Integer validEmailCount { get; set; }
+        @AuraEnabled public List<String> emails { get; set; }
+        @AuraEnabled public Integer hotAccountCount { get; set; }
+        @AuraEnabled public Boolean anyMissingAccountNumber { get; set; }
+        @AuraEnabled public Boolean allHaveRevenue { get; set; }
+        @AuraEnabled public String firstHighValueName { get; set; }
+
+        public EmailPipelineResult(
+            Integer accountCount,
+            Integer contactCount,
+            Integer validEmailCount,
+            List<String> emails,
+            Integer hotAccountCount,
+            Boolean anyMissingAccountNumber,
+            Boolean allHaveRevenue,
+            String firstHighValueName
+        ) {
+            this.accountCount = accountCount;
+            this.contactCount = contactCount;
+            this.validEmailCount = validEmailCount;
+            this.emails = emails;
+            this.hotAccountCount = hotAccountCount;
+            this.anyMissingAccountNumber = anyMissingAccountNumber;
+            this.allHaveRevenue = allHaveRevenue;
+            this.firstHighValueName = firstHighValueName;
+        }
+    }
+
+    public class StrategyResult {
+        @AuraEnabled public String mode { get; set; }
+        @AuraEnabled public Integer accountCount { get; set; }
+        @AuraEnabled public Integer highPriorityCount { get; set; }
+        @AuraEnabled public String firstMatchName { get; set; }
+        @AuraEnabled public List<AccountWorkItem> items { get; set; }
+
+        public StrategyResult(
+            String mode,
+            Integer accountCount,
+            Integer highPriorityCount,
+            String firstMatchName,
+            List<AccountWorkItem> items
+        ) {
+            this.mode = mode;
+            this.accountCount = accountCount;
+            this.highPriorityCount = highPriorityCount;
+            this.firstMatchName = firstMatchName;
+            this.items = items;
+        }
+    }
+
+    public class RevenueComparisonResult {
+        @AuraEnabled public String leftName { get; set; }
+        @AuraEnabled public Decimal leftRevenue { get; set; }
+        @AuraEnabled public String rightName { get; set; }
+        @AuraEnabled public Decimal rightRevenue { get; set; }
+        @AuraEnabled public Decimal absoluteTolerance { get; set; }
+        @AuraEnabled public Decimal percentageTolerance { get; set; }
+        @AuraEnabled public String callShape { get; set; }
+        @AuraEnabled public Boolean matches { get; set; }
+
+        public RevenueComparisonResult(
+            String leftName,
+            Decimal leftRevenue,
+            String rightName,
+            Decimal rightRevenue,
+            Decimal absoluteTolerance,
+            Decimal percentageTolerance,
+            String callShape,
+            Boolean matches
+        ) {
+            this.leftName = leftName;
+            this.leftRevenue = leftRevenue;
+            this.rightName = rightName;
+            this.rightRevenue = rightRevenue;
+            this.absoluteTolerance = absoluteTolerance;
+            this.percentageTolerance = percentageTolerance;
+            this.callShape = callShape;
+            this.matches = matches;
+        }
+    }
+
+    public class TupleDemoResult {
+        @AuraEnabled public Integer accountCount { get; set; }
+        @AuraEnabled public Integer reviewCount { get; set; }
+        @AuraEnabled public List<AccountSignal> signals { get; set; }
+
+        public TupleDemoResult(
+            Integer accountCount,
+            Integer reviewCount,
+            List<AccountSignal> signals
+        ) {
+            this.accountCount = accountCount;
+            this.reviewCount = reviewCount;
+            this.signals = signals;
+        }
+    }
+
+    public class AccountSignal {
+        @AuraEnabled public Id accountId { get; set; }
+        @AuraEnabled public String accountName { get; set; }
+        @AuraEnabled public Decimal revenuePerEmployee { get; set; }
+        @AuraEnabled public Boolean needsReview { get; set; }
+
+        public AccountSignal(
+            Id accountId,
+            String accountName,
+            Decimal revenuePerEmployee,
+            Boolean needsReview
+        ) {
+            this.accountId = accountId;
+            this.accountName = accountName;
+            this.revenuePerEmployee = revenuePerEmployee;
+            this.needsReview = needsReview;
+        }
+    }
+
+    public class PortfolioBriefing {
+        @AuraEnabled public String mode { get; set; }
+        @AuraEnabled public Decimal minimumRevenue { get; set; }
+        @AuraEnabled public Decimal exposureThreshold { get; set; }
+        @AuraEnabled public Integer inputAccountCount { get; set; }
+        @AuraEnabled public Integer selectedAccountCount { get; set; }
+        @AuraEnabled public List<AccountWorkItem> workItems { get; set; }
+        @AuraEnabled public List<String> stakeholderEmails { get; set; }
+
+        public PortfolioBriefing(
+            String mode,
+            Decimal minimumRevenue,
+            Decimal exposureThreshold,
+            Integer inputAccountCount,
+            Integer selectedAccountCount,
+            List<AccountWorkItem> workItems,
+            List<String> stakeholderEmails
+        ) {
+            this.mode = mode;
+            this.minimumRevenue = minimumRevenue;
+            this.exposureThreshold = exposureThreshold;
+            this.inputAccountCount = inputAccountCount;
+            this.selectedAccountCount = selectedAccountCount;
+            this.workItems = workItems;
+            this.stakeholderEmails = stakeholderEmails;
         }
     }
 }

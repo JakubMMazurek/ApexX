@@ -1,0 +1,75 @@
+{
+  "ApexX typed function": {
+    "prefix": "apexx-func",
+    "description": "Declare a typed ApexX Func lambda",
+    "body": [
+      "Func<${1:Account}, ${2:Boolean}> ${3:matches} = (${4:account}) => ${4:account}.${5:Rating} == '${6:Hot}';"
+    ]
+  },
+  "ApexX block function": {
+    "prefix": "apexx-func-block",
+    "description": "Declare a typed ApexX Func with a block lambda",
+    "body": [
+      "Func<${1:Account}, ${2:Boolean}> ${3:matches} = (${4:account}) => {",
+      "    ${5:Decimal revenue = ${4:account}.AnnualRevenue == null ? 0 : ${4:account}.AnnualRevenue;}",
+      "    return ${6:revenue >= 250000};",
+      "};"
+    ]
+  },
+  "ApexX tuple contract": {
+    "prefix": "apexx-tuple",
+    "description": "Return and destructure a strongly typed ApexX tuple",
+    "body": [
+      "public static (${1:Func<Account, Boolean>}, ${2:String}, ${3:Decimal}) ${4:resolve}(${5:String mode}) {",
+      "    ${1:Func<Account, Boolean>} ${6:rule} = (${7:account}) => ${8:true};",
+      "    return (${6:rule}, ${9:'Reason'}, ${10:250000});",
+      "}",
+      "",
+      "(${1:Func<Account, Boolean>} ${6:rule}, ${2:String} ${11:reason}, ${3:Decimal} ${12:threshold}) =",
+      "    ${4:resolve}(${5:mode});"
+    ]
+  },
+  "ApexX tuple-valued map": {
+    "prefix": "apexx-tuple-map",
+    "description": "Use a strongly typed tuple as a Map value",
+    "body": [
+      "Map<${1:Id}, (${2:Decimal}, ${3:Boolean})> ${4:valuesById} =",
+      "    new Map<${1:Id}, (${2:Decimal}, ${3:Boolean})>();",
+      "${4:valuesById}.put(${5:recordId}, (${6:amount}, ${7:needsReview}));",
+      "(${2:Decimal} ${6:amount}, ${3:Boolean} ${7:needsReview}) =",
+      "    ${4:valuesById}.get(${5:recordId});"
+    ]
+  },
+  "ApexX collection pipeline": {
+    "prefix": "apexx-pipeline",
+    "description": "Create a typed filter/map pipeline",
+    "body": [
+      "return ${1:accounts}",
+      "    .filter(${2:account} => ${2:account}.${3:Rating} == '${4:Hot}')",
+      "    .map(${2:account} => ${2:account}.${5:Name});"
+    ]
+  },
+  "ApexX default parameters": {
+    "prefix": "apexx-defaults",
+    "description": "Declare trailing default parameters",
+    "body": [
+      "public static ${1:Boolean} ${2:matches}(",
+      "    ${3:Account} ${4:account},",
+      "    ${5:Decimal} ${6:tolerance} = ${7:0},",
+      "    ${8:Boolean} ${9:strict} = ${10:false}",
+      ") {",
+      "    ${0:return true;}",
+      "}"
+    ]
+  },
+  "ApexX decorated method": {
+    "prefix": "apexx-decorator",
+    "description": "Create a method with a custom ApexX decorator",
+    "body": [
+      "@${1:UserFriendlyError}(message = '${2:The operation failed safely.}')",
+      "public static ${3:void} ${4:run}() {",
+      "    ${0}",
+      "}"
+    ]
+  }
+}

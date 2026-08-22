@@ -21,20 +21,39 @@ import {
   findAvailableName,
   inferListMethodChainTypes,
 } from "@apexx/semantics";
+import { lowerApexXTuples } from "./tuples.js";
+import {
+  FUNC_REGISTRY_CLASS,
+  sharedFuncTypeName,
+  sharedTypeMemberName,
+} from "./sharedTypes.js";
+import {
+  renderStructuralRegistry,
+} from "./structuralRegistry.js";
+
+export { mergeGeneratedSupportClasses } from "./structuralRegistry.js";
 
 export function transpileApexX(
   source: string,
   options: TranspileOptions = {},
 ): TranspileResult {
-  const parseResult = parseApexX(source, options.sourceFileName);
-  const diagnostics: ApexXDiagnostic[] = [...parseResult.diagnostics];
-  const listVariables = collectListVariables(source);
-  const declaredVariables = collectDeclaredVariables(source);
+  const tupleLowering = lowerApexXTuples(source);
+  const workingSource = tupleLowering.output;
+  const parseResult = parseApexX(workingSource, options.sourceFileName);
+  const diagnostics: ApexXDiagnostic[] = [
+    ...tupleLowering.diagnostics,
+    ...parseResult.diagnostics,
+  ];
+  const listVariables = collectListVariables(workingSource);
+  const declaredVariables = collectDeclaredVariables(workingSource);
   const typeProvider = createApexTypeProvider({
     workspaceRoot: options.workspaceRoot,
   });
-  const usedNames = collectIdentifiers(source);
-  const funcTypeAliases = collectFuncTypeAliases(source, usedNames);
+  const usedNames = collectIdentifiers(workingSource);
+  const funcTypeAliases = collectFuncTypeAliases(
+    `${source}\n${workingSource}`,
+    usedNames,
+  );
   const listMethodCalls = parseResult.listMethodCalls.map(call => ({ ...call }));
   const funcLambdaAssignments = parseResult.funcLambdaAssignments.map(assignment => ({
     ...assignment,
@@ -43,7 +62,7 @@ export function transpileApexX(
     declaredVariables,
     funcLambdaAssignments,
   );
-  const funcInvocations = findFuncInvocations(source, funcVariableNames);
+  const funcInvocations = findFuncInvocations(workingSource, funcVariableNames);
   const transformations: Transformation[] = [];
   let output = "";
   let cursor = 0;
@@ -63,11 +82,11 @@ export function transpileApexX(
 
     call.elementType = listType.elementType;
     const expectedResultType = inferExpectedListMethodResultType(
-      source,
+      workingSource,
       call,
     );
     const chainTypes = inferListMethodChainTypes({
-      source,
+      source: workingSource,
       call,
       receiverElementType: listType.elementType,
       expectedResultType,
@@ -107,7 +126,7 @@ export function transpileApexX(
     completeFuncLambdaAssignmentTypes(assignment, declaredVariables);
     const signature = funcSignatureKey(assignment.parameterTypes, assignment.returnType);
     assignment.interfaceName = funcTypeAliases.get(signature)?.interfaceName
-      ?? findAvailableName("ApexXFunc", usedNames);
+      ?? sharedFuncTypeName(assignment.parameterTypes, assignment.returnType);
     assignment.implementationName = findAvailableName("ApexXLambda", usedNames);
   }
 
@@ -140,12 +159,12 @@ export function transpileApexX(
       continue;
     }
 
-    output += source.slice(cursor, transformation.start);
+    output += workingSource.slice(cursor, transformation.start);
     output += transformation.replacement;
     cursor = transformation.end;
   }
 
-  output += source.slice(cursor);
+  output += workingSource.slice(cursor);
   output = replaceFuncTypeReferences(output, funcTypeAliases);
   output = addGeneratedFuncTypes(output, funcLambdaAssignments, funcVariableNames, funcTypeAliases);
   const methodLowering = lowerApexXMethods(output, {
@@ -164,9 +183,11 @@ export function transpileApexX(
   return {
     source,
     output: generated,
-    supportClasses: methodLowering.needsDecoratorSupport
-      ? [createApexXSupportClass()]
-      : [],
+    supportClasses: deduplicateSupportClasses([
+      ...tupleLowering.supportClasses,
+      ...createFuncSupportClasses(funcTypeAliases),
+      ...(methodLowering.needsDecoratorSupport ? [createApexXSupportClass()] : []),
+    ]),
     diagnostics,
     listMethodCalls,
     funcLambdaAssignments,
@@ -1007,6 +1028,11 @@ function lowerListMethodCall(
     const inputType = inputTypes[index];
     const resultType = resultTypes[index];
     const resultKind = resultKinds[index];
+    const blockLambda = isBlockLambdaBody(lambda.body)
+      ? lowerCollectionBlockLambda(lambda.body, inner, funcVariableNames)
+      : undefined;
+    const lambdaExpression = blockLambda?.expression
+      ?? rewriteFuncInvocations(lambda.body, funcVariableNames);
 
     if (resultKind === "list") {
       lines.push(
@@ -1014,28 +1040,23 @@ function lowerListMethodCall(
         `${indent}for (${inputType} ${lambda.parameterName} : ${currentReceiver}) {`,
       );
 
+      if (blockLambda) {
+        lines.push(...blockLambda.prelude);
+      }
+
       if (step.methodName === "filter") {
         lines.push(
-          `${inner}if (${rewriteFuncInvocations(lambda.body, funcVariableNames)}) {`,
+          `${inner}if (${lambdaExpression}) {`,
           `${nested}${resultName}.add(${lambda.parameterName});`,
           `${inner}}`,
         );
       } else if (step.methodName === "flatMap") {
         lines.push(
-          `${inner}${resultName}.addAll(${rewriteFuncInvocations(lambda.body, funcVariableNames)});`,
-        );
-      } else if (isBlockLambdaBody(lambda.body)) {
-        lines.push(
-          ...lowerMapBlockLambda(
-            lambda.body,
-            resultName,
-            inner,
-            funcVariableNames,
-          ),
+          `${inner}${resultName}.addAll(${lambdaExpression});`,
         );
       } else {
         lines.push(
-          `${inner}${resultName}.add(${rewriteFuncInvocations(lambda.body, funcVariableNames)});`,
+          `${inner}${resultName}.add(${lambdaExpression});`,
         );
       }
 
@@ -1048,7 +1069,8 @@ function lowerListMethodCall(
       lines.push(
         `${indent}Boolean ${resultName} = false;`,
         `${indent}for (${inputType} ${lambda.parameterName} : ${currentReceiver}) {`,
-        `${inner}if (${rewriteFuncInvocations(lambda.body, funcVariableNames)}) {`,
+        ...(blockLambda?.prelude ?? []),
+        `${inner}if (${lambdaExpression}) {`,
         `${nested}${resultName} = true;`,
         `${nested}break;`,
         `${inner}}`,
@@ -1058,7 +1080,8 @@ function lowerListMethodCall(
       lines.push(
         `${indent}Boolean ${resultName} = true;`,
         `${indent}for (${inputType} ${lambda.parameterName} : ${currentReceiver}) {`,
-        `${inner}if (!(${rewriteFuncInvocations(lambda.body, funcVariableNames)})) {`,
+        ...(blockLambda?.prelude ?? []),
+        `${inner}if (!(${lambdaExpression})) {`,
         `${nested}${resultName} = false;`,
         `${nested}break;`,
         `${inner}}`,
@@ -1068,7 +1091,8 @@ function lowerListMethodCall(
       lines.push(
         `${indent}Integer ${resultName} = 0;`,
         `${indent}for (${inputType} ${lambda.parameterName} : ${currentReceiver}) {`,
-        `${inner}if (${rewriteFuncInvocations(lambda.body, funcVariableNames)}) {`,
+        ...(blockLambda?.prelude ?? []),
+        `${inner}if (${lambdaExpression}) {`,
         `${nested}${resultName}++;`,
         `${inner}}`,
         `${indent}}`,
@@ -1077,7 +1101,8 @@ function lowerListMethodCall(
       lines.push(
         `${indent}${resultType} ${resultName} = null;`,
         `${indent}for (${inputType} ${lambda.parameterName} : ${currentReceiver}) {`,
-        `${inner}if (${rewriteFuncInvocations(lambda.body, funcVariableNames)}) {`,
+        ...(blockLambda?.prelude ?? []),
+        `${inner}if (${lambdaExpression}) {`,
         `${nested}${resultName} = ${lambda.parameterName};`,
         `${nested}break;`,
         `${inner}}`,
@@ -1102,27 +1127,33 @@ function isBlockLambdaBody(body: string): boolean {
   return trimmed.startsWith("{") && trimmed.endsWith("}");
 }
 
-function lowerMapBlockLambda(
+function lowerCollectionBlockLambda(
   body: string,
-  resultName: string,
   indent: string,
   funcVariableNames: Set<string>,
-): string[] {
+): { prelude: string[]; expression: string } {
   const statements = normalizeBlockLambdaBody(body);
+  const finalStatement = statements.at(-1) ?? "";
+  const returnMatch = /^return\s+([\s\S]+);$/.exec(finalStatement.trim());
 
-  return statements.map(statement => {
-    const returnMatch = /^return\s+([\s\S]+);$/.exec(statement.trim());
+  if (!returnMatch) {
+    return {
+      prelude: statements.map(statement =>
+        `${indent}${rewriteFuncInvocations(statement, funcVariableNames)}`,
+      ),
+      expression: "null",
+    };
+  }
 
-    if (returnMatch) {
-      const expression = formatBlockLambdaExpression(
-        rewriteFuncInvocations(returnMatch[1].trim(), funcVariableNames),
-        indent,
-      );
-      return `${indent}${resultName}.add(${expression});`;
-    }
-
-    return `${indent}${rewriteFuncInvocations(statement, funcVariableNames)}`;
-  });
+  return {
+    prelude: statements.slice(0, -1).map(statement =>
+      `${indent}${rewriteFuncInvocations(statement, funcVariableNames)}`,
+    ),
+    expression: formatBlockLambdaExpression(
+      rewriteFuncInvocations(returnMatch[1].trim(), funcVariableNames),
+      indent,
+    ),
+  };
 }
 
 function formatBlockLambdaExpression(expression: string, continuationIndent: string): string {
@@ -1284,7 +1315,7 @@ function addGeneratedFuncTypes(
       assignment.parameterTypes.length === assignment.lambda.parameters.length,
   );
 
-  if (supportedAssignments.length === 0 && funcTypeAliases.size === 0) {
+  if (supportedAssignments.length === 0) {
     return source;
   }
 
@@ -1293,15 +1324,10 @@ function addGeneratedFuncTypes(
     return source;
   }
 
-  const interfaces = [...funcTypeAliases.values()]
-    .map(alias => renderFuncInterfaceDeclaration(alias, "    "))
-    .join("\n\n");
   const implementations = supportedAssignments
     .map(assignment => renderFuncImplementationDeclaration(assignment, "    ", funcVariableNames))
     .join("\n\n");
-  const declarations = [interfaces, implementations]
-    .filter(part => part.length > 0)
-    .join("\n\n");
+  const declarations = implementations;
 
   return `${source.slice(0, classStart)}\n${declarations}\n${source.slice(classStart)}`;
 }
@@ -1317,10 +1343,36 @@ function renderFuncInterfaceDeclaration(
   const returnType = toApexType(alias.returnType);
 
   return [
-    `${indent}public interface ${alias.interfaceName} {`,
+    `${indent}public interface ${sharedTypeMemberName(alias.interfaceName)} {`,
     `${inner}${returnType} invoke(${parameterText});`,
     `${indent}}`,
   ].join("\n");
+}
+
+function createFuncSupportClasses(
+  aliases: Map<string, FuncTypeAlias>,
+): GeneratedApexSupportClass[] {
+  if (aliases.size === 0) {
+    return [];
+  }
+
+  return [renderStructuralRegistry(
+    FUNC_REGISTRY_CLASS,
+    [...aliases.values()].map(alias => ({
+      name: sharedTypeMemberName(alias.interfaceName),
+      source: renderFuncInterfaceDeclaration(alias, "    "),
+    })),
+  )];
+}
+
+function deduplicateSupportClasses(
+  supportClasses: GeneratedApexSupportClass[],
+): GeneratedApexSupportClass[] {
+  const byName = new Map<string, GeneratedApexSupportClass>();
+  for (const supportClass of supportClasses) {
+    byName.set(supportClass.className, supportClass);
+  }
+  return [...byName.values()];
 }
 
 function renderFuncImplementationDeclaration(
@@ -1352,6 +1404,13 @@ function renderFuncImplementationDeclaration(
       ]
     : [];
   const returnType = toApexType(assignment.returnType);
+  const blockBody = isBlockLambdaBody(assignment.lambda.body)
+    ? renderFuncBlockLambdaBody(
+        assignment.lambda.body,
+        nested,
+        funcVariableNames,
+      )
+    : undefined;
 
   return [
     `${indent}private class ${assignment.implementationName} implements ${assignment.interfaceName} {`,
@@ -1359,15 +1418,37 @@ function renderFuncImplementationDeclaration(
     ...(fields.length > 0 ? [""] : []),
     ...constructor,
     `${inner}public ${returnType} invoke(${parameterText}) {`,
-    `${nested}return ${rewriteFuncInvocations(assignment.lambda.body, funcVariableNames)};`,
+    ...(blockBody ?? [
+      `${nested}return ${rewriteFuncInvocations(assignment.lambda.body, funcVariableNames)};`,
+    ]),
     `${inner}}`,
     `${indent}}`,
   ].join("\n");
 }
 
+function renderFuncBlockLambdaBody(
+  body: string,
+  indent: string,
+  funcVariableNames: Set<string>,
+): string[] {
+  const inner = body.trim().slice(1, -1).replace(/^\s*\r?\n/, "").replace(/\r?\n\s*$/, "");
+  const lines = inner.split(/\r?\n/);
+  const nonEmptyIndents = lines
+    .filter(line => line.trim().length > 0)
+    .map(line => /^(\s*)/.exec(line)?.[1].length ?? 0);
+  const commonIndent = nonEmptyIndents.length > 0
+    ? Math.min(...nonEmptyIndents)
+    : 0;
+  const normalized = lines.map(line => line.slice(commonIndent)).join("\n");
+
+  return rewriteFuncInvocations(normalized, funcVariableNames)
+    .split(/\r?\n/)
+    .map(line => `${indent}${line}`);
+}
+
 function collectFuncTypeAliases(
   source: string,
-  usedNames: Set<string>,
+  _usedNames: Set<string>,
 ): Map<string, FuncTypeAlias> {
   const aliases = new Map<string, FuncTypeAlias>();
   const pattern = /Func\s*<\s*([^>\r\n]+?)\s*>/g;
@@ -1385,7 +1466,7 @@ function collectFuncTypeAliases(
 
     if (!aliases.has(signature)) {
       aliases.set(signature, {
-        interfaceName: findAvailableName("ApexXFunc", usedNames),
+        interfaceName: sharedFuncTypeName(parameterTypes, returnType),
         parameterTypes,
         returnType,
       });
@@ -1467,6 +1548,9 @@ function inferCapturedVariables(
   const parameterNames = new Set(
     assignment.lambda.parameters.map(parameter => parameter.name.toLowerCase()),
   );
+  const lambdaLocalNames = new Set(
+    collectDeclaredVariables(assignment.lambda.body).keys(),
+  );
   const funcAssignmentsByName = new Map(
     funcLambdaAssignments.map(funcAssignment => [
       funcAssignment.variableName.toLowerCase(),
@@ -1480,6 +1564,7 @@ function inferCapturedVariables(
 
     if (
       parameterNames.has(normalized) ||
+      lambdaLocalNames.has(normalized) ||
       normalized === assignment.variableName.toLowerCase() ||
       capturedNames.has(normalized) ||
       identifier.isMemberName
@@ -1532,8 +1617,9 @@ function addHeader(source: string, sourceFileName?: string): string {
   const sourceLine = sourceFileName
     ? `// Source: ${sourceFileName}\n`
     : "";
+  const normalizedSource = source.replace(/[ \t]+$/gm, "");
 
-  return `// AUTO-GENERATED BY ApexX.\n${sourceLine}// DO NOT EDIT.\n\n${source}`;
+  return `// AUTO-GENERATED BY ApexX.\n${sourceLine}// DO NOT EDIT.\n\n${normalizedSource}`;
 }
 
 function toApexType(typeName: string): string {

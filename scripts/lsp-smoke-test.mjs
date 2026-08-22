@@ -251,6 +251,45 @@ try {
   );
   assertHasLabels(reassignedFuncLambdaMembers, ["AnnualRevenue", "AccountNumber", "Rating"]);
 
+  const blockFuncLambdaMembers = await completionsFor(
+    "BlockFuncLambdaProbe",
+    withCursor(`public with sharing class BlockFuncLambdaProbe {
+    public static Func<Account, Boolean> resolve(Decimal threshold) {
+        Func<Account, Boolean> matches = (account) => {
+            Decimal revenue = account.AnnualRevenue == null ? 0 : account.AnnualRevenue;
+            Boolean selected = account.__CURSOR__;
+            return revenue >= threshold && selected;
+        };
+        return matches;
+    }
+}
+`),
+  );
+  assertHasLabels(blockFuncLambdaMembers, ["AnnualRevenue", "AccountNumber", "Rating"]);
+
+  const funcHoverProbe = withCursor(`public with sharing class HoverProbe {
+    public static void inspect() {
+        Func__CURSOR__<Account, Boolean> matches;
+    }
+}
+`);
+  const hoverUri = pathToFileURL(
+    path.join(root, "apexx", "classes", "HoverProbe.clsx"),
+  ).href;
+  notify("textDocument/didOpen", {
+    textDocument: {
+      uri: hoverUri,
+      languageId: "apexx",
+      version: 1,
+      text: funcHoverProbe.text,
+    },
+  });
+  const funcHover = await request("textDocument/hover", {
+    textDocument: { uri: hoverUri },
+    position: funcHoverProbe.position,
+  });
+  assert.match(funcHover.contents.value, /strongly typed function value/i);
+
   await request("shutdown", null);
   notify("exit", undefined);
   console.log("LSP smoke test passed.");

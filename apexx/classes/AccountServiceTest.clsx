@@ -1,0 +1,243 @@
+@IsTest
+private class AccountServiceTest {
+    @TestSetup
+    static void seedShowcaseData() {
+        List<Account> accounts = new List<Account>{
+            new Account(
+                Name = 'ApexX Demo - Northern Trail',
+                Rating = 'Hot',
+                AccountNumber = 'APXX-001',
+                AnnualRevenue = 250000,
+                NumberOfEmployees = 18
+            ),
+            new Account(
+                Name = 'ApexX Demo - Cloud Kicks',
+                Rating = 'Warm',
+                AccountNumber = 'APXX-002',
+                AnnualRevenue = 250750,
+                NumberOfEmployees = 60
+            ),
+            new Account(
+                Name = 'ApexX Demo - Ursa Major',
+                Rating = 'Hot',
+                AccountNumber = 'APXX-003',
+                AnnualRevenue = 98000,
+                NumberOfEmployees = 7
+            ),
+            new Account(
+                Name = 'ApexX Demo - No Number Yet',
+                Rating = 'Hot',
+                AnnualRevenue = 120000,
+                NumberOfEmployees = 20
+            )
+        };
+        insert accounts;
+
+        Map<String, Id> accountIds = new Map<String, Id>();
+        for (Account account : accounts) {
+            accountIds.put(account.Name, account.Id);
+        }
+
+        insert new List<Contact>{
+            new Contact(
+                AccountId = accountIds.get('ApexX Demo - Northern Trail'),
+                LastName = 'North',
+                Email = 'NINA.NORTH@EXAMPLE.COM'
+            ),
+            new Contact(
+                AccountId = accountIds.get('ApexX Demo - Northern Trail'),
+                LastName = 'Trail'
+            ),
+            new Contact(
+                AccountId = accountIds.get('ApexX Demo - Cloud Kicks'),
+                LastName = 'Cloud',
+                Email = 'casey.cloud@example.com'
+            ),
+            new Contact(
+                AccountId = accountIds.get('ApexX Demo - Ursa Major'),
+                LastName = 'Major',
+                Email = 'UMA.MAJOR@EXAMPLE.COM'
+            )
+        };
+    }
+
+    @IsTest
+    static void collectionPipelineReturnsNormalizedEmails() {
+        AccountService.EmailPipelineResult result = AccountService.runEmailPipeline();
+
+        System.assertEquals(4, result.accountCount);
+        System.assertEquals(4, result.contactCount);
+        System.assertEquals(3, result.validEmailCount);
+        System.assertEquals(3, result.hotAccountCount);
+        System.assertEquals(true, result.anyMissingAccountNumber);
+        System.assertEquals(true, result.allHaveRevenue);
+        System.assertEquals('ApexX Demo - Cloud Kicks', result.firstHighValueName);
+        System.assertEquals(
+            new Set<String>{
+                'casey.cloud@example.com',
+                'nina.north@example.com',
+                'uma.major@example.com'
+            },
+            new Set<String>(result.emails)
+        );
+    }
+
+    @IsTest
+    static void functionStrategyChangesEscalatedAccounts() {
+        AccountService.StrategyResult revenue =
+            AccountService.runRenewalStrategy('Revenue Exposure');
+        AccountService.StrategyResult salesReady =
+            AccountService.runRenewalStrategy('Sales Ready');
+        AccountService.StrategyResult dataQuality =
+            AccountService.runRenewalStrategy('Data Quality');
+
+        System.assertEquals(
+            new Set<String>{ 'ApexX Demo - Cloud Kicks', 'ApexX Demo - Northern Trail' },
+            highPriorityNames(revenue.items)
+        );
+        System.assertEquals(
+            new Set<String>{ 'ApexX Demo - Northern Trail', 'ApexX Demo - Ursa Major' },
+            highPriorityNames(salesReady.items)
+        );
+        System.assertEquals(
+            new Set<String>{ 'ApexX Demo - No Number Yet' },
+            highPriorityNames(dataQuality.items)
+        );
+    }
+
+    @IsTest
+    static void tupleAndFuncCrossClassBoundaryRemainStronglyTyped() {
+        AccountService.TupleDemoResult result = AccountService.runTupleDemo();
+        System.assertEquals(4, result.accountCount);
+        System.assertEquals(2, result.reviewCount);
+        System.assertEquals(4, result.signals.size());
+
+        Map<String, AccountService.AccountSignal> byName =
+            new Map<String, AccountService.AccountSignal>();
+        for (AccountService.AccountSignal signal : result.signals) {
+            byName.put(signal.accountName, signal);
+        }
+        System.assertEquals(
+            false,
+            byName.get('ApexX Demo - Northern Trail').needsReview
+        );
+        System.assertEquals(
+            true,
+            byName.get('ApexX Demo - No Number Yet').needsReview
+        );
+
+        (Func<Account, Boolean> crossClassRule, String reason, Decimal threshold) =
+            PortfolioRuleProvider.resolve('Data Quality');
+        System.assertEquals('Missing account number', reason);
+        System.assertEquals(250000, threshold);
+        List<Account> crossClassAccounts = AccountService.demoAccounts();
+        Integer crossClassCount =
+            crossClassAccounts.count(account => crossClassRule(account));
+        System.assertEquals(1, crossClassCount);
+    }
+
+    @IsTest
+    static void defaultArgumentChangesRevenueComparison() {
+        AccountService.RevenueComparisonResult exact =
+            AccountService.runRevenueComparison(null, null);
+        AccountService.RevenueComparisonResult absolute =
+            AccountService.runRevenueComparison(1000, null);
+        AccountService.RevenueComparisonResult blended =
+            AccountService.runRevenueComparison(250, 0.5);
+
+        System.assertEquals(false, exact.matches);
+        System.assertEquals(0, exact.absoluteTolerance);
+        System.assertEquals(0, exact.percentageTolerance);
+        System.assertEquals(true, absolute.matches);
+        System.assertEquals(1000, absolute.absoluteTolerance);
+        System.assertEquals(0, absolute.percentageTolerance);
+        System.assertEquals(true, blended.matches);
+        System.assertEquals(250, blended.absoluteTolerance);
+        System.assertEquals(0.5, blended.percentageTolerance);
+    }
+
+    @IsTest
+    static void fullWorkflowComposesLanguageFeatures() {
+        AccountService.PortfolioBriefing revenue =
+            AccountService.runPortfolioBriefing('Revenue Exposure', null);
+        AccountService.PortfolioBriefing salesReady =
+            AccountService.runPortfolioBriefing('Sales Ready', 90000);
+        AccountService.PortfolioBriefing dataQuality =
+            AccountService.runPortfolioBriefing('Data Quality', null);
+
+        System.assertEquals(100000, revenue.minimumRevenue);
+        System.assertEquals(250000, revenue.exposureThreshold);
+        System.assertEquals(4, revenue.inputAccountCount);
+        System.assertEquals(2, revenue.selectedAccountCount);
+        System.assertEquals(2, revenue.workItems.size());
+        System.assertEquals(2, revenue.stakeholderEmails.size());
+
+        System.assertEquals(90000, salesReady.minimumRevenue);
+        System.assertEquals(2, salesReady.selectedAccountCount);
+        System.assertEquals(
+            new Set<String>{ 'ApexX Demo - Northern Trail', 'ApexX Demo - Ursa Major' },
+            highPriorityNames(salesReady.workItems)
+        );
+        System.assertEquals(1, dataQuality.selectedAccountCount);
+        System.assertEquals(
+            new Set<String>{ 'ApexX Demo - No Number Yet' },
+            highPriorityNames(dataQuality.workItems)
+        );
+    }
+
+    @IsTest
+    static void decoratorReturnsOnlyTheConfiguredMessage() {
+        try {
+            AccountService.triggerUserFriendlyError();
+            System.assert(false, 'Expected the decorated method to throw.');
+        } catch (AuraHandledException ex) {
+            System.assertEquals(
+                'The operation failed safely. Internal details were hidden.',
+                ex.getMessage()
+            );
+        }
+    }
+
+    @IsTest
+    static void rawFailureExposesThePlatformException() {
+        try {
+            AccountService.triggerRawError();
+            System.assert(false, 'Expected the raw method to throw.');
+        } catch (NullPointerException ex) {
+            System.assert(ex.getMessage().contains('null'));
+        }
+    }
+
+    @IsTest
+    static void overviewAndLegacyEntryPointsRemainExecutable() {
+        System.assertEquals(4, AccountService.loadShowcaseOverview().records.size());
+        System.assertEquals(2, AccountService.loadPriorityAccounts().size());
+        System.assertEquals(3, AccountService.loadNormalizedContactEmails().size());
+        System.assertEquals(4, AccountService.loadRenewalWork().size());
+
+        AccountService.AccountSummary summary = AccountService.loadAccountSummary();
+        System.assertEquals(3, summary.hotCount);
+        System.assertEquals(false, summary.allHaveNumbers);
+        System.assertNotEquals(null, summary.firstHot);
+        System.assertEquals(4, summary.names.size());
+
+        Account account = [
+            SELECT Id, Name
+            FROM Account
+            WHERE AccountNumber = 'APXX-001'
+        ];
+        account.Name = '  ApexX Demo - Northern Trail Updated  ';
+        Account saved = AccountService.save(account, true);
+        System.assertEquals('ApexX Demo - Northern Trail Updated', saved.Name);
+    }
+
+    private static Set<String> highPriorityNames(List<AccountService.AccountWorkItem> items) {
+        Set<String> names = new Set<String>();
+        for (AccountService.AccountWorkItem item : items) {
+            if (item.priority == 'High') {
+                names.add(item.accountName);
+            }
+        }
+        return names;
+    }
+}

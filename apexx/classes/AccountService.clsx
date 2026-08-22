@@ -16,7 +16,7 @@ public with sharing class AccountService {
     @AuraEnabled(cacheable=true)
     @UserFriendlyError
     public static List<AccountWorkItem> loadRenewalWork() {
-        return renewalWork(demoAccounts(), 'Revenue Risk');
+        return renewalWork(demoAccounts(), 'Revenue Exposure');
     }
 
     @AuraEnabled(cacheable=true)
@@ -37,8 +37,14 @@ public with sharing class AccountService {
     }
 
     @AuraEnabled
-    @UserFriendlyError
+    @UserFriendlyError(message = 'The operation failed safely. Internal details were hidden.')
     public static void triggerUserFriendlyError() {
+        String missingValue = null;
+        missingValue.trim();
+    }
+
+    @AuraEnabled
+    public static void triggerRawError() {
         String missingValue = null;
         missingValue.trim();
     }
@@ -95,25 +101,20 @@ public with sharing class AccountService {
             .map(contact => contact.Email.trim().toLowerCase());
     }
 
-    public static List<AccountWorkItem> renewalWork(List<Account> accounts, String mode = 'Revenue Risk') {
-        Func<Account, Boolean> shouldEscalate;
+    public static List<AccountWorkItem> renewalWork(List<Account> accounts, String mode = 'Revenue Exposure') {
+        (
+            Func<Account, Boolean> shouldEscalate,
+            String escalationReason,
+            Decimal _
+        ) = PortfolioRuleProvider.resolve(mode);
 
-        if (mode == 'Revenue Risk') {
-            shouldEscalate = (account) =>
-                account.AnnualRevenue != null
-                && account.AnnualRevenue >= 250000;
-        } else {
-            shouldEscalate = (account) =>
-                account.Rating == 'Hot'
-                && account.AccountNumber != null;
-        }
-
-        return buildRenewalWork(accounts, shouldEscalate);
+        return buildRenewalWork(accounts, shouldEscalate, escalationReason);
     }
 
     public static List<AccountWorkItem> buildRenewalWork(
         List<Account> accounts,
-        Func<Account, Boolean> shouldEscalate
+        Func<Account, Boolean> shouldEscalate,
+        String escalationReason
     ) {
         return accounts.map(account => {
             Boolean escalate = shouldEscalate(account);
@@ -122,9 +123,45 @@ public with sharing class AccountService {
                 account.Name,
                 account.OwnerId,
                 escalate ? 'High' : 'Normal',
-                escalate ? 'Revenue review' : 'Standard renewal'
+                escalate ? escalationReason : 'Standard renewal'
             );
         });
+    }
+
+    public static List<AccountWorkItem> buildSelectedWork(
+        List<Account> accounts,
+        String reason
+    ) {
+        return accounts.map(account => new AccountWorkItem(
+            account.Id,
+            account.Name,
+            account.OwnerId,
+            'High',
+            reason
+        ));
+    }
+
+    public static StrategyResult evaluateRenewalStrategy(
+        List<Account> accounts,
+        String mode,
+        Func<Account, Boolean> shouldEscalate,
+        String escalationReason
+    ) {
+        Integer matchCount = accounts.count(account => shouldEscalate(account));
+        Account firstMatch = accounts.find(account => shouldEscalate(account));
+        List<AccountWorkItem> items = buildRenewalWork(
+            accounts,
+            shouldEscalate,
+            escalationReason
+        );
+
+        return new StrategyResult(
+            mode,
+            accounts.size(),
+            matchCount,
+            firstMatch == null ? null : firstMatch.Name,
+            items
+        );
     }
 
     public static AccountSummary summarize(List<Account> accounts) {
@@ -140,9 +177,218 @@ public with sharing class AccountService {
         return new AccountSummary(hotCount, allHaveNumbers, firstHot, names);
     }
 
-    public static Boolean compareRevenue(Account left, Account right, Decimal tolerance = 0) {
-        return left.AnnualRevenue == right.AnnualRevenue
-            || (left.AnnualRevenue - right.AnnualRevenue).abs() <= tolerance;
+    public static Boolean compareRevenue(
+        Account left,
+        Account right,
+        Decimal absoluteTolerance = 0,
+        Decimal percentageTolerance = 0
+    ) {
+        if (left.AnnualRevenue == null || right.AnnualRevenue == null) {
+            return false;
+        }
+
+        Decimal difference = (left.AnnualRevenue - right.AnnualRevenue).abs();
+        Decimal baseline = left.AnnualRevenue.abs();
+        Decimal percentageDifference = baseline == 0
+            ? (difference == 0 ? 0 : 100)
+            : difference / baseline * 100;
+
+        return difference <= absoluteTolerance
+            || percentageDifference <= percentageTolerance;
+    }
+
+    public static PortfolioBriefing buildPortfolioBriefing(
+        List<Account> accounts,
+        String mode = 'Revenue Exposure',
+        Decimal minimumRevenue = 100000
+    ) {
+        (
+            Func<Account, Boolean> matchesStrategy,
+            String escalationReason,
+            Decimal exposureThreshold
+        ) = PortfolioRuleProvider.resolve(mode);
+
+        List<Account> selected = accounts
+            .filter(account =>
+                account.AnnualRevenue != null
+                && account.AnnualRevenue >= minimumRevenue
+            )
+            .filter(account => matchesStrategy(account));
+
+        List<AccountWorkItem> workItems = buildSelectedWork(
+            selected,
+            escalationReason
+        );
+        List<String> stakeholderEmails = selected
+            .flatMap(account => account.Contacts)
+            .filter(contact => contact.Email != null)
+            .map(contact => contact.Email.trim().toLowerCase());
+
+        return new PortfolioBriefing(
+            mode,
+            minimumRevenue,
+            exposureThreshold,
+            accounts.size(),
+            selected.size(),
+            workItems,
+            stakeholderEmails
+        );
+    }
+
+    @AuraEnabled(cacheable=true)
+    @UserFriendlyError
+    public static ShowcaseOverview loadShowcaseOverview() {
+        List<Account> accounts = demoAccountsWithContacts();
+        List<AccountSnapshot> snapshots = new List<AccountSnapshot>();
+
+        for (Account account : accounts) {
+            snapshots.add(new AccountSnapshot(
+                account.Id,
+                account.Name,
+                account.Rating,
+                account.AccountNumber,
+                account.AnnualRevenue,
+                account.NumberOfEmployees,
+                account.Contacts.size()
+            ));
+        }
+
+        return new ShowcaseOverview(snapshots);
+    }
+
+    @AuraEnabled
+    @UserFriendlyError
+    public static EmailPipelineResult runEmailPipeline() {
+        return inspectPortfolio(demoAccountsWithContacts());
+    }
+
+    public static EmailPipelineResult inspectPortfolio(List<Account> accounts) {
+        List<Contact> contacts = accounts.flatMap(account => account.Contacts);
+        List<String> emails = contacts
+            .filter(contact => contact.Email != null && contact.Email.contains('@'))
+            .map(contact => contact.Email.trim().toLowerCase());
+        Integer hotCount = accounts.count(account => account.Rating == 'Hot');
+        Boolean anyMissingNumber = accounts.any(account => account.AccountNumber == null);
+        Boolean allHaveRevenue = accounts.all(account => account.AnnualRevenue != null);
+        Account firstHighValue = accounts.find(account =>
+            account.AnnualRevenue != null
+            && account.AnnualRevenue >= 250000
+        );
+
+        return new EmailPipelineResult(
+            accounts.size(),
+            contacts.size(),
+            emails.size(),
+            emails,
+            hotCount,
+            anyMissingNumber,
+            allHaveRevenue,
+            firstHighValue == null ? null : firstHighValue.Name
+        );
+    }
+
+    @AuraEnabled
+    @UserFriendlyError
+    public static StrategyResult runRenewalStrategy(String mode) {
+        return evaluateMode(demoAccounts(), mode);
+    }
+
+    public static StrategyResult evaluateMode(
+        List<Account> accounts,
+        String mode
+    ) {
+        Decimal exposureThreshold = 250000;
+        Func<Account, Boolean> rule;
+        String reason;
+
+        if (mode == 'Revenue Exposure') {
+            rule = (account) => {
+                Decimal revenue = account.AnnualRevenue == null
+                    ? 0
+                    : account.AnnualRevenue;
+                return revenue >= exposureThreshold;
+            };
+            reason = 'Revenue exposure';
+        } else if (mode == 'Sales Ready') {
+            rule = (account) => {
+                Boolean hasNumber = account.AccountNumber != null;
+                return account.Rating == 'Hot' && hasNumber;
+            };
+            reason = 'Sales ready';
+        } else {
+            rule = (account) => account.AccountNumber == null;
+            reason = 'Missing account number';
+        }
+
+        return evaluateRenewalStrategy(
+            accounts,
+            mode,
+            rule,
+            reason
+        );
+    }
+
+    @AuraEnabled
+    @UserFriendlyError
+    public static TupleDemoResult runTupleDemo() {
+        return AccountSignalConsumer.buildResult(demoAccounts());
+    }
+
+    @AuraEnabled
+    @UserFriendlyError
+    public static RevenueComparisonResult runRevenueComparison(
+        Decimal absoluteTolerance,
+        Decimal percentageTolerance
+    ) {
+        List<Account> accounts = [
+            SELECT Id, Name, AnnualRevenue
+            FROM Account
+            WHERE AccountNumber IN ('APXX-001', 'APXX-002')
+            ORDER BY AccountNumber
+        ];
+
+        Account left = accounts.get(0);
+        Account right = accounts.get(1);
+        Decimal effectiveAbsolute = absoluteTolerance == null ? 0 : absoluteTolerance;
+        Decimal effectivePercentage = percentageTolerance == null ? 0 : percentageTolerance;
+        Boolean matches;
+        String callShape;
+
+        if (absoluteTolerance == null) {
+            matches = compareRevenue(left, right);
+            callShape = 'compareRevenue(left, right)';
+        } else if (percentageTolerance == null) {
+            matches = compareRevenue(left, right, absoluteTolerance);
+            callShape = 'compareRevenue(left, right, absoluteTolerance)';
+        } else {
+            matches = compareRevenue(
+                left,
+                right,
+                absoluteTolerance,
+                percentageTolerance
+            );
+            callShape = 'compareRevenue(left, right, absoluteTolerance, percentageTolerance)';
+        }
+
+        return new RevenueComparisonResult(
+            left.Name,
+            left.AnnualRevenue,
+            right.Name,
+            right.AnnualRevenue,
+            effectiveAbsolute,
+            effectivePercentage,
+            callShape,
+            matches
+        );
+    }
+
+    @AuraEnabled
+    @UserFriendlyError(message = 'Unable to build the portfolio briefing.')
+    public static PortfolioBriefing runPortfolioBriefing(String mode, Decimal minimumRevenue) {
+        List<Account> accounts = demoAccountsWithContacts();
+        return minimumRevenue == null
+            ? buildPortfolioBriefing(accounts, mode)
+            : buildPortfolioBriefing(accounts, mode, minimumRevenue);
     }
 
     public class AccountSummary {
@@ -183,6 +429,189 @@ public with sharing class AccountService {
             this.ownerId = ownerId;
             this.priority = priority;
             this.reason = reason;
+        }
+    }
+
+    public class ShowcaseOverview {
+        @AuraEnabled public List<AccountSnapshot> records { get; set; }
+
+        public ShowcaseOverview(List<AccountSnapshot> records) {
+            this.records = records;
+        }
+    }
+
+    public class AccountSnapshot {
+        @AuraEnabled public Id accountId { get; set; }
+        @AuraEnabled public String name { get; set; }
+        @AuraEnabled public String rating { get; set; }
+        @AuraEnabled public String accountNumber { get; set; }
+        @AuraEnabled public Decimal annualRevenue { get; set; }
+        @AuraEnabled public Integer employees { get; set; }
+        @AuraEnabled public Integer contactCount { get; set; }
+
+        public AccountSnapshot(
+            Id accountId,
+            String name,
+            String rating,
+            String accountNumber,
+            Decimal annualRevenue,
+            Integer employees,
+            Integer contactCount
+        ) {
+            this.accountId = accountId;
+            this.name = name;
+            this.rating = rating;
+            this.accountNumber = accountNumber;
+            this.annualRevenue = annualRevenue;
+            this.employees = employees;
+            this.contactCount = contactCount;
+        }
+    }
+
+    public class EmailPipelineResult {
+        @AuraEnabled public Integer accountCount { get; set; }
+        @AuraEnabled public Integer contactCount { get; set; }
+        @AuraEnabled public Integer validEmailCount { get; set; }
+        @AuraEnabled public List<String> emails { get; set; }
+        @AuraEnabled public Integer hotAccountCount { get; set; }
+        @AuraEnabled public Boolean anyMissingAccountNumber { get; set; }
+        @AuraEnabled public Boolean allHaveRevenue { get; set; }
+        @AuraEnabled public String firstHighValueName { get; set; }
+
+        public EmailPipelineResult(
+            Integer accountCount,
+            Integer contactCount,
+            Integer validEmailCount,
+            List<String> emails,
+            Integer hotAccountCount,
+            Boolean anyMissingAccountNumber,
+            Boolean allHaveRevenue,
+            String firstHighValueName
+        ) {
+            this.accountCount = accountCount;
+            this.contactCount = contactCount;
+            this.validEmailCount = validEmailCount;
+            this.emails = emails;
+            this.hotAccountCount = hotAccountCount;
+            this.anyMissingAccountNumber = anyMissingAccountNumber;
+            this.allHaveRevenue = allHaveRevenue;
+            this.firstHighValueName = firstHighValueName;
+        }
+    }
+
+    public class StrategyResult {
+        @AuraEnabled public String mode { get; set; }
+        @AuraEnabled public Integer accountCount { get; set; }
+        @AuraEnabled public Integer highPriorityCount { get; set; }
+        @AuraEnabled public String firstMatchName { get; set; }
+        @AuraEnabled public List<AccountWorkItem> items { get; set; }
+
+        public StrategyResult(
+            String mode,
+            Integer accountCount,
+            Integer highPriorityCount,
+            String firstMatchName,
+            List<AccountWorkItem> items
+        ) {
+            this.mode = mode;
+            this.accountCount = accountCount;
+            this.highPriorityCount = highPriorityCount;
+            this.firstMatchName = firstMatchName;
+            this.items = items;
+        }
+    }
+
+    public class RevenueComparisonResult {
+        @AuraEnabled public String leftName { get; set; }
+        @AuraEnabled public Decimal leftRevenue { get; set; }
+        @AuraEnabled public String rightName { get; set; }
+        @AuraEnabled public Decimal rightRevenue { get; set; }
+        @AuraEnabled public Decimal absoluteTolerance { get; set; }
+        @AuraEnabled public Decimal percentageTolerance { get; set; }
+        @AuraEnabled public String callShape { get; set; }
+        @AuraEnabled public Boolean matches { get; set; }
+
+        public RevenueComparisonResult(
+            String leftName,
+            Decimal leftRevenue,
+            String rightName,
+            Decimal rightRevenue,
+            Decimal absoluteTolerance,
+            Decimal percentageTolerance,
+            String callShape,
+            Boolean matches
+        ) {
+            this.leftName = leftName;
+            this.leftRevenue = leftRevenue;
+            this.rightName = rightName;
+            this.rightRevenue = rightRevenue;
+            this.absoluteTolerance = absoluteTolerance;
+            this.percentageTolerance = percentageTolerance;
+            this.callShape = callShape;
+            this.matches = matches;
+        }
+    }
+
+    public class TupleDemoResult {
+        @AuraEnabled public Integer accountCount { get; set; }
+        @AuraEnabled public Integer reviewCount { get; set; }
+        @AuraEnabled public List<AccountSignal> signals { get; set; }
+
+        public TupleDemoResult(
+            Integer accountCount,
+            Integer reviewCount,
+            List<AccountSignal> signals
+        ) {
+            this.accountCount = accountCount;
+            this.reviewCount = reviewCount;
+            this.signals = signals;
+        }
+    }
+
+    public class AccountSignal {
+        @AuraEnabled public Id accountId { get; set; }
+        @AuraEnabled public String accountName { get; set; }
+        @AuraEnabled public Decimal revenuePerEmployee { get; set; }
+        @AuraEnabled public Boolean needsReview { get; set; }
+
+        public AccountSignal(
+            Id accountId,
+            String accountName,
+            Decimal revenuePerEmployee,
+            Boolean needsReview
+        ) {
+            this.accountId = accountId;
+            this.accountName = accountName;
+            this.revenuePerEmployee = revenuePerEmployee;
+            this.needsReview = needsReview;
+        }
+    }
+
+    public class PortfolioBriefing {
+        @AuraEnabled public String mode { get; set; }
+        @AuraEnabled public Decimal minimumRevenue { get; set; }
+        @AuraEnabled public Decimal exposureThreshold { get; set; }
+        @AuraEnabled public Integer inputAccountCount { get; set; }
+        @AuraEnabled public Integer selectedAccountCount { get; set; }
+        @AuraEnabled public List<AccountWorkItem> workItems { get; set; }
+        @AuraEnabled public List<String> stakeholderEmails { get; set; }
+
+        public PortfolioBriefing(
+            String mode,
+            Decimal minimumRevenue,
+            Decimal exposureThreshold,
+            Integer inputAccountCount,
+            Integer selectedAccountCount,
+            List<AccountWorkItem> workItems,
+            List<String> stakeholderEmails
+        ) {
+            this.mode = mode;
+            this.minimumRevenue = minimumRevenue;
+            this.exposureThreshold = exposureThreshold;
+            this.inputAccountCount = inputAccountCount;
+            this.selectedAccountCount = selectedAccountCount;
+            this.workItems = workItems;
+            this.stakeholderEmails = stakeholderEmails;
         }
     }
 }

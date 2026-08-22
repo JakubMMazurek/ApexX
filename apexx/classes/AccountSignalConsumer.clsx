@@ -1,0 +1,29 @@
+public with sharing class AccountSignalConsumer {
+    public static AccountService.TupleDemoResult buildResult(List<Account> accounts) {
+        Map<Id, (Decimal, Boolean)> signalsByAccountId =
+            AccountSignalProvider.calculate(accounts);
+        List<AccountService.AccountSignal> signals =
+            new List<AccountService.AccountSignal>();
+        Integer reviewCount = 0;
+
+        for (Account account : accounts) {
+            (Decimal revenuePerEmployee, Boolean needsReview) =
+                signalsByAccountId.get(account.Id);
+            if (needsReview) {
+                reviewCount++;
+            }
+            signals.add(new AccountService.AccountSignal(
+                account.Id,
+                account.Name,
+                revenuePerEmployee,
+                needsReview
+            ));
+        }
+
+        return new AccountService.TupleDemoResult(
+            accounts.size(),
+            reviewCount,
+            signals
+        );
+    }
+}

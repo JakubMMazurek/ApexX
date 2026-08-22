@@ -3,11 +3,7 @@
 // DO NOT EDIT.
 
 public with sharing class PlainApex {
-    public interface ApexXFunc0 {
-        Integer invoke(Integer arg0);
-    }
-
-    private class ApexXLambda0 implements ApexXFunc0 {
+    private class ApexXLambda0 implements ApexXFuncs.ApexXFunc_eff5f9d1b504 {
         public Integer invoke(Integer x) {
             return x * x;
         }
@@ -26,7 +22,7 @@ public with sharing class PlainApex {
     }
 
     public static List<Integer> squarePositiveNumbers(List<Integer> numbers) {
-        ApexXFunc0 square = new ApexXLambda0();
+        ApexXFuncs.ApexXFunc_eff5f9d1b504 square = new ApexXLambda0();
 
         List<Integer> apexxFilter0 = new List<Integer>();
         for (Integer numberValue : numbers) {

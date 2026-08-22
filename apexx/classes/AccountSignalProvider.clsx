@@ -1,0 +1,25 @@
+public with sharing class AccountSignalProvider {
+    public static Map<Id, (Decimal, Boolean)> calculate(List<Account> accounts) {
+        Map<Id, (Decimal, Boolean)> signalsByAccountId =
+            new Map<Id, (Decimal, Boolean)>();
+
+        for (Account account : accounts) {
+            Decimal revenuePerEmployee =
+                account.AnnualRevenue == null
+                || account.NumberOfEmployees == null
+                || account.NumberOfEmployees <= 0
+                    ? null
+                    : account.AnnualRevenue / account.NumberOfEmployees;
+            Boolean needsReview = account.AccountNumber == null
+                || revenuePerEmployee == null
+                || revenuePerEmployee < 10000;
+
+            signalsByAccountId.put(
+                account.Id,
+                (revenuePerEmployee, needsReview)
+            );
+        }
+
+        return signalsByAccountId;
+    }
+}

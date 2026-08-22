@@ -38,6 +38,12 @@
         "injectTo": ["source.apex"]
       }
     ],
+    "snippets": [
+      {
+        "language": "apexx",
+        "path": "./snippets/apexx.json"
+      }
+    ],
     "configurationDefaults": {
       "files.associations": {
         "*.clsx": "apexx"
@@ -74,6 +80,7 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@apexx/ast": "0.1.0",
     "@apexx/sfdx": "0.1.0",
     "@apexx/transpiler": "0.1.0",
     "@apexx/language-server": "0.1.0",

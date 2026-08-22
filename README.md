@@ -1,37 +1,106 @@
 # ApexX
 
-ApexX is an experimental extended Apex source language. It uses `.clsx` as the source extension and emits ordinary Salesforce Apex `.cls` files.
+ApexX is an experimental, Apex-compatible source language for Salesforce. Author `.clsx` files with modern language features, then compile them to ordinary `.cls` metadata that the Salesforce platform already understands.
 
-The first milestone is intentionally small:
+The mental model is TypeScript and JavaScript: the richer source is for people, while generated Apex is a deployment artifact. Ordinary Apex remains valid ApexX, so a team can adopt the language one class or one expression at a time.
 
-- ordinary Apex in `.clsx` is emitted as ordinary `.cls`
-- lambda arguments parse on ApexX `List<T>` helpers such as `filter`, `map`, `flatMap`, `find`, `any`, `all`, and `count`
-- `filter` lowers to a typed Apex loop, avoiding `Object` casts in generated code
-- `map` lowers to a typed Apex loop that produces `List<R>`
-- `find`, `any`, `all`, and `count` lower to typed scalar/item loops
-- `flatMap` lowers to a typed `addAll` loop that flattens `List<R>` bodies
-- chained list helpers are typed step by step
-- standalone `List<T>.filter(...)` expression statements parse while editing, even when the result is not assigned
-- `Func<T1, T2, TResult> name = (x, y) => expression` lowers to a generated invokable inner class
-- `Func` values can be declared, reassigned with lambdas, and passed as method parameters
-- `Func` variables can be called directly in `.clsx`; generated Apex emits `.invoke(...)`
-- `map` supports block lambdas for short multi-statement projections
-- trailing default method arguments generate ordinary Apex overloads
-- custom method decorators resolve from classes that implement `ApexX.Decorator`
-- upstream Apex parsing is reused to validate generated `.cls`
+> **Project status:** this is a working language prototype and an executable technical showcase, not a production release. The compiler, Salesforce tests, VS Code integration, and Lightning demo are all included so the current behavior can be inspected end to end.
 
-## Quick Start
+## What ApexX Adds
+
+- typed `filter`, `map`, `flatMap`, `find`, `any`, `all`, and `count` operations on `List<T>`
+- expression and multi-statement block lambdas
+- first-class `Func<...>` values that can be selected, reassigned, passed, returned, and shared across classes
+- strongly typed tuples, tuple-valued maps, destructuring, and cross-class tuple contracts
+- trailing default arguments, compiled to ordinary Apex overloads
+- user-defined method decorators, compiled to explicit Apex control flow
+- a VS Code language mode with syntax highlighting, snippets, diagnostics, hover help, type-aware completion, and compile on save
+
+Every feature lowers to statically typed Apex. Shared function and tuple signatures are collected into deterministic nested types in `ApexXFuncs.cls` and `ApexXTuples.cls`, avoiding one generated file per structural type.
+
+## Contents
+
+- [Install and validate locally](#install-and-validate-locally)
+- [Connect a Salesforce org](#connect-a-salesforce-org)
+- [Install the VS Code experience](#install-the-vs-code-experience)
+- [Language tour](#language-tour)
+- [Salesforce showcase](#salesforce-showcase)
+- [Command reference](#command-reference)
+- [Troubleshooting](#troubleshooting)
+- [Architecture and development notes](#architecture-and-development-notes)
+
+## Prerequisites
+
+- Git
+- Node.js 20.19 or newer, including npm
+- Salesforce CLI (`sf`) and access to the demo org, for deployment and the Lightning showcase
+- VS Code, for the `.clsx` editor demonstration
+
+## Install And Validate Locally
+
+The repository is private, so authenticate Git with the GitHub account that has access before cloning it.
 
 ```powershell
-cd C:\Users\qba05\Documents\ApexX
-npm install
-npm run build
-npm run test
+git clone https://github.com/JakubMMazurek/ApexX.git
+cd ApexX
+npm ci
+npm test
+```
+
+`npm test` builds every TypeScript package, exercises compiler output, validates generated Apex through the upstream Apex parser, and runs the language-server smoke suite. No Salesforce connection is required for this step.
+
+Compile all checked-in `.clsx` sources:
+
+```powershell
+npm run apexx -- build
+```
+
+Inside this Salesforce DX project, compilation writes deployable `.cls` and `.cls-meta.xml` files to `force-app/main/default/classes`. Treat `apexx/classes` as authored source and `force-app/main/default/classes` as compiler output.
+
+## Connect A Salesforce Org
+
+The alias `apexx` is only a local convenience; creating it does not change the org. Log in with the same demo-org credentials on each computer:
+
+```powershell
+sf org login web --alias apexx --set-default
+```
+
+For a Salesforce sandbox that uses the standard test login endpoint, add `--instance-url https://test.salesforce.com`.
+
+Build, deploy, seed the deterministic dataset, run the native Apex suite, verify readiness, and open the showcase:
+
+```powershell
 npm run apexx -- build
 npm run sf:deploy -- --target-org apexx
 npm run sf:seed -- --target-org apexx
+npm run sf:test -- --target-org apexx
+npm run demo:check -- --target-org apexx
 npm run sf:open:showcase -- --target-org apexx
 ```
+
+The target org must support Salesforce API version `67.0`. The seed script only replaces Accounts whose names begin with `ApexX Demo` and their child Contacts, so it is repeatable for the dedicated showcase dataset. Review the script before using it in an org that contains important data.
+
+For normal preparation on demo day, the same sequence is safe to rerun. `demo:check` is the final non-mutating readiness gate: it validates the local toolchain, generated structural registries, Salesforce authentication, and the expected four demo Accounts and four Contacts.
+
+## Install The VS Code Experience
+
+On Windows, after `npm ci` and `npm run build`:
+
+```powershell
+npm run vscode:install
+```
+
+Reload VS Code and open `apexx/classes/AccountService.clsx`. The extension supplies dedicated coloring, indentation and folding, feature snippets, live compiler diagnostics, hover documentation, type-aware completion, and compile-on-save behavior.
+
+For org-backed sObject completion, cache only the objects needed for the demo:
+
+```powershell
+npm run schema:refresh -- --target-org apexx Account Contact
+```
+
+The cache is written to the ignored `.apexx/schema` directory and is never committed.
+
+## Language Tour
 
 Example `.clsx`:
 
@@ -149,24 +218,28 @@ Func<int, int, bool> testForEquality = (x, y) => x == y;
 return testForEquality(left, right);
 ```
 
-Generated Apex:
+Generated Apex uses a deterministic nested interface for the structural signature and a private implementation for the lambda. Every function signature in the project is collected into one generated registry file:
 
 ```apex
-public interface ApexXFunc0 {
-    Boolean invoke(Integer arg0, Integer arg1);
+// ApexXFuncs.cls — shared structural registry
+public class ApexXFuncs {
+    public interface ApexXFunc_c7ff27852c51 {
+        Boolean invoke(Integer arg0, Integer arg1);
+    }
 }
 
-private class ApexXLambda0 implements ApexXFunc0 {
+// Inside the generated source class
+private class ApexXLambda0 implements ApexXFuncs.ApexXFunc_c7ff27852c51 {
     public Boolean invoke(Integer x, Integer y) {
         return x == y;
     }
 }
 
-ApexXFunc0 testForEquality = new ApexXLambda0();
+ApexXFuncs.ApexXFunc_c7ff27852c51 testForEquality = new ApexXLambda0();
 return testForEquality.invoke(left, right);
 ```
 
-`Func` can also cross method boundaries. This lets a caller choose behavior and pass it into a workflow method:
+`Func` can cross method and class boundaries. Its deterministic member name is derived from the full normalized signature, so two classes compiled separately agree on the same nested native Apex interface. A project build aggregates all required interfaces into `ApexXFuncs.cls`; VS Code performs the same workspace aggregation when it compiles on save.
 
 ```apex
 public static List<AccountWorkItem> buildRenewalWork(
@@ -179,6 +252,47 @@ public static List<AccountWorkItem> buildRenewalWork(
     });
 }
 ```
+
+Block lambdas allow real preparation logic before the typed result:
+
+```apex
+Func<Account, Boolean> hasExposure = (account) => {
+    Decimal revenue = account.AnnualRevenue == null
+        ? 0
+        : account.AnnualRevenue;
+    return revenue >= 250000;
+};
+```
+
+Tuples remove throwaway classes created only to carry two or three related values. A common Salesforce example is calculating multiple values per record: ordinary Apex requires a tiny map-value wrapper or parallel maps that must stay synchronized. ApexX makes the pair the strongly typed value of the map:
+
+```apex
+// AccountSignalProvider.clsx
+public static Map<Id, (Decimal, Boolean)> calculate(List<Account> accounts) {
+    Map<Id, (Decimal, Boolean)> signals =
+        new Map<Id, (Decimal, Boolean)>();
+
+    for (Account account : accounts) {
+        Decimal revenuePerEmployee =
+            account.AnnualRevenue == null
+            || account.NumberOfEmployees == null
+            || account.NumberOfEmployees <= 0
+                ? null
+                : account.AnnualRevenue / account.NumberOfEmployees;
+        Boolean needsReview = account.AccountNumber == null
+            || revenuePerEmployee == null
+            || revenuePerEmployee < 10000;
+        signals.put(account.Id, (revenuePerEmployee, needsReview));
+    }
+    return signals;
+}
+
+// AccountSignalConsumer.clsx — compiled independently
+Map<Id, (Decimal, Boolean)> signals = AccountSignalProvider.calculate(accounts);
+(Decimal revenuePerEmployee, Boolean needsReview) = signals.get(accountId);
+```
+
+Tuples are not capped at arity three; the compiler accepts arbitrary arity and emits a warning beyond seven elements because a named domain type is usually clearer at that point. The generated carrier is named from its complete normalized element signature and nested in `ApexXTuples.cls`. Tuple values—including tuples that contain a `Func`—therefore remain real cross-class structural contracts, with ordinary public Apex types underneath and no reflection, `Object`, or unsafe casts. Regardless of how many structural signatures the project uses, ApexX maintains only two generated structural files: `ApexXFuncs.cls` and `ApexXTuples.cls`. Tuple returns are intentionally rejected on `@AuraEnabled` boundaries; destructure inside Apex and expose a named DTO there.
 
 Default method arguments generate overloads:
 
@@ -239,7 +353,7 @@ public static Account save(Account account, Boolean validate = true) {
 
 ApexX removes the custom annotation, preserves native annotations, generates default-argument overloads, moves the original body behind `ApexX.Next`, and writes the shared `ApexX.cls` support class when needed. Decorator arguments are optional; `@UserFriendlyError` can use the policy class default message, while `@UserFriendlyError(message = '...')` overrides it for one method.
 
-## Upstream Reuse
+## Architecture And Development Notes
 
 Current upstream snapshots inspected during setup:
 
@@ -250,7 +364,7 @@ ApexX starts as an integration layer over `@apexdevtools/apex-parser`. A grammar
 
 See [docs/architecture.md](docs/architecture.md) and [docs/development.md](docs/development.md).
 
-## VS Code
+## VS Code Editor Details
 
 The VS Code extension associates `.clsx` with ApexX language mode, starts the ApexX language server, and watches `.clsx` saves to generate Apex. In a Salesforce DX project, saving `apexx/classes/AccountService.clsx` writes:
 
@@ -261,11 +375,31 @@ force-app/main/default/classes/AccountService.cls-meta.xml
 
 The output package directory and API version come from `sfdx-project.json` when present. Outside a Salesforce DX project, ApexX writes to `generated/force-app/main/default/classes`.
 
-The project includes an `apexxShowcase` Lightning Web Component and an `ApexX Showcase` Lightning tab. The tab calls focused `.clsx` methods such as `loadPriorityAccounts()`, `loadNormalizedContactEmails()`, `loadRenewalWork()`, `loadAccountSummary()`, `loadRevenueComparison()`, and `triggerUserFriendlyError()` so each section demonstrates a different ApexX feature: decorators, computed `filter`, `flatMap`, `map`, block lambdas, first-class `Func` parameters, reused `Func` predicates, `count`, `all`, `find`, default-argument helpers, and decorated error handling. Seed demo data with:
+For the Visual Studio Code portion of the presentation, open `apexx/classes/AccountService.clsx` and demonstrate this sequence:
+
+1. Add a collection helper and trigger completion after the lambda parameter to show inferred Account or Contact fields.
+2. Continue a `filter` / `map` / `flatMap` chain to show that completion follows the changing element type.
+3. Introduce a small syntax or type error and show the live compiler diagnostic, then undo it.
+4. Hover `Func`, a collection helper, or `UserFriendlyError` to show the language contract in place.
+5. Save the file and show the generated `.cls` and `.cls-meta.xml` files reported by the ApexX output channel.
+
+Snippet prefixes `apexx-func`, `apexx-func-block`, `apexx-tuple`, `apexx-tuple-map`, `apexx-pipeline`, `apexx-defaults`, and `apexx-decorator` are available for a quick authoring demonstration.
+
+## Salesforce Showcase
+
+The project includes an interactive `apexxShowcase` Lightning Web Component and an `ApexX Showcase` Lightning tab. Four presentation chapters establish why the project exists and reveal its compatibility model, unpack each language primitive with executable comparisons, prove the editor and compilation toolchain, and finish with the live portfolio workflow. Every comparison starts from realistic authored Apex and runs against deterministic org data. The language tour covers the complete collection toolkit, block lambdas, a captured `Func` selected from three runtime modes, a cross-class `Map<Id, (Decimal, Boolean)>`, two default parameters with all three call shapes, and a custom decorator whose raw and translated failures can be compared live. Comparisons explicitly retain strong conventional choices such as fused loops and mode helpers, and explain when the ApexX abstraction earns its cost. The final workflow includes all feature-specific authored helpers on both sides and calculates the source reduction directly from the snippets shown. Seed the shared dataset with:
 
 ```powershell
 npm run sf:seed -- --target-org apexx
 ```
+
+Immediately before presenting, run the non-mutating readiness check. It runs the compiler and editor suite, confirms the generated shared contracts, verifies Salesforce authentication, and checks for exactly four demo Accounts and four Contacts:
+
+```powershell
+npm run demo:check -- --target-org apexx
+```
+
+The VS Code integration intentionally does not promote a dedicated “Preview Generated Apex” experience yet. Compile-on-save still writes inspectable `.cls` artifacts, but the authored `.clsx` remains the presentation surface. A polished generated-code preview belongs after pipeline fusion, when intermediate collection stages no longer make the output look more repetitive than the final compiler model.
 
 For `List<Account>.filter(a => a.)`, `List<Account>.map(a => a.)`, and the other ApexX list helpers, completions infer the lambda parameter from the receiver list. ApexX includes a small built-in Account/Contact fallback and can also read org schema cached under `.apexx/schema/sobjects`. Refresh the local cache from your default org or a specific alias:
 
@@ -273,3 +407,28 @@ For `List<Account>.filter(a => a.)`, `List<Account>.map(a => a.)`, and the other
 npm run schema:refresh -- Account
 npm run schema:refresh -- --target-org apexx Account
 ```
+
+## Command Reference
+
+| Command | Purpose |
+| --- | --- |
+| `npm ci` | Install the exact dependency versions from `package-lock.json`. |
+| `npm test` | Build all packages and run compiler plus language-server smoke tests. |
+| `npm run apexx -- build` | Compile every project `.clsx` source to Salesforce source format. |
+| `npm run apexx -- parse <file.clsx>` | Compile and validate one source file without deploying it. |
+| `npm run schema:refresh -- --target-org apexx Account` | Cache org schema for richer sObject completion. |
+| `npm run vscode:install` | Install the locally built VS Code extension on Windows. |
+| `npm run sf:deploy -- --target-org apexx` | Deploy the generated Apex and Lightning metadata. |
+| `npm run sf:seed -- --target-org apexx` | Recreate the dedicated showcase dataset. |
+| `npm run sf:test -- --target-org apexx` | Run `AccountServiceTest` with Apex code coverage. |
+| `npm run demo:check -- --target-org apexx` | Run the complete local suite and verify demo-org readiness. |
+| `npm run sf:open:showcase -- --target-org apexx` | Open the `ApexX Showcase` Lightning tab. |
+
+## Troubleshooting
+
+- **`sf` or `code` is not recognized:** install the Salesforce CLI or VS Code, then open a new terminal so the updated `PATH` is loaded.
+- **The `apexx` alias is missing:** rerun `sf org login web --alias apexx --set-default`. Authentication and aliases are local to each computer and are intentionally excluded from Git.
+- **VS Code still treats `.clsx` as plain text:** run `npm run build`, reinstall with `npm run vscode:install`, and reload the VS Code window.
+- **Completion is missing an org field:** refresh the relevant object with `npm run schema:refresh -- --target-org apexx <ObjectApiName>` and reload the editor window.
+- **Lightning shows an older component bundle:** reopen the showcase, then hard-refresh the page. Salesforce persistent component caching can take a short time to invalidate after deployment.
+- **The readiness check reports unexpected demo records:** rerun `npm run sf:seed -- --target-org apexx`; it restores the four-Account, four-Contact dataset used by the presentation.

@@ -26,6 +26,7 @@ Copy-Item (Join-Path $sourceExtension "package.json") $targetExtension -Force
 Copy-Item (Join-Path $sourceExtension "language-configuration.json") $targetExtension -Force
 Copy-Item (Join-Path $sourceExtension "dist") $targetExtension -Recurse -Force
 Copy-Item (Join-Path $sourceExtension "syntaxes") $targetExtension -Recurse -Force
+Copy-Item (Join-Path $sourceExtension "snippets") $targetExtension -Recurse -Force
 
 $targetNodeModules = Join-Path $targetExtension "node_modules"
 if (-not (Test-Path $targetNodeModules)) {

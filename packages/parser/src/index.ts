@@ -20,9 +20,13 @@ const assignmentStatementPattern =
   /^([ \t]*)((?:[A-Za-z][A-Za-z0-9_.]*(?:\s*<\s*[^>\r\n]+\s*>)?)\s+([A-Za-z][A-Za-z0-9_]*))\s*=\s*/gm;
 const expressionStatementPattern = /^([ \t]*)([A-Za-z][A-Za-z0-9_]*)/gm;
 const funcLambdaAssignmentPattern =
-  /^([ \t]*)(Func\s*<\s*([^>\r\n]+?)\s*>)\s+([A-Za-z][A-Za-z0-9_]*)\s*=\s*\(([^)\r\n]*)\)\s*=>\s*([\s\S]*?)\s*;[ \t]*(?=\r?$)/gm;
+  /^([ \t]*)(Func\s*<\s*([^>\r\n]+?)\s*>)\s+([A-Za-z][A-Za-z0-9_]*)\s*=\s*\(([^)\r\n]*)\)\s*=>(?!\s*\{)\s*([\s\S]*?)\s*;[ \t]*(?=\r?$)/gm;
+const funcBlockLambdaAssignmentPattern =
+  /^([ \t]*)(Func\s*<\s*([^>\r\n]+?)\s*>)\s+([A-Za-z][A-Za-z0-9_]*)\s*=\s*\(([^)\r\n]*)\)\s*=>\s*(\{[\s\S]*?^[ \t]*\})\s*;[ \t]*(?=\r?$)/gm;
 const funcLambdaReassignmentPattern =
-  /^([ \t]*)([A-Za-z][A-Za-z0-9_]*)\s*=\s*\(([^)\r\n]*)\)\s*=>\s*([\s\S]*?)\s*;[ \t]*(?=\r?$)/gm;
+  /^([ \t]*)([A-Za-z][A-Za-z0-9_]*)\s*=\s*\(([^)\r\n]*)\)\s*=>(?!\s*\{)\s*([\s\S]*?)\s*;[ \t]*(?=\r?$)/gm;
+const funcBlockLambdaReassignmentPattern =
+  /^([ \t]*)([A-Za-z][A-Za-z0-9_]*)\s*=\s*\(([^)\r\n]*)\)\s*=>\s*(\{[\s\S]*?^[ \t]*\})\s*;[ \t]*(?=\r?$)/gm;
 
 export interface ApexParseResult {
   ok: boolean;
@@ -142,72 +146,76 @@ export function findFuncLambdaAssignments(
 ): FuncLambdaAssignment[] {
   const assignments: FuncLambdaAssignment[] = [];
 
-  for (const match of source.matchAll(funcLambdaAssignmentPattern)) {
-    const start = match.index ?? 0;
-    const sourceFuncType = match[2].replace(/\s+/g, " ").trim();
-    const typeArguments = splitCommaList(match[3]);
-    const parameterTypes = typeArguments.slice(0, -1);
-    const returnType = typeArguments.at(-1) ?? "void";
-    const parameterListStart = start + match[0].indexOf("(") + 1;
-    const parameters = parseLambdaParameters(
-      source,
-      parameterListStart,
-      match[5],
-    );
-    const bodyStart = match[0].indexOf("=>") + 2 + start;
-    const bodyEnd = start + match[0].replace(/[ \t]*;?[ \t]*$/, "").length;
+  for (const pattern of [funcBlockLambdaAssignmentPattern, funcLambdaAssignmentPattern]) {
+    for (const match of source.matchAll(pattern)) {
+      const start = match.index ?? 0;
+      const sourceFuncType = match[2].replace(/\s+/g, " ").trim();
+      const typeArguments = splitCommaList(match[3]);
+      const parameterTypes = typeArguments.slice(0, -1);
+      const returnType = typeArguments.at(-1) ?? "void";
+      const parameterListStart = start + match[0].indexOf("(") + 1;
+      const parameters = parseLambdaParameters(
+        source,
+        parameterListStart,
+        match[5],
+      );
+      const bodyStart = match[0].indexOf("=>") + 2 + start;
+      const bodyEnd = start + match[0].replace(/[ \t]*;?[ \t]*$/, "").length;
 
-    assignments.push({
-      kind: "funcLambdaAssignment",
-      indent: match[1],
-      sourceFuncType,
-      parameterTypes,
-      returnType,
-      variableName: match[4],
-      lambda: {
-        parameterName: parameters[0]?.name ?? "",
-        parameters,
-        body: source.slice(bodyStart, bodyEnd).trim(),
-        range: createRange(source, parameterListStart, bodyEnd),
-      },
-      originalText: match[0],
-      range: createRange(source, start, start + match[0].length),
-    });
+      assignments.push({
+        kind: "funcLambdaAssignment",
+        indent: match[1],
+        sourceFuncType,
+        parameterTypes,
+        returnType,
+        variableName: match[4],
+        lambda: {
+          parameterName: parameters[0]?.name ?? "",
+          parameters,
+          body: source.slice(bodyStart, bodyEnd).trim(),
+          range: createRange(source, parameterListStart, bodyEnd),
+        },
+        originalText: match[0],
+        range: createRange(source, start, start + match[0].length),
+      });
+    }
   }
 
-  for (const match of source.matchAll(funcLambdaReassignmentPattern)) {
-    const start = match.index ?? 0;
+  for (const pattern of [funcBlockLambdaReassignmentPattern, funcLambdaReassignmentPattern]) {
+    for (const match of source.matchAll(pattern)) {
+      const start = match.index ?? 0;
 
-    if (rangesOverlapExistingAssignment(assignments, start, start + match[0].length)) {
-      continue;
+      if (rangesOverlapExistingAssignment(assignments, start, start + match[0].length)) {
+        continue;
+      }
+
+      const parameterListStart = start + match[0].indexOf("(") + 1;
+      const parameters = parseLambdaParameters(
+        source,
+        parameterListStart,
+        match[3],
+      );
+      const bodyStart = match[0].indexOf("=>") + 2 + start;
+      const bodyEnd = start + match[0].replace(/[ \t]*;[ \t]*$/, "").length;
+
+      assignments.push({
+        kind: "funcLambdaAssignment",
+        indent: match[1],
+        sourceFuncType: "",
+        parameterTypes: [],
+        returnType: "Object",
+        variableName: match[2],
+        isReassignment: true,
+        lambda: {
+          parameterName: parameters[0]?.name ?? "",
+          parameters,
+          body: source.slice(bodyStart, bodyEnd).trim(),
+          range: createRange(source, parameterListStart, bodyEnd),
+        },
+        originalText: match[0],
+        range: createRange(source, start, start + match[0].length),
+      });
     }
-
-    const parameterListStart = start + match[0].indexOf("(") + 1;
-    const parameters = parseLambdaParameters(
-      source,
-      parameterListStart,
-      match[3],
-    );
-    const bodyStart = match[0].indexOf("=>") + 2 + start;
-    const bodyEnd = start + match[0].replace(/[ \t]*;[ \t]*$/, "").length;
-
-    assignments.push({
-      kind: "funcLambdaAssignment",
-      indent: match[1],
-      sourceFuncType: "",
-      parameterTypes: [],
-      returnType: "Object",
-      variableName: match[2],
-      isReassignment: true,
-      lambda: {
-        parameterName: parameters[0]?.name ?? "",
-        parameters,
-        body: source.slice(bodyStart, bodyEnd).trim(),
-        range: createRange(source, parameterListStart, bodyEnd),
-      },
-      originalText: match[0],
-      range: createRange(source, start, start + match[0].length),
-    });
   }
 
   return assignments.sort((left, right) => left.range.start.offset - right.range.start.offset);

@@ -1,179 +1,858 @@
 <template>
-    <lightning-card title="ApexX Showcase" icon-name="custom:custom63">
-        <div class="toolbar">
-            <div>
-                <p class="eyebrow">Live org data</p>
-                <h1>Focused ApexX methods powering one tab</h1>
-            </div>
-            <div class="actions">
-                <lightning-button
-                    label="Trigger handled error"
-                    variant="neutral"
-                    onclick={triggerError}
-                    disabled={triggeringError}
-                ></lightning-button>
-                <lightning-button-icon
-                    icon-name="utility:refresh"
-                    alternative-text="Refresh"
-                    title="Refresh"
-                    onclick={refresh}
-                    disabled={loading}
-                ></lightning-button-icon>
-            </div>
-        </div>
-
-        <template lwc:if={loading}>
-            <div class="state">
-                <lightning-spinner alternative-text="Loading ApexX showcase"></lightning-spinner>
-            </div>
-        </template>
-
-        <template lwc:elseif={errorMessage}>
-            <div class="state error">
-                <lightning-icon icon-name="utility:error" size="small"></lightning-icon>
-                <p>{errorMessage}</p>
-            </div>
-        </template>
-
-        <template lwc:else>
-            <section class="metrics">
-                <template for:each={metrics} for:item="metric">
-                    <article class="metric" key={metric.label}>
-                        <span>{metric.label}</span>
-                        <strong>{metric.value}</strong>
-                    </article>
-                </template>
-            </section>
-
-            <section class="grid">
-                <article>
-                    <div class="sectionHeader">
-                        <h2>Priority accounts</h2>
-                        <span>{priorityCount}</span>
-                    </div>
-                    <p class="method">loadPriorityAccounts -> computed filter + decorator</p>
-                    <template lwc:if={hasPriorityAccounts}>
-                        <ul class="rows">
-                            <template for:each={priorityAccounts} for:item="account">
-                                <li key={account.Id}>
-                                    <a href={account.url}>{account.Name}</a>
-                                    <span>{account.AccountNumber}</span>
-                                </li>
-                            </template>
-                        </ul>
-                    </template>
-                    <template lwc:else>
-                        <p class="empty">No priority demo accounts matched the computed rule.</p>
-                    </template>
-                </article>
-
-                <article>
-                    <div class="sectionHeader">
-                        <h2>Normalized contact emails</h2>
-                        <span>{emailCount}</span>
-                    </div>
-                    <p class="method">loadNormalizedContactEmails -> flatMap + filter + map</p>
-                    <template lwc:if={hasEmails}>
-                        <ul class="rows">
-                            <template for:each={emails} for:item="email">
-                                <li key={email}>
-                                    <span>{email}</span>
-                                </li>
-                            </template>
-                        </ul>
-                    </template>
-                    <template lwc:else>
-                        <p class="empty">No contact emails matched the hot-account chain.</p>
-                    </template>
-                </article>
-            </section>
-
-            <section class="workPanel">
-                <div class="sectionHeader">
-                    <h2>Renewal work queue</h2>
-                    <span>{renewalWorkCount}</span>
-                </div>
-                <p class="method">loadRenewalWork -> selected Func + workflow method + block map</p>
-                <template lwc:if={hasRenewalWork}>
-                    <ul class="workItems">
-                        <template for:each={renewalWork} for:item="item">
-                            <li key={item.accountId}>
-                                <a href={item.url}>{item.accountName}</a>
-                                <strong>{item.priority}</strong>
-                                <span>{item.reason}</span>
-                            </li>
-                        </template>
-                    </ul>
-                </template>
-                <template lwc:else>
-                    <p class="empty">No renewal work generated.</p>
-                </template>
-            </section>
-
-            <section class="summary">
-                <p class="method">loadAccountSummary -> reused Func + count + all + find + map</p>
-                <p>
-                    <strong>First hot account:</strong>
-                    <span>{firstHotName}</span>
-                </p>
-                <p>
-                    <strong>All demo accounts have numbers:</strong>
-                    <span>{allHaveNumbersLabel}</span>
-                </p>
-                <p>
-                    <strong>First two revenue values within tolerance:</strong>
-                    <span>{revenueWithinToleranceLabel}</span>
-                </p>
-                <p class="method">loadRevenueComparison -> default arg + plain comparison</p>
-            </section>
-
-            <section class="savePanel">
-                <div class="sectionHeader">
-                    <h2>Save account</h2>
-                    <span>edit</span>
-                </div>
-                <p class="method">save -> decorator + default error message + validation trim</p>
-                <template lwc:if={hasEditableAccounts}>
-                    <div class="saveForm">
-                        <lightning-combobox
-                            label="Account"
-                            value={selectedAccountId}
-                            options={accountOptions}
-                            onchange={handleSelectedAccountChange}
-                        ></lightning-combobox>
-                        <lightning-input
-                            label="Name"
-                            value={editedAccountName}
-                            onchange={handleAccountNameChange}
-                        ></lightning-input>
-                        <lightning-button
-                            label="Save"
-                            variant="brand"
-                            onclick={saveDemoAccount}
-                            disabled={saveDisabled}
-                        ></lightning-button>
-                    </div>
-                </template>
-                <template lwc:else>
-                    <p class="empty">No priority accounts are available to edit.</p>
-                </template>
-                <template lwc:if={lastSavedAccountName}>
-                    <p class="saveResult">
-                        <strong>Last saved account:</strong>
-                        <span>{lastSavedAccountName}</span>
+    <lightning-card title="ApexX · Technical Showcase" icon-name="custom:custom63">
+        <div class="lab">
+            <header class="hero">
+                <div class="heroCopy">
+                    <p class="eyebrow">A guided technical reveal · live Salesforce org</p>
+                    <h1>Write modern Apex. Deploy ordinary Apex.</h1>
+                    <p class="heroText">
+                        ApexX gives Apex the language evolution Salesforce has left on the table. Author readable,
+                        typed source, keep full Apex compatibility, and deploy ordinary Salesforce metadata.
                     </p>
-                </template>
-            </section>
-
-            <section class="errorDemo">
-                <div>
-                    <h2>Decorated error boundary</h2>
-                    <p class="method">triggerUserFriendlyError -> decorator returns the default friendly message</p>
                 </div>
-                <template lwc:if={handledErrorMessage}>
-                    <p class="handledError">{handledErrorMessage}</p>
-                </template>
-            </section>
-        </template>
+                <div class="proofs" aria-label="ApexX properties">
+                    <span>Apex-compatible source</span>
+                    <span>Typed compile-time extensions</span>
+                    <span>Native .cls metadata out</span>
+                </div>
+            </header>
+
+            <lightning-tabset class="presentationTabs" variant="standard">
+            <lightning-tab label="01 · Why ApexX" value="context">
+                <section class="chapter contextChapter" aria-labelledby="context-heading">
+                    <div class="chapterIntro">
+                        <p class="sectionEyebrow">01 · Why this exists</p>
+                        <h2 id="context-heading">A stable platform language can still make ordinary design expensive.</h2>
+                        <p>Apex is dependable, but common abstractions still cost teams loops, overload ladders, mode flags, and repeated error wrappers. That friction shapes architecture long before it becomes a line-count problem.</p>
+                    </div>
+
+                    <div class="thesisCard">
+                        <span class="thesisMark">AX</span>
+                        <div>
+                            <p class="sectionEyebrow">The project</p>
+                            <h2>ApexX is an Apex-compatible source language with opt-in, typed extensions.</h2>
+                            <p>Think TypeScript and JavaScript: developers work in the richer source language; the compiler emits the platform language. Generated Apex is a trustworthy build artifact—not the code humans are expected to author.</p>
+                        </div>
+                    </div>
+
+                    <div class="contextGrid">
+                        <article>
+                            <span>01</span>
+                            <strong>Compatibility first</strong>
+                            <p>Every valid Apex file is valid ApexX. A team can adopt one file, one method, or one feature without rewriting its codebase.</p>
+                        </article>
+                        <article>
+                            <span>02</span>
+                            <strong>Missing primitives</strong>
+                            <p>Typed collection operations, functions as values, tuples, default arguments, and custom decorators make intent directly expressible.</p>
+                        </article>
+                        <article>
+                            <span>03</span>
+                            <strong>Native deployment</strong>
+                            <p>The compiler lowers extensions to ordinary <code>.cls</code> and metadata, so Salesforce needs no new runtime or awareness of ApexX.</p>
+                        </article>
+                    </div>
+
+                    <div class="designPromise">
+                        <strong>Adoption model</strong>
+                        <code>.clsx = Apex + only the features you choose</code>
+                        <span>Keep governor-sensitive loops where they belong. Reach for higher-level language tools where they make the design clearer.</span>
+                    </div>
+
+                    <aside class="presentationCue">
+                        <span>Next · Language tour</span>
+                        <strong>Five focused examples show exactly which missing language primitives ApexX restores.</strong>
+                    </aside>
+                </section>
+            </lightning-tab>
+            <lightning-tab label="02 · Language tour" value="tour">
+                <section class="examples tourChapter" aria-labelledby="examples-heading">
+                    <div class="examplesIntro">
+                        <p class="sectionEyebrow">02 · Build the vocabulary</p>
+                        <h2 id="examples-heading">Five missing primitives, isolated and executable.</h2>
+                        <p>The same four records now become a focused language lab. Each tab shows conventional Apex, authored ApexX, the compiler contract, and a live action.</p>
+                    </div>
+
+                    <lightning-tabset variant="scoped">
+                        <lightning-tab label="Collection toolkit" value="pipeline">
+                            <div class="exampleBody">
+                                <div class="exampleLead">
+                                    <div>
+                                        <h3>Turn a queried object graph into typed portfolio signals</h3>
+                                        <p>Flatten and normalize child records, then terminate the same typed collection with count, any, all, and find.</p>
+                                    </div>
+                                    <div class="typeTrail" aria-label="Inferred type flow">
+                                        <span>Account</span><b>→</b><span>Contact</span><b>→</b><span>String</span>
+                                    </div>
+                                </div>
+
+                                <div class="codeGrid">
+                                    <article class="codePanel codePanel_conventional">
+                                        <div class="codeHeader">
+                                            <span>Conventional Apex</span>
+                                            <strong>one fused loop</strong>
+                                        </div>
+                                        <pre>{emailApex}</pre>
+                                    </article>
+                                    <article class="codePanel codePanel_apexx">
+                                        <div class="codeHeader">
+                                            <span>ApexX</span>
+                                            <strong>composable typed operations</strong>
+                                        </div>
+                                        <pre>{emailApexX}</pre>
+                                    </article>
+                                </div>
+
+                                <aside class="techCallout">
+                                    <strong>Performance stays explicit</strong>
+                                    <span>Each terminal lowers to a typed Apex loop. Use a conventional fused loop where governor-path efficiency matters; use operations where locality and composition matter. Both styles are valid in the same .clsx file.</span>
+                                </aside>
+
+                                <div class="runBar">
+                                    <div>
+                                        <strong>Run the ApexX version</strong>
+                                        <span>Executes AccountService.runEmailPipeline() in this org.</span>
+                                    </div>
+                                    <lightning-button
+                                        label="Run pipeline"
+                                        variant="brand"
+                                        icon-name="utility:play"
+                                        onclick={executeEmailPipeline}
+                                        disabled={emailLoading}
+                                    ></lightning-button>
+                                </div>
+
+                                <template lwc:if={emailLoading}>
+                                    <div class="inlineState resultState">
+                                        <lightning-spinner alternative-text="Running pipeline" size="small"></lightning-spinner>
+                                        <span>Running typed collection pipeline…</span>
+                                    </div>
+                                </template>
+                                <template lwc:elseif={emailError}>
+                                    <p class="errorState resultState">{emailError}</p>
+                                </template>
+                                <template lwc:elseif={emailResult}>
+                                    <div class="result" aria-live="polite">
+                                        <div class="resultHeader">
+                                            <div>
+                                                <p class="sectionEyebrow">Live result</p>
+                                                <h3>{emailResult.validEmailCount} normalized emails</h3>
+                                            </div>
+                                            <div class="resultFlow">
+                                                <span>{emailResult.accountCount} accounts</span><b>→</b>
+                                                <span>{emailResult.contactCount} contacts</span><b>→</b>
+                                                <span>{emailResult.validEmailCount} emails</span>
+                                            </div>
+                                        </div>
+                                        <div class="signalGrid" aria-label="Live collection terminal results">
+                                            <div><strong>{emailResult.hotAccountCount}</strong><span>hot accounts · count</span></div>
+                                            <div><strong>{emailResult.anyMissingAccountNumber}</strong><span>missing number · any</span></div>
+                                            <div><strong>{emailResult.allHaveRevenue}</strong><span>revenue present · all</span></div>
+                                            <div><strong>{emailResult.firstHighValueName}</strong><span>first ≥ $250k · find</span></div>
+                                        </div>
+                                        <ul class="resultList resultList_emails">
+                                            <template for:each={emailResult.emails} for:item="email">
+                                                <li key={email}>{email}</li>
+                                            </template>
+                                        </ul>
+                                    </div>
+                                </template>
+                            </div>
+                        </lightning-tab>
+
+                        <lightning-tab label="Functions as values" value="strategy">
+                            <div class="exampleBody">
+                                <div class="exampleLead">
+                                    <div>
+                                        <h3>Resolve a portfolio rule once, then pass behavior—not a mode flag</h3>
+                                        <p>Three runtime modes select a typed closure. The evaluator stays independent of mode branching and reuses the rule across count, find, and a block map.</p>
+                                    </div>
+                                </div>
+
+                                <div class="codeGrid">
+                                    <article class="codePanel codePanel_conventional">
+                                        <div class="codeHeader">
+                                            <span>Conventional Apex</span>
+                                            <strong>mode helper + one-pass loop</strong>
+                                        </div>
+                                        <pre>{strategyApex}</pre>
+                                    </article>
+                                    <article class="codePanel codePanel_apexx">
+                                        <div class="codeHeader">
+                                            <span>ApexX</span>
+                                            <strong>typed closure + block map</strong>
+                                        </div>
+                                        <pre>{strategyApexX}</pre>
+                                    </article>
+                                </div>
+
+                                <div class="funcJourney" aria-label="Function value lifecycle">
+                                    <div>
+                                        <span>1</span>
+                                        <strong>Select + capture</strong>
+                                        <code>rule = account =&gt; account.AnnualRevenue &gt;= exposureThreshold</code>
+                                    </div>
+                                    <b>→</b>
+                                    <div>
+                                        <span>2</span>
+                                        <strong>Pass</strong>
+                                        <code>evaluate(accounts, mode, rule, reason)</code>
+                                    </div>
+                                    <b>→</b>
+                                    <div>
+                                        <span>3</span>
+                                        <strong>Invoke + reuse</strong>
+                                        <code>count / find / block map call rule(account)</code>
+                                    </div>
+                                </div>
+
+                                <aside class="techCallout">
+                                    <strong>Use the abstraction when the boundary is real</strong>
+                                    <span>The conventional helper is the honest choice when three fixed modes live in one service. <code>Func</code> earns its place when the evaluator must accept caller-selected behavior without learning every mode. ApexX resolves the branch once and carries the typed <code>Account → Boolean</code> policy across that boundary; the conventional loop remains the faster one-pass option.</span>
+                                </aside>
+
+                                <div class="runBar">
+                                    <div>
+                                        <strong>Run with “{strategyMode}”</strong>
+                                        <span>Change the strategy to see a different account set escalate.</span>
+                                    </div>
+                                    <lightning-combobox
+                                        class="compactControl"
+                                        label="Portfolio lens"
+                                        value={strategyMode}
+                                        options={strategyOptions}
+                                        onchange={handleStrategyMode}
+                                    ></lightning-combobox>
+                                    <lightning-button
+                                        label="Apply portfolio lens"
+                                        variant="brand"
+                                        icon-name="utility:play"
+                                        onclick={executeStrategy}
+                                        disabled={strategyLoading}
+                                    ></lightning-button>
+                                </div>
+
+                                <template lwc:if={strategyLoading}>
+                                    <div class="inlineState resultState">
+                                        <lightning-spinner alternative-text="Building work queue" size="small"></lightning-spinner>
+                                        <span>Applying the selected function…</span>
+                                    </div>
+                                </template>
+                                <template lwc:elseif={strategyError}>
+                                    <p class="errorState resultState">{strategyError}</p>
+                                </template>
+                                <template lwc:elseif={strategyResult}>
+                                    <div class="result" aria-live="polite">
+                                        <div class="resultHeader">
+                                            <div>
+                                                <p class="sectionEyebrow">Live result · {strategyResult.mode}</p>
+                                                <h3>{strategyResult.highPriorityCount} of {strategyResult.accountCount} selected</h3>
+                                            </div>
+                                            <div class="resultFlow">
+                                                <span>first match · {strategyResult.firstMatchName}</span>
+                                                <span>predicate reused 3×</span>
+                                            </div>
+                                        </div>
+                                        <ul class="resultList workList">
+                                            <template for:each={strategyResult.items} for:item="item">
+                                                <li key={item.accountId}>
+                                                    <a href={item.url}>{item.accountName}</a>
+                                                    <span class={item.priorityClass}>{item.priority}</span>
+                                                    <span>{item.reason}</span>
+                                                </li>
+                                            </template>
+                                        </ul>
+                                    </div>
+                                </template>
+                            </div>
+                        </lightning-tab>
+
+                        <lightning-tab label="Multiple returns" value="tuples">
+                            <div class="exampleBody">
+                                <div class="exampleLead">
+                                    <div>
+                                        <h3>Key two calculated values by record Id—without a wrapper or parallel maps</h3>
+                                        <p>Each Account produces revenue per employee and a review flag. Conventional Apex needs a tiny value class (or two maps that must stay synchronized); ApexX makes the pair the strongly typed map value.</p>
+                                    </div>
+                                    <div class="typeTrail" aria-label="Cross-class type path">
+                                        <span>Account Id</span><b>→</b><span>(Decimal, Boolean)</span><b>→</b><span>Consumer.clsx</span>
+                                    </div>
+                                </div>
+
+                                <div class="codeGrid">
+                                    <article class="codePanel codePanel_conventional">
+                                        <div class="codeHeader">
+                                            <span>Conventional Apex</span>
+                                            <strong>one-use map value class</strong>
+                                        </div>
+                                        <pre>{tupleApex}</pre>
+                                    </article>
+                                    <article class="codePanel codePanel_apexx">
+                                        <div class="codeHeader">
+                                            <span>ApexX</span>
+                                            <strong>tuple-valued map + destructuring</strong>
+                                        </div>
+                                        <pre>{tupleApexX}</pre>
+                                    </article>
+                                </div>
+
+                                <aside class="techCallout">
+                                    <strong>A real collection type across compilation units</strong>
+                                    <span><code>Map&lt;Id, (Decimal, Boolean)&gt;</code> lowers to a deterministic nested carrier in <code>ApexXTuples.cls</code>. Provider and consumer compile independently but agree on the exact map value type—without parallel maps, reflection, casts, or <code>Object</code>.</span>
+                                </aside>
+
+                                <div class="runBar">
+                                    <div>
+                                        <strong>Calculate, cross the class boundary, then destructure</strong>
+                                        <span>Runs the tuple-valued map over the four real Account records shown in this demo.</span>
+                                    </div>
+                                    <lightning-button
+                                        label="Calculate account signals"
+                                        variant="brand"
+                                        icon-name="utility:play"
+                                        onclick={executeTupleDemo}
+                                        disabled={tupleLoading}
+                                    ></lightning-button>
+                                </div>
+
+                                <template lwc:if={tupleLoading}>
+                                    <div class="inlineState resultState">
+                                        <lightning-spinner alternative-text="Resolving tuple" size="small"></lightning-spinner>
+                                        <span>Building and consuming the tuple-valued map…</span>
+                                    </div>
+                                </template>
+                                <template lwc:elseif={tupleError}>
+                                    <p class="errorState resultState">{tupleError}</p>
+                                </template>
+                                <template lwc:elseif={tupleResult}>
+                                    <div class="result" aria-live="polite">
+                                        <div class="resultHeader">
+                                            <div>
+                                                <p class="sectionEyebrow">Live tuple-map result</p>
+                                                <h3>{tupleResult.reviewCount} of {tupleResult.accountCount} accounts need review</h3>
+                                            </div>
+                                            <div class="resultFlow">
+                                                <span>Map&lt;Id, (Decimal, Boolean)&gt;</span>
+                                                <span>strongly typed across two classes</span>
+                                            </div>
+                                        </div>
+                                        <ul class="resultList workList">
+                                            <template for:each={tupleResult.signals} for:item="signal">
+                                                <li key={signal.accountId}>
+                                                    <a href={signal.url}>{signal.accountName}</a>
+                                                    <span>
+                                                        <lightning-formatted-number
+                                                            value={signal.revenuePerEmployee}
+                                                            format-style="currency"
+                                                            currency-code="USD"
+                                                            maximum-fraction-digits="0"
+                                                        ></lightning-formatted-number>
+                                                        / employee
+                                                    </span>
+                                                    <span class={signal.reviewClass}>{signal.reviewLabel}</span>
+                                                </li>
+                                            </template>
+                                        </ul>
+                                    </div>
+                                </template>
+                            </div>
+                        </lightning-tab>
+
+                        <lightning-tab label="Default arguments" value="defaults">
+                            <div class="exampleBody">
+                                <div class="exampleLead">
+                                    <div>
+                                        <h3>Two optional parameters, three clean call shapes</h3>
+                                        <p>Use both defaults, override the first, or override both—without maintaining a ladder of forwarding overloads.</p>
+                                    </div>
+                                </div>
+
+                                <div class="codeGrid">
+                                    <article class="codePanel codePanel_conventional">
+                                        <div class="codeHeader">
+                                            <span>Conventional Apex</span>
+                                            <strong>same calls + manual overload</strong>
+                                        </div>
+                                        <pre>{defaultApex}</pre>
+                                    </article>
+                                    <article class="codePanel codePanel_apexx">
+                                        <div class="codeHeader">
+                                            <span>ApexX</span>
+                                            <strong>same calls + one definition</strong>
+                                        </div>
+                                        <pre>{defaultApexX}</pre>
+                                    </article>
+                                </div>
+
+                                <div class="runBar">
+                                    <div>
+                                        <strong>Execute the selected call shape</strong>
+                                        <span>The accounts differ by $750, or roughly 0.3%. Each mode invokes a different generated overload.</span>
+                                    </div>
+                                    <fieldset class="compactControl comparisonControl">
+                                        <legend>Call shape</legend>
+                                        <div class="callShapeButtons" role="group" aria-label="Revenue comparison call shape">
+                                            <button
+                                                type="button"
+                                                class={exactChoiceClass}
+                                                aria-pressed={exactChoiceSelected}
+                                                data-value="exact"
+                                                onclick={handleToleranceChoice}
+                                            >Both defaults</button>
+                                            <button
+                                                type="button"
+                                                class={absoluteChoiceClass}
+                                                aria-pressed={absoluteChoiceSelected}
+                                                data-value="absolute"
+                                                onclick={handleToleranceChoice}
+                                            >$1k absolute</button>
+                                            <button
+                                                type="button"
+                                                class={blendedChoiceClass}
+                                                aria-pressed={blendedChoiceSelected}
+                                                data-value="blended"
+                                                onclick={handleToleranceChoice}
+                                            >$250 + 0.5%</button>
+                                        </div>
+                                    </fieldset>
+                                    <lightning-button
+                                        label="Compare revenue"
+                                        variant="brand"
+                                        icon-name="utility:play"
+                                        onclick={executeComparison}
+                                        disabled={comparisonLoading}
+                                    ></lightning-button>
+                                </div>
+
+                                <template lwc:if={comparisonLoading}>
+                                    <div class="inlineState resultState">
+                                        <lightning-spinner alternative-text="Comparing revenue" size="small"></lightning-spinner>
+                                        <span>Calling the generated overload…</span>
+                                    </div>
+                                </template>
+                                <template lwc:elseif={comparisonError}>
+                                    <p class="errorState resultState">{comparisonError}</p>
+                                </template>
+                                <template lwc:elseif={comparisonResult}>
+                                    <div class="result comparisonResult" aria-live="polite">
+                                        <div class="comparisonAccount">
+                                            <span>{comparisonResult.leftName}</span>
+                                            <strong>
+                                                <lightning-formatted-number
+                                                    value={comparisonResult.leftRevenue}
+                                                    format-style="currency"
+                                                    currency-code="USD"
+                                                    maximum-fraction-digits="0"
+                                                ></lightning-formatted-number>
+                                            </strong>
+                                        </div>
+                                        <div class="comparisonOperator">vs</div>
+                                        <div class="comparisonAccount">
+                                            <span>{comparisonResult.rightName}</span>
+                                            <strong>
+                                                <lightning-formatted-number
+                                                    value={comparisonResult.rightRevenue}
+                                                    format-style="currency"
+                                                    currency-code="USD"
+                                                    maximum-fraction-digits="0"
+                                                ></lightning-formatted-number>
+                                            </strong>
+                                        </div>
+                                        <div class={comparisonVerdictClass}>
+                                            <strong>{comparisonVerdict}</strong>
+                                            <span>
+                                                absolute
+                                                <lightning-formatted-number
+                                                    value={comparisonResult.absoluteTolerance}
+                                                    format-style="currency"
+                                                    currency-code="USD"
+                                                    maximum-fraction-digits="0"
+                                                ></lightning-formatted-number>
+                                                · percentage {comparisonResult.percentageTolerance}%
+                                            </span>
+                                            <code>{comparisonResult.callShape}</code>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+                        </lightning-tab>
+
+                        <lightning-tab label="Decorator boundary" value="decorator">
+                            <div class="exampleBody">
+                                <div class="exampleLead">
+                                    <div>
+                                        <h3>Make cross-cutting error policy declarative</h3>
+                                        <p>Run the same failure without protection and through a custom ApexX decorator, then compare what reaches the LWC.</p>
+                                    </div>
+                                    <span class="boundaryBadge">Exception → Decorator → Safe LWC error</span>
+                                </div>
+
+                                <div class="codeGrid">
+                                    <article class="codePanel codePanel_conventional">
+                                        <div class="codeHeader">
+                                            <span>Conventional Apex</span>
+                                            <strong>try / catch wrapper</strong>
+                                        </div>
+                                        <pre>{decoratorApex}</pre>
+                                    </article>
+                                    <article class="codePanel codePanel_apexx">
+                                        <div class="codeHeader">
+                                            <span>ApexX</span>
+                                            <strong>policy annotation</strong>
+                                        </div>
+                                        <pre>{decoratorApexX}</pre>
+                                    </article>
+                                </div>
+
+                                <aside class="techCallout">
+                                    <strong>The policy class is shared infrastructure</strong>
+                                    <span>For one method, a local <code>try / catch</code> is simpler. The decorator pays off when the same reviewed error policy protects many entry points and changes in one place; its implementation is shown below so that cost is not hidden.</span>
+                                </aside>
+
+                                <section class="decoratorInternals" aria-labelledby="decorator-internals-heading">
+                                    <div class="internalHeading">
+                                        <p class="sectionEyebrow">Decorator internals</p>
+                                        <h3 id="decorator-internals-heading">A decorator is an ordinary Apex policy class</h3>
+                                        <p>Implement one interface, inspect the invocation context, and decide whether and how to call the original method through <code>next</code>.</p>
+                                    </div>
+                                    <div class="codeGrid codeGrid_internals">
+                                        <article class="codePanel codePanel_apexx">
+                                            <div class="codeHeader">
+                                                <span>UserFriendlyError.clsx</span>
+                                                <strong>custom policy</strong>
+                                            </div>
+                                            <pre>{decoratorImplementation}</pre>
+                                        </article>
+                                        <article class="codePanel codePanel_contract">
+                                            <div class="codeHeader">
+                                                <span>ApexX decorator contract</span>
+                                                <strong>shared support types</strong>
+                                            </div>
+                                            <pre>{decoratorContract}</pre>
+                                        </article>
+                                    </div>
+                                    <ol class="callFlow">
+                                        <li><span>1</span><div><strong>Invocation created</strong><p>Class, method, argument names, values, and annotation config are captured.</p></div></li>
+                                        <li><span>2</span><div><strong>Policy entered</strong><p><code>UserFriendlyError.handle(ctx, next)</code> receives the context.</p></div></li>
+                                        <li><span>3</span><div><strong>Original body called</strong><p><code>next.call()</code> proceeds; policy can run logic before and after it.</p></div></li>
+                                        <li><span>4</span><div><strong>Exception translated</strong><p>The raw platform exception becomes the configured <code>AuraHandledException</code>.</p></div></li>
+                                    </ol>
+                                </section>
+
+                                <div class="runBar runBar_danger">
+                                    <div>
+                                        <strong>Compare the error boundary</strong>
+                                        <span>Both actions dereference the same null value on the server.</span>
+                                    </div>
+                                    <div class="buttonGroup">
+                                        <lightning-button
+                                            label="Run raw Apex"
+                                            variant="destructive-text"
+                                            icon-name="utility:bug"
+                                            onclick={executeRawError}
+                                            disabled={errorDemoLoading}
+                                        ></lightning-button>
+                                        <lightning-button
+                                            label="Run with decorator"
+                                            variant="brand"
+                                            icon-name="utility:shield"
+                                            onclick={executeDecorator}
+                                            disabled={errorDemoLoading}
+                                        ></lightning-button>
+                                    </div>
+                                </div>
+
+                                <template lwc:if={errorDemoLoading}>
+                                    <div class="inlineState resultState">
+                                        <lightning-spinner alternative-text="Running error comparison" size="small"></lightning-spinner>
+                                        <span>Crossing the generated decorator boundary…</span>
+                                    </div>
+                                </template>
+                                <template lwc:if={rawErrorResult}>
+                                    <div class="result rawErrorResult" aria-live="polite">
+                                        <lightning-icon icon-name="utility:bug" size="small"></lightning-icon>
+                                        <div>
+                                            <p class="sectionEyebrow">Without decorator · actual Salesforce response</p>
+                                            <h3>{rawErrorResult.title}</h3>
+                                            <dl class="errorDetails">
+                                                <div><dt>Exception type</dt><dd>{rawErrorResult.exceptionType}</dd></div>
+                                                <div><dt>Message</dt><dd>{rawErrorResult.message}</dd></div>
+                                                <template lwc:if={rawErrorResult.stackTrace}>
+                                                    <div><dt>Stack trace</dt><dd><code>{rawErrorResult.stackTrace}</code></dd></div>
+                                                </template>
+                                            </dl>
+                                        </div>
+                                    </div>
+                                </template>
+                                <template lwc:if={decoratorResult}>
+                                    <div class="result decoratorResult" aria-live="polite">
+                                        <lightning-icon icon-name="utility:shield" size="small"></lightning-icon>
+                                        <div>
+                                            <p class="sectionEyebrow">With @UserFriendlyError · policy response</p>
+                                            <h3>{decoratorResult.title}</h3>
+                                            <p>{decoratorResult.message}</p>
+                                            <p class="safeNote">The null-pointer type and stack trace were not exposed by the decorated call.</p>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+                        </lightning-tab>
+                    </lightning-tabset>
+                </section>
+            </lightning-tab>
+            <lightning-tab label="03 · Toolchain" value="toolchain">
+                <section class="chapter toolchainChapter" aria-labelledby="toolchain-heading">
+                    <div class="chapterIntro">
+                        <p class="sectionEyebrow">03 · The developer experience</p>
+                        <h2 id="toolchain-heading">A language feature only matters when the editor and build feel native.</h2>
+                        <p>The ApexX extension treats <code>.clsx</code> as source—not as plain text. The same compiler powers feedback in the editor and the Apex emitted on save.</p>
+                    </div>
+
+                    <section class="editorExperience" aria-labelledby="editor-heading">
+                        <div class="internalHeading editorHeading">
+                            <p class="sectionEyebrow">Live Visual Studio Code demo</p>
+                            <h3 id="editor-heading">Show the language tooling before showing the generated artifact</h3>
+                        </div>
+                        <div class="editorGrid">
+                            <article><span>01</span><strong>Syntax coloring</strong><p>Apex plus dedicated scopes for lambdas, <code>Func</code>, collection helpers, defaults, and decorators.</p></article>
+                            <article><span>02</span><strong>Context IntelliSense</strong><p>Completion follows element types and Salesforce schema across <code>filter</code>, <code>map</code>, and <code>flatMap</code>.</p></article>
+                            <article><span>03</span><strong>Live diagnostics</strong><p>Parser, type, and lowering errors appear in the editor from the same compiler used by the build.</p></article>
+                            <article><span>04</span><strong>Hover + snippets</strong><p>Feature contracts are one hover away, with templates for functions, pipelines, defaults, and decorators.</p></article>
+                            <article><span>05</span><strong>Compile on save</strong><p>Saving a <code>.clsx</code> file writes the deployable class and metadata and reports the result in VS Code.</p></article>
+                        </div>
+                        <ol class="ideDemoPlan">
+                            <li><span>1</span><div><strong>Open <code>AccountService.clsx</code></strong><p>Establish the authored source as the object developers own.</p></div></li>
+                            <li><span>2</span><div><strong>Extend a typed chain</strong><p>Type after a dot and let completion prove the inferred element and sObject shape.</p></div></li>
+                            <li><span>3</span><div><strong>Break, inspect, save</strong><p>Trigger a diagnostic, fix it, hover a feature, then compile the native Salesforce artifact.</p></div></li>
+                        </ol>
+                    </section>
+                    <section class="shippingModel" aria-labelledby="shipping-model-heading">
+                        <div class="internalHeading">
+                            <p class="sectionEyebrow">Compilation model</p>
+                            <h3 id="shipping-model-heading">What actually ships to Salesforce</h3>
+                            <p>ApexX is a build-time language layer. Salesforce receives ordinary metadata and stays unaware of the source syntax.</p>
+                        </div>
+                        <div class="shipFlow">
+                            <article><span>1</span><strong>.clsx source</strong><p>Apex plus typed language extensions.</p></article>
+                            <b>→</b>
+                            <article><span>2</span><strong>Parse + type + lower</strong><p>Helpers, Func values, defaults, and decorators are resolved at build time.</p></article>
+                            <b>→</b>
+                            <article><span>3</span><strong>Validate native Apex</strong><p>Generated source is checked through the upstream Apex parser.</p></article>
+                            <b>→</b>
+                            <article><span>4</span><strong>.cls + metadata</strong><p>Normal Salesforce source format, deployable with standard tooling.</p></article>
+                        </div>
+                        <div class="runtimeFacts">
+                            <div><strong>Compatibility contract</strong><span>Every valid Apex file remains valid ApexX; adoption is feature by feature.</span></div>
+                            <div><strong>Collection helpers + defaults</strong><span>Compile away completely; no runtime library.</span></div>
+                            <div><strong>Structural types</strong><span>Func interfaces and tuple carriers collect into two deterministic shared registry files.</span></div>
+                            <div><strong>Decorators</strong><span>Use the small opt-in Invocation / Next / Decorator support contract.</span></div>
+                            <div><strong>Editor model</strong><span>Completion follows types across filter, map, and flatMap chains.</span></div>
+                        </div>
+                    </section>
+                    <aside class="buildArtifactCallout">
+                        <strong>The authored <code>.clsx</code> file is the source of truth.</strong>
+                        <span>Generated Apex remains readable enough to inspect, debug, test, and trust—but, exactly like transpiled JavaScript, it is not where the design is expressed.</span>
+                    </aside>
+                </section>
+            </lightning-tab>
+            <lightning-tab label="04 · Full workflow" value="reveal">
+                <section class="chapter revealChapter" aria-labelledby="reveal-heading">
+                    <div class="chapterIntro revealIntro">
+                        <p class="sectionEyebrow">04 · The payoff</p>
+                        <h2 id="reveal-heading">Read the source. Run the behavior. Then count what disappeared.</h2>
+                        <p>The comparison is realistic authored Apex versus complete authored ApexX for the same application behavior. Shared DTOs, queries, and error utilities are excluded from both sides; the ApexX rule provider and mapping helper are included. Generated Apex is not part of the source comparison for the same reason a TypeScript demo does not judge emitted JavaScript as hand-written source.</p>
+                    </div>
+                    <section class="dataset" aria-labelledby="dataset-heading">
+                        <div class="datasetHeader">
+                            <div>
+                                <p class="sectionEyebrow">Shared input</p>
+                                <h2 id="dataset-heading">Four accounts, deliberately different</h2>
+                            </div>
+                            <lightning-button-icon
+                                icon-name="utility:refresh"
+                                alternative-text="Reload demo records"
+                                title="Reload demo records"
+                                onclick={loadOverview}
+                                disabled={overviewLoading}
+                            ></lightning-button-icon>
+                        </div>
+
+                        <template lwc:if={overviewLoading}>
+                            <div class="inlineState">
+                                <lightning-spinner alternative-text="Loading demo records" size="small"></lightning-spinner>
+                                <span>Loading the shared dataset…</span>
+                            </div>
+                        </template>
+                        <template lwc:elseif={overviewError}>
+                            <p class="errorState">{overviewError}</p>
+                        </template>
+                        <template lwc:elseif={hasAccounts}>
+                            <div class="accountGrid">
+                                <template for:each={accounts} for:item="account">
+                                    <article class="accountCard" key={account.accountId}>
+                                        <div class="accountTopline">
+                                            <a href={account.url}>{account.name}</a>
+                                            <span class="rating">{account.rating}</span>
+                                        </div>
+                                        <p>{account.numberLabel}</p>
+                                        <div class="accountFacts">
+                                            <span>
+                                                <strong>
+                                                    <lightning-formatted-number
+                                                        value={account.annualRevenue}
+                                                        format-style="currency"
+                                                        currency-code="USD"
+                                                        maximum-fraction-digits="0"
+                                                    ></lightning-formatted-number>
+                                                </strong>
+                                                revenue
+                                            </span>
+                                            <span><strong>{account.employees}</strong> employees</span>
+                                            <span><strong>{account.contactCount}</strong> contacts</span>
+                                        </div>
+                                    </article>
+                                </template>
+                            </div>
+                        </template>
+                    </section>
+                    <section class="examples revealExample">
+        <div class="exampleBody">
+                                    <div class="exampleLead workflowLead">
+                                        <div>
+                                            <p class="sectionEyebrow">Everything working together</p>
+                                            <h3>Build a portfolio briefing from live account and contact data</h3>
+                                            <p>An error boundary, two defaulted parameters, a cross-class tuple of strategy metadata, a captured typed Func, three runtime modes, collection terminals, block mapping, contact flattening, and normalization—composed as ordinary application code.</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="sourceScore">
+                                        <div><span>Conventional Apex</span><strong>{workflowApexLines} lines</strong></div>
+                                        <div class="sourceScore_delta"><strong>{workflowReduction}% less authored code</strong><span>Complete behavior shown on both sides</span></div>
+                                        <div><span>ApexX</span><strong>{workflowApexXLines} lines</strong></div>
+                                    </div>
+
+                                    <div class="codeGrid codeGrid_workflow">
+                                        <article class="codePanel codePanel_conventional">
+                                            <div class="codeHeader">
+                                                <span>Conventional Apex</span>
+                                                <strong>idiomatic helpers + overloads + loops</strong>
+                                            </div>
+                                            <pre>{workflowApex}</pre>
+                                        </article>
+                                        <article class="codePanel codePanel_apexx">
+                                            <div class="codeHeader">
+                                                <span>ApexX</span>
+                                                <strong>composed compile-time features</strong>
+                                            </div>
+                                            <pre>{workflowApexX}</pre>
+                                        </article>
+                                    </div>
+
+                                    <div class="featureRail" aria-label="ApexX features in this workflow">
+                                        <span>@UserFriendlyError</span>
+                                        <b>+</b><span>default arguments</span>
+                                        <b>+</b><span>Func&lt;Account, Boolean&gt;</span>
+                                        <b>+</b><span>typed tuple destructuring</span>
+                                        <b>+</b><span>cross-class contracts</span>
+                                        <b>+</b><span>filter / map</span>
+                                        <b>+</b><span>flatMap</span>
+                                    </div>
+
+                                    <div class="runBar">
+                                        <div>
+                                            <strong>Run the composed workflow</strong>
+                                            <span>The default threshold is applied by a generated overload when “Default · $100k” is selected.</span>
+                                        </div>
+                                        <div class="workflowControls">
+                                            <lightning-combobox
+                                                label="Strategy"
+                                                value={workflowMode}
+                                                options={strategyOptions}
+                                                onchange={handleWorkflowMode}
+                                            ></lightning-combobox>
+                                            <lightning-combobox
+                                                label="Minimum revenue"
+                                                value={workflowThreshold}
+                                                options={workflowThresholdOptions}
+                                                onchange={handleWorkflowThreshold}
+                                            ></lightning-combobox>
+                                        </div>
+                                        <lightning-button
+                                            label="Build portfolio briefing"
+                                            variant="brand"
+                                            icon-name="utility:play"
+                                            onclick={executeWorkflow}
+                                            disabled={workflowLoading}
+                                        ></lightning-button>
+                                    </div>
+
+                                    <template lwc:if={workflowLoading}>
+                                        <div class="inlineState resultState">
+                                            <lightning-spinner alternative-text="Building portfolio briefing" size="small"></lightning-spinner>
+                                            <span>Executing the composed ApexX workflow…</span>
+                                        </div>
+                                    </template>
+                                    <template lwc:elseif={workflowError}>
+                                        <p class="errorState resultState">{workflowError}</p>
+                                    </template>
+                                    <template lwc:elseif={workflowResult}>
+                                        <div class="result workflowResult" aria-live="polite">
+                                            <div class="resultHeader">
+                                                <div>
+                                                    <p class="sectionEyebrow">Live portfolio briefing</p>
+                                                    <h3>{workflowResult.selectedAccountCount} of {workflowResult.inputAccountCount} accounts selected</h3>
+                                                </div>
+                                                <div class="resultFlow">
+                                                    <span>{workflowResult.mode}</span>
+                                                    <span>
+                                                        minimum
+                                                        <lightning-formatted-number
+                                                            value={workflowResult.minimumRevenue}
+                                                            format-style="currency"
+                                                            currency-code="USD"
+                                                            maximum-fraction-digits="0"
+                                                        ></lightning-formatted-number>
+                                                    </span>
+                                                    <span>
+                                                        strategy threshold
+                                                        <lightning-formatted-number
+                                                            value={workflowResult.exposureThreshold}
+                                                            format-style="currency"
+                                                            currency-code="USD"
+                                                            maximum-fraction-digits="0"
+                                                        ></lightning-formatted-number>
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            <div class="workflowOutput">
+                                                <div>
+                                                    <h4>Generated work</h4>
+                                                    <ul class="resultList workList">
+                                                        <template for:each={workflowResult.workItems} for:item="item">
+                                                            <li key={item.accountId}>
+                                                                <a href={item.url}>{item.accountName}</a>
+                                                                <span class="priority priority_high">{item.priority}</span>
+                                                                <span>{item.reason}</span>
+                                                            </li>
+                                                        </template>
+                                                    </ul>
+                                                </div>
+                                                <div>
+                                                    <h4>Normalized stakeholders</h4>
+                                                    <ul class="resultList resultList_emails">
+                                                        <template for:each={workflowResult.stakeholderEmails} for:item="email">
+                                                            <li key={email}>{email}</li>
+                                                        </template>
+                                                    </ul>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+                    </section>
+                </section>
+            </lightning-tab>
+            </lightning-tabset>
+        </div>
     </lightning-card>
 </template>

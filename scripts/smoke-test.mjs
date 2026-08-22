@@ -4,10 +4,319 @@ import os from "node:os";
 import path from "node:path";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
-import { transpileApexX } from "../packages/transpiler/dist/index.js";
+import {
+  mergeGeneratedSupportClasses,
+  transpileApexX,
+} from "../packages/transpiler/dist/index.js";
 import { parseApex } from "../packages/parser/dist/index.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+const extensionPackage = JSON.parse(
+  fs.readFileSync(
+    path.join(root, "packages", "vscode-extension", "package.json"),
+    "utf8",
+  ),
+);
+const extensionGrammar = JSON.parse(
+  fs.readFileSync(
+    path.join(
+      root,
+      "packages",
+      "vscode-extension",
+      "syntaxes",
+      "apexx.tmLanguage.json",
+    ),
+    "utf8",
+  ),
+);
+const extensionSnippets = JSON.parse(
+  fs.readFileSync(
+    path.join(root, "packages", "vscode-extension", "snippets", "apexx.json"),
+    "utf8",
+  ),
+);
+
+assert.equal(extensionPackage.contributes.languages[0].extensions[0], ".clsx");
+assert.equal(extensionPackage.contributes.snippets[0].language, "apexx");
+assert.ok(
+  extensionGrammar.repository.collectionHelpers.patterns.some(pattern =>
+    pattern.match.includes("flatMap"),
+  ),
+);
+assert.equal(extensionSnippets["ApexX typed function"].prefix, "apexx-func");
+assert.equal(extensionSnippets["ApexX block function"].prefix, "apexx-func-block");
+assert.equal(extensionSnippets["ApexX tuple contract"].prefix, "apexx-tuple");
+assert.equal(extensionSnippets["ApexX tuple-valued map"].prefix, "apexx-tuple-map");
+assert.ok(extensionGrammar.repository.tuples);
+
+const arbitraryTupleSource = `public class TupleProbe {
+    public static (Decimal, Integer, Boolean, Long) calculate() {
+        return (10.5, 2, true, 9);
+    }
+
+    public static void consume() {
+        (Decimal revenue, Integer count, Boolean active, Long _) =
+            calculate();
+    }
+}`;
+const arbitraryTupleResult = transpileApexX(arbitraryTupleSource, {
+  sourceFileName: "TupleProbe.clsx",
+});
+assert.deepEqual(
+  arbitraryTupleResult.diagnostics.filter(diagnostic => diagnostic.severity === "error"),
+  [],
+);
+const arbitraryTupleSupport = arbitraryTupleResult.supportClasses.find(
+  supportClass => supportClass.className === "ApexXTuples",
+);
+assert.ok(arbitraryTupleSupport);
+assert.equal(parseApex(arbitraryTupleSupport.source).ok, true);
+assert.match(arbitraryTupleResult.output, /public static ApexXTuples\.ApexXTuple_[0-9a-f]{12} calculate\(\)/);
+assert.match(arbitraryTupleResult.output, /return new ApexXTuples\.ApexXTuple_[0-9a-f]{12}\(10\.5, 2, true, 9\);/);
+assert.match(arbitraryTupleSupport.source, /public Long item3;/);
+assert.match(arbitraryTupleResult.output, /Decimal revenue = apexxTuple0\.item0;/);
+assert.doesNotMatch(arbitraryTupleResult.output, /Long _|\.item3;/);
+
+const tupleMapSource = `public class AccountSignalProbe {
+    public static Map<Id, (Decimal, Boolean)> calculate(List<Account> accounts) {
+        Map<Id, (Decimal, Boolean)> signals =
+            new Map<Id, (Decimal, Boolean)>();
+        for (Account account : accounts) {
+            Decimal revenuePerEmployee = account.NumberOfEmployees == null
+                || account.NumberOfEmployees == 0
+                ? 0
+                : account.AnnualRevenue / account.NumberOfEmployees;
+            Boolean needsReview = account.AccountNumber == null;
+            signals.put(account.Id, (revenuePerEmployee, needsReview));
+        }
+        return signals;
+    }
+
+    public static Boolean consume(Account account) {
+        Map<Id, (Decimal, Boolean)> signals = calculate(new List<Account>{ account });
+        (Decimal revenuePerEmployee, Boolean needsReview) = signals.get(account.Id);
+        return needsReview && revenuePerEmployee < 10000;
+    }
+}`;
+const tupleMapResult = transpileApexX(tupleMapSource, {
+  sourceFileName: "AccountSignalProbe.clsx",
+});
+assert.deepEqual(
+  tupleMapResult.diagnostics.filter(diagnostic => diagnostic.severity === "error"),
+  [],
+);
+assert.match(
+  tupleMapResult.output,
+  /public static Map<Id, ApexXTuples\.ApexXTuple_[0-9a-f]{12}> calculate/,
+);
+assert.match(
+  tupleMapResult.output,
+  /new Map<Id, ApexXTuples\.ApexXTuple_[0-9a-f]{12}>\(\)/,
+);
+assert.match(
+  tupleMapResult.output,
+  /signals\.put\(account\.Id, new ApexXTuples\.ApexXTuple_[0-9a-f]{12}\(revenuePerEmployee, needsReview\)\);/,
+);
+assert.match(tupleMapResult.output, /Decimal revenuePerEmployee = apexxTuple0\.item0;/);
+assert.match(tupleMapResult.output, /Boolean needsReview = apexxTuple0\.item1;/);
+for (const supportClass of tupleMapResult.supportClasses) {
+  assert.equal(parseApex(supportClass.source).ok, true);
+}
+assert.equal(parseApex(tupleMapResult.output).ok, true);
+
+const funcTupleSource = `public class FuncTupleProbe {
+    public static (Func<Account, Boolean>, String) resolve() {
+        Func<Account, Boolean> rule = (account) => account.Rating == 'Hot';
+        return (rule, 'Hot account');
+    }
+
+    public static List<Account> select(List<Account> accounts) {
+        (Func<Account, Boolean> rule, String reason) = resolve();
+        return accounts.filter(account => rule(account));
+    }
+}`;
+const funcTupleResult = transpileApexX(funcTupleSource, {
+  sourceFileName: "FuncTupleProbe.clsx",
+});
+assert.deepEqual(
+  funcTupleResult.diagnostics.filter(diagnostic => diagnostic.severity === "error"),
+  [],
+);
+const funcTupleSupport = funcTupleResult.supportClasses.find(
+  supportClass => supportClass.className === "ApexXTuples",
+);
+assert.ok(funcTupleSupport);
+for (const supportClass of funcTupleResult.supportClasses) {
+  assert.equal(parseApex(supportClass.source).ok, true);
+}
+assert.match(funcTupleSupport.source, /public ApexXFuncs\.ApexXFunc_[0-9a-f]{12} item0;/);
+assert.match(funcTupleResult.output, /ApexXFuncs\.ApexXFunc_[0-9a-f]{12} rule = apexxTuple0\.item0;/);
+assert.match(funcTupleResult.output, /rule\.invoke\(account\)/);
+
+const blockLambdaSource = `public class BlockLambdaProbe {
+    public static List<String> select(List<Account> accounts, Decimal threshold) {
+        Func<Account, Boolean> isEligible = (account) => {
+            Decimal revenue = account.AnnualRevenue == null
+                ? 0
+                : account.AnnualRevenue;
+            return revenue >= threshold && account.Rating == 'Hot';
+        };
+
+        return accounts
+            .filter(account => {
+                Boolean named = account.Name != null;
+                return named && isEligible(account);
+            })
+            .map(account => {
+                String label = account.Name.toUpperCase();
+                return label;
+            });
+    }
+
+    public static void inspect(List<Account> accounts) {
+        Boolean anyHot = accounts.any(account => {
+            Boolean hot = account.Rating == 'Hot';
+            return hot;
+        });
+        Boolean allNamed = accounts.all(account => {
+            Boolean named = account.Name != null;
+            return named;
+        });
+        Integer numbered = accounts.count(account => {
+            Boolean hasNumber = account.AccountNumber != null;
+            return hasNumber;
+        });
+        Account firstHot = accounts.find(account => {
+            Boolean hot = account.Rating == 'Hot';
+            return hot;
+        });
+        List<Contact> contacts = accounts.flatMap(account => {
+            List<Contact> related = account.Contacts;
+            return related;
+        });
+    }
+}`;
+const blockLambdaResult = transpileApexX(blockLambdaSource, {
+  sourceFileName: "BlockLambdaProbe.clsx",
+});
+assert.deepEqual(
+  blockLambdaResult.diagnostics.filter(diagnostic => diagnostic.severity === "error"),
+  [],
+);
+assert.match(blockLambdaResult.output, /Decimal revenue = account\.AnnualRevenue == null/);
+assert.match(blockLambdaResult.output, /return revenue >= threshold && account\.Rating == 'Hot';/);
+assert.match(blockLambdaResult.output, /Boolean named = account\.Name != null;/);
+assert.match(blockLambdaResult.output, /if \(named && isEligible\.invoke\(account\)\) \{/);
+assert.match(blockLambdaResult.output, /String label = account\.Name\.toUpperCase\(\);/);
+assert.match(blockLambdaResult.output, /apexxMap0\.add\(label\);/);
+assert.match(blockLambdaResult.output, /Boolean hot = account\.Rating == 'Hot';\s*if \(hot\) \{\s*apexxAny0 = true;/);
+assert.match(blockLambdaResult.output, /Boolean named = account\.Name != null;\s*if \(!\(named\)\) \{\s*apexxAll0 = false;/);
+assert.match(blockLambdaResult.output, /Boolean hasNumber = account\.AccountNumber != null;\s*if \(hasNumber\) \{\s*apexxCount0\+\+;/);
+assert.match(blockLambdaResult.output, /Account firstHot = apexxFind0;/);
+assert.match(blockLambdaResult.output, /List<Contact> related = account\.Contacts;\s*apexxFlatMap0\.addAll\(related\);/);
+
+const crossClassProviderSource = `public class RuleProvider {
+    public static (Func<Account, Boolean>, String) resolve() {
+        Func<Account, Boolean> rule = (account) => account.Rating == 'Hot';
+        return (rule, 'Hot account');
+    }
+}`;
+const crossClassConsumerSource = `public class RuleConsumer {
+    public static List<Account> apply(List<Account> accounts) {
+        (Func<Account, Boolean> rule, String reason) = RuleProvider.resolve();
+        return accounts.filter(account => rule(account));
+    }
+}`;
+const crossClassProvider = transpileApexX(crossClassProviderSource, {
+  sourceFileName: "RuleProvider.clsx",
+});
+const crossClassConsumer = transpileApexX(crossClassConsumerSource, {
+  sourceFileName: "RuleConsumer.clsx",
+});
+const providerTupleType = /ApexXTuples\.ApexXTuple_[0-9a-f]{12}/.exec(crossClassProvider.output)?.[0];
+const consumerTupleType = /ApexXTuples\.ApexXTuple_[0-9a-f]{12}/.exec(crossClassConsumer.output)?.[0];
+const providerFuncType = /ApexXFuncs\.ApexXFunc_[0-9a-f]{12}/.exec(crossClassProvider.output)?.[0];
+const consumerFuncType = /ApexXFuncs\.ApexXFunc_[0-9a-f]{12}/.exec(crossClassConsumer.output)?.[0];
+assert.equal(providerTupleType, consumerTupleType);
+assert.equal(providerFuncType, consumerFuncType);
+assert.ok(providerTupleType);
+assert.ok(providerFuncType);
+for (const supportClass of [
+  ...crossClassProvider.supportClasses,
+  ...crossClassConsumer.supportClasses,
+]) {
+  assert.equal(parseApex(supportClass.source).ok, true);
+}
+assert.equal(
+  crossClassProvider.supportClasses.find(item => item.className === "ApexXTuples")?.source,
+  crossClassConsumer.supportClasses.find(item => item.className === "ApexXTuples")?.source,
+);
+assert.equal(
+  crossClassProvider.supportClasses.find(item => item.className === "ApexXFuncs")?.source,
+  crossClassConsumer.supportClasses.find(item => item.className === "ApexXFuncs")?.source,
+);
+
+const numericFuncResult = transpileApexX(`public class NumericRuleProvider {
+    public static Func<Integer, Integer> squareRule() {
+        Func<Integer, Integer> square = (value) => value * value;
+        return square;
+    }
+}`, { sourceFileName: "NumericRuleProvider.clsx" });
+const mergedStructuralSupport = mergeGeneratedSupportClasses([
+  ...arbitraryTupleResult.supportClasses,
+  ...funcTupleResult.supportClasses,
+  ...numericFuncResult.supportClasses,
+]);
+assert.equal(
+  mergedStructuralSupport.filter(item => item.className === "ApexXFuncs").length,
+  1,
+);
+assert.equal(
+  mergedStructuralSupport.filter(item => item.className === "ApexXTuples").length,
+  1,
+);
+const mergedFuncRegistry = mergedStructuralSupport.find(
+  item => item.className === "ApexXFuncs",
+);
+const mergedTupleRegistry = mergedStructuralSupport.find(
+  item => item.className === "ApexXTuples",
+);
+assert.ok(mergedFuncRegistry);
+assert.ok(mergedTupleRegistry);
+assert.equal(
+  [...mergedFuncRegistry.source.matchAll(/public interface ApexXFunc_[0-9a-f]{12}/g)].length,
+  2,
+);
+assert.equal(
+  [...mergedTupleRegistry.source.matchAll(/public class ApexXTuple_[0-9a-f]{12}/g)].length,
+  2,
+);
+assert.equal(parseApex(mergedFuncRegistry.source).ok, true);
+assert.equal(parseApex(mergedTupleRegistry.source).ok, true);
+
+const invalidTupleResult = transpileApexX(`public class InvalidTupleProbe {
+    public static (Decimal, Integer) calculate() {
+        return (10);
+    }
+}`, { sourceFileName: "InvalidTupleProbe.clsx" });
+assert.ok(
+  invalidTupleResult.diagnostics.some(diagnostic =>
+    diagnostic.message.includes("APXX2406") && diagnostic.message.includes("received 1"),
+  ),
+);
+
+const auraTupleResult = transpileApexX(`public class AuraTupleProbe {
+    @AuraEnabled
+    public static (Decimal, Integer) calculate() {
+        return (10, 2);
+    }
+}`, { sourceFileName: "AuraTupleProbe.clsx" });
+assert.ok(
+  auraTupleResult.diagnostics.some(diagnostic =>
+    diagnostic.message.includes("APXX2403"),
+  ),
+);
 
 execFileSync(
   process.execPath,
@@ -89,7 +398,18 @@ assert.match(accountOutput, /public static List<AccountWorkItem> loadRenewalWork
 assert.match(accountOutput, /public static AccountSummary loadAccountSummary\(\)/);
 assert.match(accountOutput, /public static Boolean loadRevenueComparison\(\)/);
 assert.match(accountOutput, /public static void triggerUserFriendlyError\(\)/);
+assert.match(accountOutput, /public static void triggerRawError\(\)/);
+assert.match(accountOutput, /public static ShowcaseOverview loadShowcaseOverview\(\)/);
+assert.match(accountOutput, /public static EmailPipelineResult runEmailPipeline\(\)/);
+assert.match(accountOutput, /public static StrategyResult runRenewalStrategy\(String mode\)/);
+assert.match(
+  accountOutput,
+  /public static RevenueComparisonResult runRevenueComparison\(\s*Decimal absoluteTolerance,\s*Decimal percentageTolerance\s*\)/,
+);
+assert.match(accountOutput, /public static PortfolioBriefing runPortfolioBriefing\(String mode, Decimal minimumRevenue\)/);
+assert.match(accountOutput, /public static PortfolioBriefing buildPortfolioBriefing\(List<Account> accounts, String mode\)/);
 assert.match(accountOutput, /new UserFriendlyError\(\)\.handle\(new ApexX\.Invocation\('AccountService', 'loadPriorityAccounts'/);
+assert.match(accountOutput, /'message' => 'The operation failed safely\. Internal details were hidden\.'/);
 assert.match(accountOutput, /MIN_REVENUE_PER_EMPLOYEE = 10000/);
 assert.match(accountOutput, /account\.NumberOfEmployees > 0/);
 assert.match(accountOutput, /account\.AnnualRevenue \/ account\.NumberOfEmployees >= MIN_REVENUE_PER_EMPLOYEE/);
@@ -98,20 +418,27 @@ assert.match(accountOutput, /contact\.Email\.trim\(\)\.toLowerCase\(\)/);
 assert.doesNotMatch(accountOutput, /account\.AccountNumber != null\)\s*\{\s*apexxFilter\d+\.add\(account\);\s*\}\s*\}\s*List<Account> apexxFilter\d+/s);
 assert.match(
   accountOutput,
-  /public static List<AccountWorkItem> buildRenewalWork\(\s*List<Account> accounts,\s*ApexXFunc0 shouldEscalate\s*\)/,
+  /public static List<AccountWorkItem> buildRenewalWork\(\s*List<Account> accounts,\s*ApexXFuncs\.ApexXFunc_[0-9a-f]{12} shouldEscalate,\s*String escalationReason\s*\)/,
 );
-assert.match(accountOutput, /ApexXFunc0 shouldEscalate;/);
+assert.match(
+  accountOutput,
+  /ApexXTuples\.ApexXTuple_[0-9a-f]{12} apexxTuple\d+ = PortfolioRuleProvider\.resolve\(mode\);\s*ApexXFuncs\.ApexXFunc_[0-9a-f]{12} shouldEscalate = apexxTuple\d+\.item0;/,
+);
 assert.match(accountOutput, /Boolean escalate = shouldEscalate\.invoke\(account\);/);
 assert.match(accountOutput, /apexxMap\d+\.add\(new AccountWorkItem\(/);
 assert.match(accountOutput, /new Map<String, Object>\(\)/);
 assert.match(accountOutput, /'message' => 'Unable to save account\.'/);
 assert.match(accountOutput, /List<Contact> apexxFlatMap0 = new List<Contact>\(\);/);
 assert.match(accountOutput, /Integer apexxCount0 = 0;/);
-assert.match(accountOutput, /ApexXFunc0 isHot = new ApexXLambda\d+\(\);/);
+assert.match(accountOutput, /ApexXFuncs\.ApexXFunc_[0-9a-f]{12} isHot = new ApexXLambda\d+\(\);/);
 assert.match(accountOutput, /if \(isHot\.invoke\(account\)\) \{/);
 assert.match(accountOutput, /Boolean apexxAll0 = true;/);
 assert.match(accountOutput, /Account apexxFind0 = null;/);
-assert.match(accountOutput, /return compareRevenue\(left, right, 0\);/);
+assert.match(accountOutput, /return compareRevenue\(left, right, 0, 0\);/);
+assert.match(
+  accountOutput,
+  /return compareRevenue\(left, right, absoluteTolerance, 0\);/,
+);
 assert.doesNotMatch(accountOutput, /isWithinTolerance/);
 assert.match(plainOutput, /public with sharing class PlainApex/);
 assert.match(plainOutput, /public static String formatStatus\(String subject\)/);
@@ -449,13 +776,16 @@ const funcLambdaErrors = funcLambdaResult.diagnostics.filter(
   diagnostic => diagnostic.severity === "error",
 );
 assert.deepEqual(funcLambdaErrors, []);
-assert.match(funcLambdaResult.output, /public interface ApexXFunc0/);
-assert.match(funcLambdaResult.output, /Boolean invoke\(Integer arg0, Integer arg1\);/);
-assert.match(funcLambdaResult.output, /private class ApexXLambda0 implements ApexXFunc0/);
+const funcLambdaSupport = funcLambdaResult.supportClasses.find(
+  supportClass => supportClass.className === "ApexXFuncs",
+);
+assert.ok(funcLambdaSupport);
+assert.match(funcLambdaSupport.source, /Boolean invoke\(Integer arg0, Integer arg1\);/);
+assert.match(funcLambdaResult.output, /private class ApexXLambda0 implements ApexXFuncs\.ApexXFunc_[0-9a-f]{12}/);
 assert.match(funcLambdaResult.output, /return x == y;/);
 assert.match(
   funcLambdaResult.output,
-  /ApexXFunc0 testForEquality = new ApexXLambda0\(\);/,
+  /ApexXFuncs\.ApexXFunc_[0-9a-f]{12} testForEquality = new ApexXLambda0\(\);/,
 );
 assert.match(
   funcLambdaResult.output,
@@ -483,7 +813,7 @@ assert.match(capturedFuncLambdaResult.output, /public ApexXLambda0\(Decimal tole
 assert.match(capturedFuncLambdaResult.output, /this\.tolerance = tolerance;/);
 assert.match(
   capturedFuncLambdaResult.output,
-  /ApexXFunc0 isWithinTolerance = new ApexXLambda0\(tolerance\);/,
+  /ApexXFuncs\.ApexXFunc_[0-9a-f]{12} isWithinTolerance = new ApexXLambda0\(tolerance\);/,
 );
 assert.match(
   capturedFuncLambdaResult.output,
@@ -529,9 +859,9 @@ const funcParameterBlockMapErrors = funcParameterBlockMapResult.diagnostics.filt
 assert.deepEqual(funcParameterBlockMapErrors, []);
 assert.match(
   funcParameterBlockMapResult.output,
-  /public static List<WorkItem> buildWork\(List<Account> accounts, ApexXFunc0 shouldEscalate\)/,
+  /public static List<WorkItem> buildWork\(List<Account> accounts, ApexXFuncs\.ApexXFunc_[0-9a-f]{12} shouldEscalate\)/,
 );
-assert.match(funcParameterBlockMapResult.output, /ApexXFunc0 shouldEscalate;/);
+assert.match(funcParameterBlockMapResult.output, /ApexXFuncs\.ApexXFunc_[0-9a-f]{12} shouldEscalate;/);
 assert.match(funcParameterBlockMapResult.output, /shouldEscalate = new ApexXLambda0\(\);/);
 assert.match(funcParameterBlockMapResult.output, /shouldEscalate = new ApexXLambda1\(\);/);
 assert.match(funcParameterBlockMapResult.output, /Boolean escalate = shouldEscalate\.invoke\(account\);/);
@@ -555,8 +885,8 @@ const nestedFuncCallErrors = nestedFuncCallResult.diagnostics.filter(
   diagnostic => diagnostic.severity === "error",
 );
 assert.deepEqual(nestedFuncCallErrors, []);
-assert.match(nestedFuncCallResult.output, /private ApexXFunc0 testForEquality;/);
-assert.match(nestedFuncCallResult.output, /ApexXFunc1 isSelfEqual = new ApexXLambda1\(testForEquality\);/);
+assert.match(nestedFuncCallResult.output, /private ApexXFuncs\.ApexXFunc_[0-9a-f]{12} testForEquality;/);
+assert.match(nestedFuncCallResult.output, /ApexXFuncs\.ApexXFunc_[0-9a-f]{12} isSelfEqual = new ApexXLambda1\(testForEquality\);/);
 assert.match(nestedFuncCallResult.output, /return testForEquality\.invoke\(x, x\);/);
 assert.match(nestedFuncCallResult.output, /return isSelfEqual\.invoke\(left\);/);
 
@@ -710,6 +1040,10 @@ try {
     path.join(root, "apexx", "classes", "AccountService.clsx"),
     path.join(tempProject, "apexx", "classes", "AccountService.clsx"),
   );
+  fs.copyFileSync(
+    path.join(root, "apexx", "classes", "PlainApex.clsx"),
+    path.join(tempProject, "apexx", "classes", "PlainApex.clsx"),
+  );
   fs.mkdirSync(
     path.join(tempProject, "force-app", "main", "default", "classes"),
     { recursive: true },
@@ -774,6 +1108,31 @@ try {
     "utf8",
   );
   assert.match(supportClass, /public interface Decorator/);
+
+  const generatedClassesDirectory = path.join(
+    tempProject,
+    "force-app",
+    "main",
+    "default",
+    "classes",
+  );
+  const funcRegistry = fs.readFileSync(
+    path.join(generatedClassesDirectory, "ApexXFuncs.cls"),
+    "utf8",
+  );
+  const tupleRegistry = fs.readFileSync(
+    path.join(generatedClassesDirectory, "ApexXTuples.cls"),
+    "utf8",
+  );
+  assert.match(funcRegistry, /Boolean invoke\(Account arg0\);/);
+  assert.match(funcRegistry, /Integer invoke\(Integer arg0\);/);
+  assert.match(tupleRegistry, /public class ApexXTuple_[0-9a-f]{12}/);
+  assert.deepEqual(
+    fs.readdirSync(generatedClassesDirectory).filter(fileName =>
+      /^ApexX(?:Func|Tuple)_[0-9a-f]{12}\.cls$/i.test(fileName),
+    ),
+    [],
+  );
 } finally {
   fs.rmSync(tempProject, { recursive: true, force: true });
 }

@@ -1,7 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import * as vscode from "vscode";
-import { transpileApexX } from "@apexx/transpiler";
+import {
+  mergeGeneratedSupportClasses,
+  transpileApexX,
+} from "@apexx/transpiler";
+import type {
+  GeneratedApexSupportClass,
+  TranspileResult,
+} from "@apexx/ast";
 import {
   inferApexClassName,
   resolveBuildTarget,
@@ -162,7 +169,12 @@ async function buildDocument(document: vscode.TextDocument): Promise<void> {
   outputChannel?.appendLine(`Built ${written.classFile}`);
   outputChannel?.appendLine(`Built ${written.metadataFile}`);
 
-  for (const supportClass of result.supportClasses) {
+  const workspaceSupport = collectWorkspaceSupportClasses(
+    workspaceRoot,
+    filePath,
+    result,
+  );
+  for (const supportClass of mergeGeneratedSupportClasses(workspaceSupport)) {
     const supportWritten = await writeApexClassFiles({
       classesDir: target.classesDir,
       className: supportClass.className,
@@ -177,6 +189,54 @@ async function buildDocument(document: vscode.TextDocument): Promise<void> {
     `ApexX generated ${path.basename(written.classFile)}`,
     3500,
   );
+}
+
+function collectWorkspaceSupportClasses(
+  workspaceRoot: string,
+  currentFilePath: string,
+  currentResult: TranspileResult,
+): GeneratedApexSupportClass[] {
+  const conventionalSourceRoot = path.join(workspaceRoot, "apexx", "classes");
+  const sourceRoot = fs.existsSync(conventionalSourceRoot)
+    ? conventionalSourceRoot
+    : path.dirname(currentFilePath);
+  const supportClasses: GeneratedApexSupportClass[] = [];
+
+  for (const sourceFile of collectClsxFiles(sourceRoot)) {
+    const result = path.resolve(sourceFile) === path.resolve(currentFilePath)
+      ? currentResult
+      : transpileApexX(fs.readFileSync(sourceFile, "utf8"), {
+          sourceFileName: path.basename(sourceFile),
+          workspaceRoot,
+        });
+
+    if (result.diagnostics.some(diagnostic => diagnostic.severity === "error")) {
+      outputChannel?.appendLine(
+        `warning: skipped structural contracts from ${sourceFile} because it has compiler errors.`,
+      );
+      continue;
+    }
+    supportClasses.push(...result.supportClasses);
+  }
+
+  return supportClasses;
+}
+
+function collectClsxFiles(directory: string): string[] {
+  if (!fs.existsSync(directory)) {
+    return [];
+  }
+
+  const files: string[] = [];
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    const fullPath = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...collectClsxFiles(fullPath));
+    } else if (entry.isFile() && entry.name.toLowerCase().endsWith(".clsx")) {
+      files.push(fullPath);
+    }
+  }
+  return files.sort();
 }
 
 function warnIfSourceIsInGeneratedClasses(

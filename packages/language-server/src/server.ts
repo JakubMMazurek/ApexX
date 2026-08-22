@@ -42,6 +42,7 @@ connection.onInitialize(params => {
         triggerCharacters: ["."],
         resolveProvider: false,
       },
+      hoverProvider: true,
     },
   };
 });
@@ -59,6 +60,21 @@ connection.onCompletion(params => {
     connection.console.error(formatError(error));
     return [];
   }
+});
+
+connection.onHover(params => {
+  const document = documents.get(params.textDocument.uri);
+
+  if (!document || !document.uri.toLowerCase().endsWith(".clsx")) {
+    return null;
+  }
+
+  const word = wordAtPosition(document, params.position);
+  const markdown = word ? hoverDocumentation(word) : undefined;
+
+  return markdown
+    ? { contents: { kind: "markdown", value: markdown } }
+    : null;
 });
 
 documents.onDidOpen(event => validateDocument(event.document));
@@ -145,6 +161,55 @@ function getCompletions(
   }
 
   return completionsForType(receiverType);
+}
+
+function wordAtPosition(
+  document: TextDocument,
+  position: Position,
+): string | undefined {
+  const source = document.getText();
+  const offset = document.offsetAt(position);
+  const before = source.slice(0, offset).match(/[A-Za-z][A-Za-z0-9_]*$/)?.[0] ?? "";
+  const after = source.slice(offset).match(/^[A-Za-z0-9_]*/)?.[0] ?? "";
+  const word = `${before}${after}`;
+  return word.length > 0 ? word : undefined;
+}
+
+function hoverDocumentation(word: string): string | undefined {
+  const documentation: Record<string, string> = {
+    Func: [
+      "### `Func<...>`",
+      "A strongly typed function value. All type arguments except the last are parameters; the final type is the return value.",
+      "Expression and multi-statement block lambdas are supported. Structural signatures receive deterministic interfaces nested in the shared `ApexXFuncs` registry, so matching `Func` types cross independently compiled class boundaries without producing a file per signature.",
+      "ApexX lowers it to a typed Apex interface and implementation class—no reflection or `Object` dispatch.",
+    ].join("\n\n"),
+    filter: helperHover("filter", "`List<T>`", "`List<T>`", "keeps items for which the predicate is true"),
+    map: helperHover("map", "`List<T>`", "`List<R>`", "projects each item to a new inferred type"),
+    flatMap: helperHover("flatMap", "`List<T>`", "`List<R>`", "projects each item to a list and flattens the results"),
+    find: helperHover("find", "`List<T>`", "`T`", "returns the first matching item or `null`"),
+    any: helperHover("any", "`List<T>`", "`Boolean`", "stops when one item matches"),
+    all: helperHover("all", "`List<T>`", "`Boolean`", "stops when one item fails the predicate"),
+    count: helperHover("count", "`List<T>`", "`Integer`", "counts items matching the predicate"),
+    UserFriendlyError: [
+      "### Custom ApexX decorator",
+      "A user-authored class implementing `ApexX.Decorator`. The compiler routes the annotated static method through `handle(ctx, next)` and passes annotation arguments through `ctx.config`.",
+    ].join("\n\n"),
+  };
+
+  return documentation[word];
+}
+
+function helperHover(
+  name: string,
+  receiver: string,
+  result: string,
+  behavior: string,
+): string {
+  return [
+    `### \`${name}\``,
+    `${receiver} → ${result}: ${behavior}.`,
+    "This is a compile-time ApexX helper that lowers to a typed Apex loop.",
+  ].join("\n\n");
 }
 
 function findReceiverBeforeDot(prefix: string): string | undefined {
@@ -330,6 +395,25 @@ function inferFuncLambdaParameterType(
   receiver: string,
 ): string | undefined {
   const prefix = source.slice(0, offset);
+  const declarationPattern =
+    /Func\s*<\s*([^>\r\n]+?)\s*>\s+[A-Za-z][A-Za-z0-9_]*\s*=\s*\(([^)\r\n]*)\)\s*=>/g;
+  let declarationMatch: RegExpExecArray | null;
+  let nearestDeclaration: RegExpExecArray | undefined;
+
+  while ((declarationMatch = declarationPattern.exec(prefix)) !== null) {
+    nearestDeclaration = declarationMatch;
+  }
+
+  if (nearestDeclaration) {
+    const typeArguments = splitCommaList(nearestDeclaration[1]);
+    const parameterNames = splitCommaList(nearestDeclaration[2]);
+    const parameterIndex = parameterNames.findIndex(name => name === receiver);
+
+    if (parameterIndex >= 0 && parameterIndex < typeArguments.length - 1) {
+      return toApexType(typeArguments[parameterIndex]);
+    }
+  }
+
   const statementStart = Math.max(
     prefix.lastIndexOf(";"),
     prefix.lastIndexOf("{"),

@@ -4,5 +4,11 @@ generated/
 .apexx/schema/
 .sf/
 .sfdx/
+.env
+.env.*
+!.env.example
+coverage/
+*.log
+*.vsix
 *.tsbuildinfo
 .DS_Store
