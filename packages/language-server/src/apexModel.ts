@@ -302,23 +302,53 @@ function collectTupleBindings(
   innerOffset: number,
   into: ApexParameter[],
 ): void {
-  let cursor = 0;
-
-  for (const part of inner.split(",")) {
-    const match = /([A-Za-z_][A-Za-z0-9_.<>]*)\s+([A-Za-z_][A-Za-z0-9_]*)\s*$/.exec(part);
+  for (const part of splitTopLevel(inner)) {
+    const match = /([A-Za-z_][A-Za-z0-9_.<>,\s]*?)\s+([A-Za-z_][A-Za-z0-9_]*)\s*$/.exec(
+      part.text,
+    );
 
     if (match?.[2] && match[2] !== "_") {
-      const nameStart = innerOffset + cursor + part.lastIndexOf(match[2]);
+      const nameStart = innerOffset + part.start + part.text.lastIndexOf(match[2]);
       into.push({
         name: match[2],
-        type: match[1] ?? "Object",
+        type: match[1]?.trim() || "Object",
         nameStart,
         nameEnd: nameStart + match[2].length,
       });
     }
-
-    cursor += part.length + 1;
   }
+}
+
+/**
+ * Splits on commas that are not nested inside brackets, so a generic type such as
+ * `Func<Account, Boolean>` stays in one piece.
+ */
+function splitTopLevel(text: string): { text: string; start: number }[] {
+  const parts: { text: string; start: number }[] = [];
+  let depth = 0;
+  let start = 0;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+
+    if (character === "<" || character === "(" || character === "[") {
+      depth += 1;
+      continue;
+    }
+
+    if (character === ">" || character === ")" || character === "]") {
+      depth = Math.max(0, depth - 1);
+      continue;
+    }
+
+    if (character === "," && depth === 0) {
+      parts.push({ text: text.slice(start, index), start });
+      start = index + 1;
+    }
+  }
+
+  parts.push({ text: text.slice(start), start });
+  return parts;
 }
 
 /**

@@ -454,6 +454,42 @@ try {
     "@UserFriendlyError should resolve to UserFriendlyError.clsx",
   );
 
+  // A tuple destructuring binding keeps its whole type: the comma inside
+  // Func<Account, Boolean> must not be read as a separator between bindings.
+  const tupleSource = `public with sharing class TupleProbe {
+    public static String describe(String mode) {
+        (
+            Func<Account, Boolean> shouldEscalate,
+            String escalationReason,
+            Decimal _
+        ) = PortfolioRuleProvider.resolve(mode);
+
+        return escalationReason;
+    }
+}
+`;
+  const tupleUri = pathToFileURL(
+    path.join(root, "apexx", "classes", "TupleProbe.clsx"),
+  ).href;
+  notify("textDocument/didOpen", {
+    textDocument: { uri: tupleUri, languageId: "apexx", version: 1, text: tupleSource },
+  });
+
+  const tupleLines = tupleSource.split("\n");
+  const escalateLine = tupleLines.findIndex(line => line.includes("shouldEscalate,"));
+  const tupleHover = await request("textDocument/hover", {
+    textDocument: { uri: tupleUri },
+    position: {
+      line: escalateLine,
+      character: tupleLines[escalateLine].indexOf("shouldEscalate") + 3,
+    },
+  });
+  assert.match(
+    tupleHover.contents.value,
+    /Func<Account, ?Boolean> shouldEscalate/,
+    `tuple binding lost part of its type: ${tupleHover.contents.value}`,
+  );
+
   // Cross-file: a static call on a type declared in a different file.
   const consumerPath = path.join(root, "apexx", "classes", "AccountSignalConsumer.clsx");
   const consumerText = readFileSync(consumerPath, "utf8");
