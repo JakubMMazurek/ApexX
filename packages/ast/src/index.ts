@@ -124,9 +124,25 @@ export interface TranspileOptions {
   workspaceRoot?: string;
 }
 
+/**
+ * Exact offset mapping between authored ApexX and the generated Apex. `undefined`
+ * means the offset has no counterpart, which is a real answer: generated support
+ * code has no authored origin, and lowered syntax has no generated equivalent.
+ */
+export interface ApexXPositionMap {
+  toSource(outputOffset: number): number | undefined;
+  toOutput(sourceOffset: number): number | undefined;
+  /** True when the offset lands in text copied through unchanged by every stage. */
+  isVerbatim(outputOffset: number): boolean;
+}
+
 export interface TranspileResult {
   source: string;
   output: string;
+  /** Maps offsets in `output` to offsets in `source`, and back. */
+  sourceMap: ApexXPositionMap;
+  /** Generated type name to the ApexX type it stands for, e.g. `Func<Account, Boolean>`. */
+  generatedTypeNames: Map<string, string>;
   supportClasses: GeneratedApexSupportClass[];
   diagnostics: ApexXDiagnostic[];
   listMethodCalls: ListMethodCallExpression[];

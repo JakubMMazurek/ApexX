@@ -5,6 +5,7 @@ import path from "node:path";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import {
+  mapIdentifierOffset,
   mergeGeneratedSupportClasses,
   transpileApexX,
 } from "../packages/transpiler/dist/index.js";
@@ -1135,6 +1136,79 @@ try {
   );
 } finally {
   fs.rmSync(tempProject, { recursive: true, force: true });
+}
+
+// The source map must address the authored file exactly: every generated
+// character the map calls verbatim has to equal the character it maps to.
+{
+  const authoredDirectory = path.join(root, "apexx", "classes");
+  let verbatim = 0;
+  let exact = 0;
+
+  for (const fileName of fs.readdirSync(authoredDirectory).filter(name => name.endsWith(".clsx"))) {
+    const source = fs.readFileSync(path.join(authoredDirectory, fileName), "utf8");
+    const result = transpileApexX(source, {
+      sourceFileName: fileName,
+      workspaceRoot: root,
+    });
+
+    for (let offset = 0; offset < result.output.length; offset += 1) {
+      if (!result.sourceMap.isVerbatim(offset)) {
+        continue;
+      }
+
+      verbatim += 1;
+      const authored = result.sourceMap.toSource(offset);
+
+      if (authored !== undefined && result.output[offset] === source[authored]) {
+        exact += 1;
+      }
+    }
+  }
+
+  assert.ok(verbatim > 10000, `expected a substantial verbatim mapping, got ${verbatim}`);
+  assert.equal(exact, verbatim, `source map drifted on ${verbatim - exact} characters`);
+
+  // Tokens inside lowered regions must still resolve, including expressions that
+  // only survive inside generated code.
+  const accountService = fs.readFileSync(
+    path.join(authoredDirectory, "AccountService.clsx"),
+    "utf8",
+  );
+  const mapped = transpileApexX(accountService, {
+    sourceFileName: "AccountService.clsx",
+    workspaceRoot: root,
+  });
+
+  for (const [needle, token] of [
+    ["PortfolioRuleProvider.resolve", "resolve"],
+    ["compareRevenue(withRevenue.get(0)", "compareRevenue"],
+    ["Func<Account, Boolean> shouldEscalate", "shouldEscalate"],
+    ["AccountSummary summarize(", "summarize"],
+  ]) {
+    const base = accountService.indexOf(needle);
+    assert.ok(base >= 0, `probe source is missing ${needle}`);
+    const authoredOffset = base + needle.indexOf(token);
+    const generatedOffset = mapIdentifierOffset(
+      mapped.sourceMap,
+      accountService,
+      mapped.output,
+      authoredOffset,
+    );
+    assert.ok(generatedOffset !== undefined, `${token} did not map into the generated Apex`);
+    assert.equal(
+      mapped.output.slice(generatedOffset, generatedOffset + token.length),
+      token,
+      `${token} mapped to the wrong generated offset`,
+    );
+  }
+
+  // The generated-name table is what lets messages be reported in ApexX terms.
+  const funcNames = [...mapped.generatedTypeNames.values()];
+  assert.ok(
+    funcNames.some(name => /^Func<Account, ?Boolean>$/.test(name)),
+    `expected a Func<Account, Boolean> entry, got ${funcNames.join(" | ")}`,
+  );
 }
 
 console.log("Smoke test passed.");

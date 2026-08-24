@@ -1,3 +1,8 @@
+import {
+  applySplices,
+  identityMap,
+  type PositionMap,
+} from "./sourceMap.js";
 import type { ApexXDiagnostic, GeneratedApexSupportClass } from "@apexx/ast";
 import {
   collectIdentifiers,
@@ -46,6 +51,8 @@ export interface TupleLoweringResult {
   diagnostics: ApexXDiagnostic[];
   tupleCount: number;
   supportClasses: GeneratedApexSupportClass[];
+  /** Maps offsets in `output` back to the source this stage received. */
+  map: PositionMap;
 }
 
 export function lowerApexXTuples(source: string): TupleLoweringResult {
@@ -157,16 +164,23 @@ export function lowerApexXTuples(source: string): TupleLoweringResult {
   );
 
   if (carriers.size === 0) {
-    return { output: source, diagnostics, tupleCount: 0, supportClasses: [] };
+    return {
+      output: source,
+      diagnostics,
+      tupleCount: 0,
+      supportClasses: [],
+      map: identityMap(source.length),
+    };
   }
 
-  const output = applyTransformations(source, transformations);
+  const { output, map } = applyTransformations(source, transformations);
 
   return {
     output,
     diagnostics,
     tupleCount: carriers.size,
     supportClasses: [renderTupleSupportRegistry([...carriers.values()])],
+    map,
   };
 }
 
@@ -463,21 +477,11 @@ function renderTupleMember(carrier: TupleCarrier): string {
   ].join("\n");
 }
 
-function applyTransformations(source: string, transformations: Transformation[]): string {
-  let output = "";
-  let cursor = 0;
-
-  for (const transformation of transformations.sort((left, right) => left.start - right.start)) {
-    if (transformation.start < cursor) {
-      continue;
-    }
-
-    output += source.slice(cursor, transformation.start);
-    output += transformation.replacement;
-    cursor = transformation.end;
-  }
-
-  return output + source.slice(cursor);
+function applyTransformations(
+  source: string,
+  transformations: Transformation[],
+): { output: string; map: PositionMap } {
+  return applySplices(source, transformations);
 }
 
 function splitCommaList(source: string): string[] {

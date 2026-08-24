@@ -22,6 +22,15 @@ import {
   inferListMethodChainTypes,
 } from "@apexx/semantics";
 import { lowerApexXTuples } from "./tuples.js";
+export { mapIdentifierOffset } from "./sourceMap.js";
+import {
+  applySplices,
+  chainMaps,
+  identityMap,
+  splicesFromReplace,
+  type PositionMap,
+  type Splice,
+} from "./sourceMap.js";
 import {
   FUNC_REGISTRY_CLASS,
   sharedFuncTypeName,
@@ -65,7 +74,6 @@ export function transpileApexX(
   const funcInvocations = findFuncInvocations(workingSource, funcVariableNames);
   const transformations: Transformation[] = [];
   let output = "";
-  let cursor = 0;
 
   for (const call of listMethodCalls) {
     const listType = listVariables.get(call.receiver);
@@ -154,19 +162,20 @@ export function transpileApexX(
     });
   }
 
-  for (const transformation of transformations.sort((left, right) => left.start - right.start)) {
-    if (transformation.start < cursor) {
-      continue;
-    }
+  const mainStage = applySplices(workingSource, transformations);
+  output = mainStage.output;
 
-    output += workingSource.slice(cursor, transformation.start);
-    output += transformation.replacement;
-    cursor = transformation.end;
-  }
+  const funcTypeStage = replaceFuncTypeReferences(output, funcTypeAliases);
+  output = funcTypeStage.output;
 
-  output += workingSource.slice(cursor);
-  output = replaceFuncTypeReferences(output, funcTypeAliases);
-  output = addGeneratedFuncTypes(output, funcLambdaAssignments, funcVariableNames, funcTypeAliases);
+  const generatedTypeStage = addGeneratedFuncTypes(
+    output,
+    funcLambdaAssignments,
+    funcVariableNames,
+    funcTypeAliases,
+  );
+  output = generatedTypeStage.output;
+
   const methodLowering = lowerApexXMethods(output, {
     workspaceRoot: options.workspaceRoot,
     usedNames,
@@ -174,15 +183,41 @@ export function transpileApexX(
   output = methodLowering.output;
   diagnostics.push(...methodLowering.diagnostics);
 
-  const generated = addHeader(output, options.sourceFileName);
+  // Trailing-whitespace trimming and the header both shift offsets, so both are
+  // stages like any other.
+  const trimStage = applySplices(output, trimTrailingWhitespaceSplices(output));
+  const headerStage = applySplices(trimStage.output, [
+    { start: 0, end: 0, replacement: headerText(options.sourceFileName) },
+  ]);
+  const generated = headerStage.output;
   const generatedParse = parseApex(generated);
   if (!generatedParse.ok) {
     diagnostics.push(...generatedParse.diagnostics);
   }
 
+  const sourceMap = chainMaps([
+    tupleLowering.map,
+    mainStage.map,
+    funcTypeStage.map,
+    generatedTypeStage.map,
+    methodLowering.map,
+    trimStage.map,
+    headerStage.map,
+  ]);
+
+  const generatedTypeNames = new Map<string, string>();
+  for (const alias of funcTypeAliases.values()) {
+    generatedTypeNames.set(
+      alias.interfaceName,
+      `Func<${[...alias.parameterTypes, alias.returnType].join(", ")}>`,
+    );
+  }
+
   return {
     source,
     output: generated,
+    sourceMap,
+    generatedTypeNames,
     supportClasses: deduplicateSupportClasses([
       ...tupleLowering.supportClasses,
       ...createFuncSupportClasses(funcTypeAliases),
@@ -212,6 +247,7 @@ interface MethodLoweringResult {
   output: string;
   diagnostics: ApexXDiagnostic[];
   needsDecoratorSupport: boolean;
+  map: PositionMap;
 }
 
 interface ApexXMethod {
@@ -313,21 +349,8 @@ function lowerApexXMethods(
     });
   }
 
-  let output = "";
-  let cursor = 0;
-
-  for (const transformation of transformations.sort((left, right) => left.start - right.start)) {
-    if (transformation.start < cursor) {
-      continue;
-    }
-
-    output += source.slice(cursor, transformation.start);
-    output += transformation.replacement;
-    cursor = transformation.end;
-  }
-
-  output += source.slice(cursor);
-  return { output, diagnostics, needsDecoratorSupport };
+  const { output, map } = applySplices(source, transformations);
+  return { output, diagnostics, needsDecoratorSupport, map };
 }
 
 function renderLoweredMethod(options: {
@@ -1307,7 +1330,7 @@ function addGeneratedFuncTypes(
   assignments: FuncLambdaAssignment[],
   funcVariableNames: Set<string>,
   funcTypeAliases: Map<string, FuncTypeAlias>,
-): string {
+): { output: string; map: PositionMap } {
   const supportedAssignments = assignments.filter(
     assignment =>
       assignment.interfaceName &&
@@ -1316,12 +1339,12 @@ function addGeneratedFuncTypes(
   );
 
   if (supportedAssignments.length === 0) {
-    return source;
+    return { output: source, map: identityMap(source.length) };
   }
 
   const classStart = findClassBodyStart(source);
   if (classStart === undefined) {
-    return source;
+    return { output: source, map: identityMap(source.length) };
   }
 
   const implementations = supportedAssignments
@@ -1329,7 +1352,9 @@ function addGeneratedFuncTypes(
     .join("\n\n");
   const declarations = implementations;
 
-  return `${source.slice(0, classStart)}\n${declarations}\n${source.slice(classStart)}`;
+  return applySplices(source, [
+    { start: classStart, end: classStart, replacement: `\n${declarations}\n` },
+  ]);
 }
 
 function renderFuncInterfaceDeclaration(
@@ -1479,15 +1504,20 @@ function collectFuncTypeAliases(
 function replaceFuncTypeReferences(
   source: string,
   aliases: Map<string, FuncTypeAlias>,
-): string {
-  return source.replace(/Func\s*<\s*([^>\r\n]+?)\s*>/g, (original, typeArgumentsText) => {
-    const typeArguments = splitCommaList(typeArgumentsText);
-    const parameterTypes = typeArguments.slice(0, -1).map(toApexType);
-    const returnType = toApexType(typeArguments.at(-1) ?? "Object");
-    const signature = funcSignatureKey(parameterTypes, returnType);
+): { output: string; map: PositionMap } {
+  const splices = splicesFromReplace(
+    source,
+    /Func\s*<\s*([^>\r\n]+?)\s*>/g,
+    match => {
+      const typeArguments = splitCommaList(match[1] ?? "");
+      const parameterTypes = typeArguments.slice(0, -1).map(toApexType);
+      const returnType = toApexType(typeArguments.at(-1) ?? "Object");
 
-    return aliases.get(signature)?.interfaceName ?? original;
-  });
+      return aliases.get(funcSignatureKey(parameterTypes, returnType))?.interfaceName;
+    },
+  );
+
+  return applySplices(source, splices);
 }
 
 function collectFuncVariableNames(
@@ -1613,13 +1643,20 @@ function findClassBodyStart(source: string): number | undefined {
   return match ? match.index + match[0].length : undefined;
 }
 
+/** Header plus trailing-whitespace trim, for generated support classes that have
+ * no authored counterpart and so need no position mapping. */
 function addHeader(source: string, sourceFileName?: string): string {
-  const sourceLine = sourceFileName
-    ? `// Source: ${sourceFileName}\n`
-    : "";
-  const normalizedSource = source.replace(/[ \t]+$/gm, "");
+  return headerText(sourceFileName) + source.replace(/[ \t]+$/gm, "");
+}
 
-  return `// AUTO-GENERATED BY ApexX.\n${sourceLine}// DO NOT EDIT.\n\n${normalizedSource}`;
+function headerText(sourceFileName?: string): string {
+  const sourceLine = sourceFileName ? `// Source: ${sourceFileName}\n` : "";
+  return `// AUTO-GENERATED BY ApexX.\n${sourceLine}// DO NOT EDIT.\n\n`;
+}
+
+/** Trailing whitespace is stripped as splices so the stage reports its offsets. */
+function trimTrailingWhitespaceSplices(source: string): Splice[] {
+  return splicesFromReplace(source, /[ \t]+$/gm, () => "");
 }
 
 function toApexType(typeName: string): string {
