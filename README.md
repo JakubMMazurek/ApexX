@@ -411,7 +411,10 @@ reported against the authored source.
 | Outline and breadcrumbs | Types, methods, fields and properties, nested as declared |
 | Signature help | Parameter list and active argument while typing a call |
 | Workspace symbols | Every declaration in every `.clsx` in the workspace |
-| Completion, diagnostics | Type-aware ApexX completion and live compiler diagnostics |
+| Completion | ApexX helpers and lambda-aware sObject fields, plus everything the Apex compiler knows about the org |
+| Rename | Locals and parameters within their scope; types and members across every file |
+| Quick fixes | Offered when the Apex compiler suggests one and the edit lands in authored code |
+| Diagnostics | ApexX compiler errors always; Apex semantic errors when `apexx.apexDiagnostics` is on |
 
 ### How it resolves symbols
 
@@ -441,6 +444,13 @@ ApexX output channel once, not surfaced as an error.
 | --- | --- |
 | `apexx.useApexLanguageServer` | Turn the Apex language server off and use only the built-in model |
 | `apexx.javaHome` | JDK to run it with; defaults to `salesforcedx-vscode-apex.java.home`, then `JAVA_HOME` |
+| `apexx.apexDiagnostics` | Report Apex semantic errors too. Off by default: they catch real mistakes such as calling a method that does not exist, but they also flag code the platform compiles and deploys, so they are advisory rather than authoritative |
+
+The Apex language server is a JVM process that holds a few hundred megabytes while it
+indexes the project, and the Salesforce Apex extension already runs one per open
+workspace. On a machine that is short of memory it will answer nothing, and ApexX
+falls back to the built-in model; `npm run apex-smoke` says which of the two paths it
+managed to verify.
 
 `npm run apex-smoke` exercises the Apex-backed path and reports a skip rather than a
 failure when no JDK or jar is present. `npm run test:all` runs it after the rest.

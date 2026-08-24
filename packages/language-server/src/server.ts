@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 import { fileURLToPath } from "node:url";
 import {
+  CodeAction,
   CompletionItem,
+  Diagnostic,
   CompletionItemKind,
   createConnection,
   DiagnosticSeverity,
@@ -66,15 +68,34 @@ let apexJavaHome: string | undefined;
 let apexServerEnabled = !/^(1|true|yes)$/i.test(
   process.env.APEXX_DISABLE_APEX_SERVER ?? "",
 );
+/**
+ * Apex semantic errors from the Apex language server, off by default.
+ *
+ * They catch real mistakes the ApexX compiler does not check for, such as calling a
+ * method that does not exist. They also report code the platform accepts: the
+ * checked-in sources draw six such errors, and a validate-only deploy of the same
+ * classes succeeds, so they cannot be trusted as a build gate. Opt in per workspace.
+ */
+let apexDiagnosticsEnabled = /^(1|true|yes)$/i.test(
+  process.env.APEXX_APEX_DIAGNOSTICS ?? "",
+);
 
 connection.onInitialize(params => {
   const initializationOptions = params.initializationOptions as
-    | { javaHome?: string; useApexLanguageServer?: boolean }
+    | {
+        javaHome?: string;
+        useApexLanguageServer?: boolean;
+        apexDiagnostics?: boolean;
+      }
     | undefined;
   apexJavaHome = initializationOptions?.javaHome ?? process.env.APEXX_JAVA_HOME;
 
   if (initializationOptions?.useApexLanguageServer === false) {
     apexServerEnabled = false;
+  }
+
+  if (initializationOptions?.apexDiagnostics !== undefined) {
+    apexDiagnosticsEnabled = initializationOptions.apexDiagnostics;
   }
 
   workspaceRoot = uriToFilePath(
@@ -96,23 +117,66 @@ connection.onInitialize(params => {
       renameProvider: { prepareProvider: true },
       signatureHelpProvider: { triggerCharacters: ["(", ","] },
       workspaceSymbolProvider: true,
+      codeActionProvider: true,
     },
   };
 });
 
-connection.onCompletion(params => {
-  try {
-    const document = documents.get(params.textDocument.uri);
+connection.onCompletion(async params => {
+  const document = apexxDocument(params.textDocument.uri);
 
-    if (!document || !document.uri.toLowerCase().endsWith(".clsx")) {
-      return [];
-    }
-
-    return getCompletions(document, params.position);
-  } catch (error) {
-    connection.console.error(formatError(error));
+  if (!document) {
     return [];
   }
+
+  const source = document.getText();
+  const offset = document.offsetAt(params.position);
+  let apexxItems: CompletionItem[] = [];
+
+  try {
+    apexxItems = getCompletions(document, params.position);
+  } catch (error) {
+    connection.console.error(formatError(error));
+  }
+
+  // After a dot, ApexX only has something to say when it recognised the receiver.
+  // Otherwise it falls back to offering type names, which would bury the members
+  // the Apex server resolves correctly -- so those are dropped here. The check is
+  // on the dot itself, because a receiver ApexX cannot parse is exactly the case
+  // where its fallback list is least useful.
+  const receiver = findReceiverBeforeDot(source.slice(0, offset));
+
+  if (receiver && !inferReceiverType(source, offset, receiver)) {
+    apexxItems = [];
+  }
+
+  const apex = await askApex<CompletionItem[] | { items?: CompletionItem[] }>(
+    "textDocument/completion",
+    document,
+    params.position,
+    { context: params.context },
+  );
+  const apexItems = Array.isArray(apex?.result)
+    ? apex.result
+    : (apex?.result?.items ?? []);
+  const seen = new Set(apexxItems.map(item => item.label));
+  const merged = [...apexxItems];
+
+  for (const item of apexItems) {
+    if (!item?.label || seen.has(item.label) || isGeneratedArtifact(item.label)) {
+      continue;
+    }
+
+    seen.add(item.label);
+    merged.push({
+      ...item,
+      detail: item.detail
+        ? translateGeneratedNames(item.detail, bridge?.documents() ?? [])
+        : item.detail,
+    });
+  }
+
+  return merged;
 });
 
 connection.onHover(async params => {
@@ -349,10 +413,34 @@ connection.onPrepareRename(params => {
   };
 });
 
-connection.onRenameRequest(params => {
+connection.onRenameRequest(async params => {
   const found = symbolUnderCursor(params.textDocument.uri, params.position);
 
-  if (!found || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(params.newName)) {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(params.newName)) {
+    return null;
+  }
+
+  const document = apexxDocument(params.textDocument.uri);
+  const isScoped =
+    found && (found.symbol.kind === "local" || found.symbol.kind === "parameter");
+
+  // A local or parameter is renamed here, where its scope is known exactly. Types
+  // and members are renamed through the Apex server so every file is covered.
+  if (document && !isScoped) {
+    const apex = await askApex<{ changes?: Record<string, { range: Range; newText: string }[]> }>(
+      "textDocument/rename",
+      document,
+      params.position,
+      { newName: params.newName },
+    );
+    const mapped = mapWorkspaceEdit(apex?.result, params.newName);
+
+    if (mapped) {
+      return mapped;
+    }
+  }
+
+  if (!found) {
     return null;
   }
 
@@ -366,6 +454,33 @@ connection.onRenameRequest(params => {
   };
 
   return { changes };
+});
+
+connection.onCodeAction(async params => {
+  const document = apexxDocument(params.textDocument.uri);
+
+  if (!document) {
+    return [];
+  }
+
+  const apex = await askApex<CodeAction[]>(
+    "textDocument/codeAction",
+    document,
+    params.range.start,
+    { range: params.range, context: params.context },
+  );
+
+  // Only actions whose edits land in authored code are offered; a fix that would
+  // rewrite generated output is not something the user can accept.
+  return (apex?.result ?? []).flatMap(action => {
+    const edit = mapWorkspaceEdit(action.edit, undefined);
+
+    if (action.edit && !edit) {
+      return [];
+    }
+
+    return [{ ...action, edit: edit ?? action.edit }];
+  });
 });
 
 connection.onSignatureHelp(params => {
@@ -409,7 +524,17 @@ connection.onSignatureHelp(params => {
 documents.onDidOpen(event => validateDocument(event.document));
 documents.onDidChangeContent(event => validateDocument(event.document));
 documents.onDidClose(event => {
+  compilerDiagnostics.delete(event.document.uri);
+  apexDiagnostics.delete(event.document.uri);
   connection.sendDiagnostics({ uri: event.document.uri, diagnostics: [] });
+});
+
+connection.onShutdown(() => {
+  jorje?.dispose();
+});
+
+connection.onExit(() => {
+  jorje?.dispose();
 });
 
 documents.listen(connection);
@@ -426,26 +551,38 @@ async function validateDocument(document: TextDocument): Promise<void> {
       workspaceRoot,
     });
 
-    connection.sendDiagnostics({
-      uri: document.uri,
-      diagnostics: result.diagnostics.map(toLspDiagnostic),
-    });
+    compilerDiagnostics.set(document.uri, result.diagnostics.map(toLspDiagnostic));
+    republishDiagnostics(document.uri);
+
+    // Keep the Apex server's view of the generated code current so its semantic
+    // diagnostics arrive for what the user is editing now.
+    const backend = apexBackend();
+
+    if (backend?.jorje.isReady) {
+      const bridged = backend.bridge.bridge(
+        document.uri,
+        document.getText(),
+        `v${document.version}`,
+      );
+
+      if (bridged) {
+        backend.jorje.syncDocument(bridged.generatedUri, bridged.output);
+      }
+    }
   } catch (error) {
     connection.console.error(formatError(error));
-    connection.sendDiagnostics({
-      uri: document.uri,
-      diagnostics: [
-        {
-          severity: DiagnosticSeverity.Error,
-          range: {
-            start: { line: 0, character: 0 },
-            end: { line: 0, character: 1 },
-          },
-          message: `ApexX language server error: ${formatError(error)}`,
-          source: "apexx",
+    compilerDiagnostics.set(document.uri, [
+      {
+        severity: DiagnosticSeverity.Error,
+        range: {
+          start: { line: 0, character: 0 },
+          end: { line: 0, character: 1 },
         },
-      ],
-    });
+        message: `ApexX language server error: ${formatError(error)}`,
+        source: "apexx",
+      },
+    ]);
+    republishDiagnostics(document.uri);
   }
 }
 
@@ -508,6 +645,117 @@ function wordAtPosition(
  * Parsing is memoised per document version: hover, highlight and signature help
  * all fire on the same keystroke, and each would otherwise reparse the file.
  */
+interface ApexDiagnosticsNotification {
+  uri: string;
+  diagnostics: {
+    range: LspRange;
+    message: string;
+    severity?: number;
+    code?: string | number;
+    source?: string;
+  }[];
+}
+
+/** Apex semantic diagnostics, keyed by authored URI. */
+const apexDiagnostics = new Map<string, Diagnostic[]>();
+/** ApexX compiler diagnostics, kept so both sources publish together. */
+const compilerDiagnostics = new Map<string, Diagnostic[]>();
+
+/**
+ * Receives diagnostics the Apex language server publishes about generated code and
+ * republishes them against the authored file.
+ *
+ * A diagnostic whose range does not map back is dropped: it describes generated
+ * scaffolding, so reporting it would blame the user for code ApexX wrote.
+ */
+function receiveApexDiagnostics(notification: ApexDiagnosticsNotification): void {
+  const activeBridge = bridge;
+
+  if (!apexDiagnosticsEnabled || !activeBridge || !notification?.uri) {
+    return;
+  }
+
+  const bridged = activeBridge.authoredFor(notification.uri);
+
+  if (!bridged) {
+    return;
+  }
+
+  const translated: Diagnostic[] = [];
+
+  for (const entry of notification.diagnostics ?? []) {
+    const located = toAuthoredLocation({ uri: notification.uri, range: entry.range });
+
+    if (!located || located.uri !== bridged.authoredUri || isGeneratedArtifact(entry.message)) {
+      continue;
+    }
+
+    translated.push({
+      range: located.range,
+      message: translateGeneratedNames(entry.message, activeBridge.documents()),
+      severity: (entry.severity as DiagnosticSeverity) ?? DiagnosticSeverity.Error,
+      source: "apex",
+      code: entry.code,
+    });
+  }
+
+  const previous = apexDiagnostics.get(bridged.authoredUri) ?? [];
+  apexDiagnostics.set(bridged.authoredUri, translated);
+
+  if (previous.length > 0 || translated.length > 0) {
+    republishDiagnostics(bridged.authoredUri);
+  }
+}
+
+function republishDiagnostics(uri: string): void {
+  connection.sendDiagnostics({
+    uri,
+    diagnostics: [
+      ...(compilerDiagnostics.get(uri) ?? []),
+      ...(apexDiagnostics.get(uri) ?? []),
+    ],
+  });
+}
+
+/**
+ * Rewrites a workspace edit reported against generated Apex so it applies to the
+ * authored `.clsx` files. Returns undefined when any edit lands in generated-only
+ * code, because applying part of a rename would corrupt the source.
+ */
+function mapWorkspaceEdit(
+  edit: { changes?: Record<string, { range: LspRange; newText: string }[]> } | undefined,
+  newName: string | undefined,
+): WorkspaceEdit | undefined {
+  if (!edit?.changes) {
+    return undefined;
+  }
+
+  const changes: Record<string, { range: Range; newText: string }[]> = {};
+
+  for (const [uri, edits] of Object.entries(edit.changes)) {
+    for (const entry of edits) {
+      const located = toAuthoredLocation({ uri, range: entry.range });
+
+      if (!located) {
+        return undefined;
+      }
+
+      changes[located.uri] ??= [];
+      changes[located.uri].push({
+        range: located.range,
+        newText: newName ?? entry.newText,
+      });
+    }
+  }
+
+  return Object.keys(changes).length > 0 ? { changes } : undefined;
+}
+
+interface LspRange {
+  start: { line: number; character: number };
+  end: { line: number; character: number };
+}
+
 interface LspLocation {
   uri: string;
   range: {
@@ -557,6 +805,8 @@ function dedupeLocations(locations: Location[]): Location[] {
   });
 }
 
+const FIRST_OPEN_SETTLE_MS = 400;
+
 let jorje: JorjeClient | undefined;
 let bridge: ApexBridge | undefined;
 
@@ -577,6 +827,11 @@ function apexBackend(): { jorje: JorjeClient; bridge: ApexBridge } | undefined {
     javaHome: apexJavaHome,
     jarPath: process.env.APEXX_APEX_JAR,
     log: message => connection.console.log(`[apexx] ${message}`),
+    onNotification: (method, params) => {
+      if (method === "textDocument/publishDiagnostics") {
+        receiveApexDiagnostics(params as ApexDiagnosticsNotification);
+      }
+    },
   });
 
   // Warm the server up without blocking this request.
@@ -655,13 +910,37 @@ async function askApex<T>(
     return undefined;
   }
 
+  // The server needs a moment to parse a document it has just been given; asking
+  // in the same tick makes it answer with an internal error.
+  const firstOpen = !backend.jorje.isOpen(bridged.generatedUri);
   backend.jorje.syncDocument(bridged.generatedUri, bridged.output);
+
+  if (firstOpen) {
+    await new Promise(resolve => setTimeout(resolve, FIRST_OPEN_SETTLE_MS));
+  }
 
   const result = await backend.jorje.send<T>(method, {
     textDocument: { uri: bridged.generatedUri },
     position: offsetPosition(bridged.output, generatedOffset),
     ...extra,
   });
+
+  // An empty answer may mean the document never landed; re-open it so the next
+  // request gets a fresh chance rather than failing for the rest of the session.
+  if (result === undefined || result === null) {
+    backend.jorje.reopen(bridged.generatedUri);
+  }
+
+  if (process.env.APEXX_DEBUG_APEX) {
+    const size = Array.isArray(result)
+      ? result.length
+      : result === undefined || result === null
+        ? "none"
+        : "object";
+    connection.console.log(
+      `[apexx-debug] ${method} generatedUri=${bridged.generatedUri.split("/").pop()} offset=${generatedOffset} -> ${size}`,
+    );
+  }
 
   return result === undefined || result === null ? undefined : { result, bridged };
 }

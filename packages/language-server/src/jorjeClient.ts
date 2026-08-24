@@ -24,11 +24,16 @@ export interface JorjeOptions {
   jarPath?: string;
   /** How long to wait for the initial project index before answering requests. */
   indexTimeoutMs?: number;
+  /** Grace period after the handshake before the server is relied on. */
+  warmUpMs?: number;
   log?: (message: string) => void;
+  /** Receives server-initiated notifications, such as published diagnostics. */
+  onNotification?: (method: string, params: unknown) => void;
 }
 
 const REQUEST_TIMEOUT_MS = 8000;
 const INDEX_TIMEOUT_MS = 45000;
+const WARM_UP_MS = 20000;
 
 export class JorjeClient {
   private process: ChildProcessWithoutNullStreams | undefined;
@@ -40,6 +45,7 @@ export class JorjeClient {
   >();
   private readyPromise: Promise<boolean> | undefined;
   private indexed = false;
+  private readyAt = 0;
   private readonly openDocuments = new Map<string, number>();
 
   state: JorjeState = "idle";
@@ -64,9 +70,26 @@ export class JorjeClient {
     return this.readyPromise;
   }
 
-  /** True only when a request can be served right now. */
+  /**
+   * True once the server can be relied on: the handshake is done and the project
+   * index has either reported finishing or been given a grace period to do so.
+   *
+   * Documents opened before the index is built are silently dropped by the server,
+   * so asking too early does not just return nothing, it leaves the document
+   * unknown for the rest of the session. The grace period is capped rather than
+   * waited on indefinitely, because the indexer's log line is not guaranteed to
+   * appear; until then, callers fall back to the built-in model.
+   */
   get isReady(): boolean {
-    return this.state === "ready" && this.indexed;
+    return (
+      this.state === "ready" &&
+      (this.indexed || Date.now() - this.readyAt > (this.options.warmUpMs ?? WARM_UP_MS))
+    );
+  }
+
+  /** True once the indexer has reported finishing. */
+  get isIndexed(): boolean {
+    return this.indexed;
   }
 
   private async start(): Promise<boolean> {
@@ -107,6 +130,17 @@ export class JorjeClient {
       return this.giveUp(`could not launch Java: ${describe(error)}`);
     }
 
+    // A killed language server must not leave the JVM behind: it holds a few
+    // hundred megabytes and several orphans will starve the machine.
+    const stopChild = (): void => {
+      this.process?.kill();
+      this.process = undefined;
+    };
+
+    process.once("exit", stopChild);
+    process.once("SIGTERM", stopChild);
+    process.once("SIGINT", stopChild);
+
     this.process.on("error", error => {
       void this.giveUp(`Apex language server failed: ${describe(error)}`);
     });
@@ -123,8 +157,9 @@ export class JorjeClient {
     this.process.stderr.on("data", chunk => {
       const text = String(chunk);
 
-      if (/Scanning user-defined types took|ApexIndexer: ApexFiles/.test(text)) {
+      if (!this.indexed && /Scanning user-defined types took|ApexIndexer: ApexFiles/.test(text)) {
         this.indexed = true;
+        this.log("Apex language server indexed");
       }
     });
 
@@ -152,21 +187,9 @@ export class JorjeClient {
 
     this.notify("initialized", {});
     this.state = "ready";
-
-    await this.waitForIndex();
+    this.readyAt = Date.now();
     this.log("Apex language server ready");
     return true;
-  }
-
-  private async waitForIndex(): Promise<void> {
-    const deadline = Date.now() + (this.options.indexTimeoutMs ?? INDEX_TIMEOUT_MS);
-
-    while (!this.indexed && Date.now() < deadline && this.state === "ready") {
-      await new Promise(resolve => setTimeout(resolve, 150));
-    }
-
-    // Treat a quiet server as indexed rather than blocking requests forever.
-    this.indexed = true;
   }
 
   private giveUp(reason: string): false {
@@ -185,6 +208,22 @@ export class JorjeClient {
     this.process?.kill();
     this.process = undefined;
     return false;
+  }
+
+  /** True when this URI has been mirrored into the server. */
+  isOpen(uri: string): boolean {
+    return this.openDocuments.has(uri);
+  }
+
+  /**
+   * Forgets that a document was opened, so the next sync sends `didOpen` again.
+   *
+   * A `didOpen` sent before the project index is built is dropped, and every later
+   * `didChange` for that document is then ignored, which would leave it broken for
+   * the rest of the session. Re-opening on failure makes that self-healing.
+   */
+  reopen(uri: string): void {
+    this.openDocuments.delete(uri);
   }
 
   /** Mirrors a generated document into the server, replacing any earlier version. */
@@ -291,7 +330,13 @@ export class JorjeClient {
       const body = this.buffer.subarray(bodyStart, bodyEnd).toString("utf8");
       this.buffer = this.buffer.subarray(bodyEnd);
 
-      let message: { id?: number; error?: { message?: string }; result?: unknown };
+      let message: {
+        id?: number;
+        error?: { message?: string };
+        result?: unknown;
+        method?: string;
+        params?: unknown;
+      };
 
       try {
         message = JSON.parse(body);
@@ -300,6 +345,12 @@ export class JorjeClient {
       }
 
       if (message.id === undefined) {
+        const notification = message as unknown as { method?: string; params?: unknown };
+
+        if (notification.method) {
+          this.options.onNotification?.(notification.method, notification.params);
+        }
+
         continue;
       }
 

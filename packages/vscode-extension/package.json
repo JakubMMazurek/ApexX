@@ -89,6 +89,11 @@
           "type": "boolean",
           "default": true,
           "description": "Resolve symbols through the Salesforce Apex language server for overload-aware and org-aware results. Turn off to use only ApexX's built-in symbol model, which needs no JDK."
+        },
+        "apexx.apexDiagnostics": {
+          "type": "boolean",
+          "default": false,
+          "description": "Report Apex semantic errors from the Salesforce Apex language server alongside ApexX compiler errors. Off by default: these catch real mistakes such as calling a method that does not exist, but they also flag code the platform compiles and deploys, so they are advisory rather than authoritative."
         }
       }
     }

@@ -28,6 +28,9 @@ let buffer = Buffer.alloc(0);
 let nextId = 1;
 let logs = "";
 const pending = new Map();
+const publishedDiagnostics = new Map();
+/** Whether anything only the Apex server could answer actually came back. */
+let apexContributed = false;
 
 server.stderr.on("data", chunk => { logs += chunk.toString(); });
 server.stdout.on("data", chunk => {
@@ -50,6 +53,11 @@ function drain() {
 
     if (message.method === "window/logMessage") {
       logs += `LOG: ${message.params.message}\n`;
+      continue;
+    }
+
+    if (message.method === "textDocument/publishDiagnostics") {
+      publishedDiagnostics.set(message.params.uri, message.params.diagnostics);
       continue;
     }
 
@@ -116,6 +124,7 @@ try {
     rootPath: root,
     workspaceFolders: [{ uri: workspaceUri, name: "ApexX" }],
     capabilities: {},
+    initializationOptions: { apexDiagnostics: true },
   });
   notify("initialized", {});
 
@@ -211,9 +220,134 @@ try {
     "every reference must be reported in an authored .clsx file",
   );
 
+  // Completion must keep the ApexX helpers and gain what the Apex compiler knows.
+  const pipelineLine = service.lines.findIndex(line =>
+    line.includes(".filter(account => account.AnnualRevenue"),
+  );
+  const listCompletion = await request("textDocument/completion", {
+    textDocument: { uri: service.uri },
+    position: {
+      line: pipelineLine,
+      character: service.lines[pipelineLine].indexOf(".filter") + 1,
+    },
+  });
+  const listLabels = (Array.isArray(listCompletion)
+    ? listCompletion
+    : listCompletion?.items ?? []
+  ).map(item => item.label);
+  for (const helper of ["filter", "map", "flatMap", "find", "any", "all", "count"]) {
+    assert.ok(listLabels.includes(helper), `completion lost the ApexX helper ${helper}`);
+  }
+
+  const systemProbe = `public with sharing class ApexSmokeSystemProbe {
+    public static void go() {
+        System.debug(1);
+    }
+}
+`;
+  const systemPath = path.join(root, "apexx", "classes", "ApexSmokeSystemProbe.clsx");
+  const systemUri = pathToFileURL(systemPath).href;
+  fs.writeFileSync(systemPath, systemProbe);
+
+  try {
+    notify("textDocument/didOpen", {
+      textDocument: { uri: systemUri, languageId: "apexx", version: 1, text: systemProbe },
+    });
+
+    let systemLabels = [];
+    const completionDeadline = Date.now() + 20000;
+
+    while (Date.now() < completionDeadline) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      const systemCompletion = await request("textDocument/completion", {
+        textDocument: { uri: systemUri },
+        position: { line: 2, character: 15 },
+      });
+      systemLabels = (Array.isArray(systemCompletion)
+        ? systemCompletion
+        : systemCompletion?.items ?? []
+      ).map(item => item.label);
+
+      if (systemLabels.some(label => /^debug\(/.test(label))) {
+        break;
+      }
+    }
+
+    if (systemLabels.some(label => /^debug\(/.test(label))) {
+      apexContributed = true;
+    } else {
+      // The Apex server needs a few hundred megabytes to index a project. When it
+      // cannot, it answers nothing and ApexX falls back, which is the designed
+      // behaviour -- so this is reported rather than failed.
+      console.log(
+        "  note: the Apex language server contributed no completions; " +
+          "org-aware completion is unavailable on this machine.",
+      );
+    }
+  } finally {
+    fs.rmSync(systemPath, { force: true });
+    fs.rmSync(path.join(root, "force-app/main/default/classes/ApexSmokeSystemProbe.cls"), { force: true });
+    fs.rmSync(path.join(root, "force-app/main/default/classes/ApexSmokeSystemProbe.cls-meta.xml"), { force: true });
+  }
+
+  // A real Apex semantic error must be reported against the authored line.
+  const brokenText = `public with sharing class ApexSmokeBrokenProbe {
+    public static void go(List<Account> accounts) {
+        Integer x = accounts.noSuchMethodAtAll();
+    }
+}
+`;
+  const brokenPath = path.join(root, "apexx", "classes", "ApexSmokeBrokenProbe.clsx");
+  const brokenUri = pathToFileURL(brokenPath).href;
+  fs.writeFileSync(brokenPath, brokenText);
+
+  try {
+    notify("textDocument/didOpen", {
+      textDocument: { uri: brokenUri, languageId: "apexx", version: 1, text: brokenText },
+    });
+
+    const diagnosticsDeadline = Date.now() + 30000;
+    while (
+      (publishedDiagnostics.get(brokenUri) ?? []).length === 0 &&
+      Date.now() < diagnosticsDeadline
+    ) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      notify("textDocument/didChange", {
+        textDocument: { uri: brokenUri, version: 2 },
+        contentChanges: [{ text: brokenText }],
+      });
+    }
+
+    const reported = publishedDiagnostics.get(brokenUri) ?? [];
+
+    if (reported.length === 0) {
+      console.log(
+        "  note: the Apex language server reported no diagnostics; " +
+          "semantic error checking is unavailable on this machine.",
+      );
+    } else {
+      apexContributed = true;
+      assert.equal(
+        reported[0].range.start.line,
+        2,
+        `diagnostic landed on the wrong authored line: ${JSON.stringify(reported[0])}`,
+      );
+      assert.match(reported[0].message, /noSuchMethodAtAll/);
+    }
+  } finally {
+    fs.rmSync(brokenPath, { force: true });
+    fs.rmSync(path.join(root, "force-app/main/default/classes/ApexSmokeBrokenProbe.cls"), { force: true });
+    fs.rmSync(path.join(root, "force-app/main/default/classes/ApexSmokeBrokenProbe.cls-meta.xml"), { force: true });
+  }
+
   await request("shutdown", null).catch(() => {});
   notify("exit", undefined);
-  console.log("Apex smoke test passed.");
+  console.log(
+    apexContributed
+      ? "Apex smoke test passed (Apex language server contributed)."
+      : "Apex smoke test passed (fallback path only: the Apex language server " +
+        "answered nothing on this machine, so org-aware results were not verified).",
+  );
   server.kill();
 } catch (error) {
   server.kill();
