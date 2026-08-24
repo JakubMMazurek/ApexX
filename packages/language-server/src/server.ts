@@ -5,11 +5,17 @@ import {
   CompletionItemKind,
   createConnection,
   DiagnosticSeverity,
+  DocumentHighlightKind,
+  DocumentSymbol,
   InsertTextFormat,
+  Location,
   Position,
   ProposedFeatures,
+  Range,
+  SymbolKind,
   TextDocuments,
   TextDocumentSyncKind,
+  WorkspaceEdit,
 } from "vscode-languageserver/node.js";
 import { TextDocument } from "vscode-languageserver-textdocument";
 import { transpileApexX } from "@apexx/transpiler";
@@ -25,6 +31,21 @@ import {
   getSObjectFields,
   type SObjectFieldInfo,
 } from "./sobjectSchema.js";
+import {
+  readReferenceContext,
+  WorkspaceIndex,
+  type IndexedSymbol,
+} from "./workspaceIndex.js";
+import {
+  buildDocumentModel,
+  describeSymbol,
+  findOccurrences,
+  identifierAt,
+  resolveSymbol,
+  type ApexSymbol,
+  type ApexSymbolKind,
+  type DocumentModel,
+} from "./apexModel.js";
 
 const connection = createConnection(ProposedFeatures.all);
 const documents = new TextDocuments(TextDocument);
@@ -43,6 +64,13 @@ connection.onInitialize(params => {
         resolveProvider: false,
       },
       hoverProvider: true,
+      documentSymbolProvider: true,
+      definitionProvider: true,
+      referencesProvider: true,
+      documentHighlightProvider: true,
+      renameProvider: { prepareProvider: true },
+      signatureHelpProvider: { triggerCharacters: ["(", ","] },
+      workspaceSymbolProvider: true,
     },
   };
 });
@@ -63,18 +91,230 @@ connection.onCompletion(params => {
 });
 
 connection.onHover(params => {
-  const document = documents.get(params.textDocument.uri);
+  const document = apexxDocument(params.textDocument.uri);
 
-  if (!document || !document.uri.toLowerCase().endsWith(".clsx")) {
+  if (!document) {
     return null;
   }
 
-  const word = wordAtPosition(document, params.position);
-  const markdown = word ? hoverDocumentation(word) : undefined;
+  const source = document.getText();
+  const offset = document.offsetAt(params.position);
+  const identifier = identifierAt(source, offset);
+  const sections: string[] = [];
 
-  return markdown
-    ? { contents: { kind: "markdown", value: markdown } }
+  if (identifier) {
+    const symbol = resolveSymbol(modelFor(document), identifier.name, offset);
+
+    if (symbol) {
+      sections.push(
+        [
+          `\`\`\`apex\n${describeSymbol(symbol)}\n\`\`\``,
+          `*${describeKind(symbol)}*${symbol.container ? ` in \`${symbol.container}\`` : ""}`,
+        ].join("\n\n"),
+      );
+    }
+
+    const keyword = hoverDocumentation(identifier.name);
+
+    if (keyword) {
+      sections.push(keyword);
+    }
+
+    const field = sObjectFieldHover(source, offset, identifier.name);
+
+    if (field) {
+      sections.push(field);
+    }
+  }
+
+  return sections.length > 0
+    ? { contents: { kind: "markdown", value: sections.join("\n\n---\n\n") } }
     : null;
+});
+
+connection.onDocumentSymbol(params => {
+  const document = apexxDocument(params.textDocument.uri);
+
+  if (!document) {
+    return [];
+  }
+
+  return outline(document, modelFor(document));
+});
+
+connection.onDefinition(params => {
+  const document = apexxDocument(params.textDocument.uri);
+
+  if (!document) {
+    return null;
+  }
+
+  const source = document.getText();
+  const offset = document.offsetAt(params.position);
+  const identifier = identifierAt(source, offset);
+
+  if (!identifier) {
+    return null;
+  }
+
+  const context = readReferenceContext(source, identifier.start);
+  const index = workspaceIndex();
+
+  // `@UserFriendlyError` points at the decorator class that implements it.
+  if (context.isAnnotation) {
+    return locationsFor(index?.findTypes(identifier.name) ?? []);
+  }
+
+  // `PortfolioRuleProvider.resolve` resolves the member on the named type, in
+  // whichever file declares it, and falls back to the type itself.
+  if (context.qualifier) {
+    const members = index?.findMembers(context.qualifier, identifier.name) ?? [];
+
+    if (members.length > 0) {
+      return locationsFor(members);
+    }
+
+    const types = index?.findTypes(identifier.name) ?? [];
+
+    if (types.length > 0) {
+      return locationsFor(types);
+    }
+  }
+
+  // A declaration in this file wins over anything else.
+  const local = resolveSymbol(modelFor(document), identifier.name, offset);
+
+  if (local) {
+    return Location.create(
+      params.textDocument.uri,
+      rangeOf(document, local.nameStart, local.nameEnd),
+    );
+  }
+
+  const types = index?.findTypes(identifier.name) ?? [];
+
+  if (types.length > 0) {
+    return locationsFor(types);
+  }
+
+  return locationsFor(index?.findAnywhere(identifier.name) ?? []);
+});
+
+connection.onWorkspaceSymbol(params => {
+  const index = workspaceIndex();
+
+  if (!index) {
+    return [];
+  }
+
+  return index.search(params.query).map(entry => ({
+    name: entry.symbol.name,
+    kind: OUTLINE_KINDS[entry.symbol.kind],
+    containerName: entry.symbol.container,
+    location: {
+      uri: entry.uri,
+      range: offsetRange(
+        entry.model.source,
+        entry.symbol.nameStart,
+        entry.symbol.nameEnd,
+      ),
+    },
+  }));
+});
+
+connection.onReferences(params => {
+  const found = symbolUnderCursor(params.textDocument.uri, params.position);
+
+  if (!found) {
+    return [];
+  }
+
+  return occurrenceRanges(found.document, found.name).map(range =>
+    Location.create(params.textDocument.uri, range),
+  );
+});
+
+connection.onDocumentHighlight(params => {
+  const found = symbolUnderCursor(params.textDocument.uri, params.position);
+
+  if (!found) {
+    return [];
+  }
+
+  return occurrenceRanges(found.document, found.name).map(range => ({
+    range,
+    kind: DocumentHighlightKind.Text,
+  }));
+});
+
+connection.onPrepareRename(params => {
+  const found = symbolUnderCursor(params.textDocument.uri, params.position);
+
+  if (!found) {
+    return null;
+  }
+
+  return {
+    range: rangeOf(found.document, found.identifier.start, found.identifier.end),
+    placeholder: found.name,
+  };
+});
+
+connection.onRenameRequest(params => {
+  const found = symbolUnderCursor(params.textDocument.uri, params.position);
+
+  if (!found || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(params.newName)) {
+    return null;
+  }
+
+  const edits = occurrenceRanges(found.document, found.name).map(range => ({
+    range,
+    newText: params.newName,
+  }));
+
+  const changes: WorkspaceEdit["changes"] = {
+    [params.textDocument.uri]: edits,
+  };
+
+  return { changes };
+});
+
+connection.onSignatureHelp(params => {
+  const document = apexxDocument(params.textDocument.uri);
+
+  if (!document) {
+    return null;
+  }
+
+  const source = document.getText();
+  const offset = document.offsetAt(params.position);
+  const call = enclosingCall(source, offset);
+
+  if (!call) {
+    return null;
+  }
+
+  const model = modelFor(document);
+  const candidates = model.symbols.filter(
+    symbol =>
+      (symbol.kind === "method" || symbol.kind === "constructor") &&
+      symbol.name === call.name,
+  );
+
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  return {
+    signatures: candidates.map(symbol => ({
+      label: describeSymbol(symbol),
+      parameters: (symbol.parameters ?? []).map(parameter => ({
+        label: `${parameter.type} ${parameter.name}`,
+      })),
+    })),
+    activeSignature: 0,
+    activeParameter: call.activeParameter,
+  };
 });
 
 documents.onDidOpen(event => validateDocument(event.document));
@@ -173,6 +413,266 @@ function wordAtPosition(
   const after = source.slice(offset).match(/^[A-Za-z0-9_]*/)?.[0] ?? "";
   const word = `${before}${after}`;
   return word.length > 0 ? word : undefined;
+}
+
+/**
+ * Parsing is memoised per document version: hover, highlight and signature help
+ * all fire on the same keystroke, and each would otherwise reparse the file.
+ */
+let index: WorkspaceIndex | undefined;
+
+/** The workspace index, refreshed against open documents and disk on each use. */
+function workspaceIndex(): WorkspaceIndex | undefined {
+  if (!workspaceRoot) {
+    return undefined;
+  }
+
+  index ??= new WorkspaceIndex(workspaceRoot);
+
+  const open = new Map<string, { text: string; version: number }>();
+
+  for (const document of documents.all()) {
+    if (document.uri.toLowerCase().endsWith(".clsx")) {
+      open.set(document.uri, {
+        text: document.getText(),
+        version: document.version,
+      });
+    }
+  }
+
+  index.refresh(open);
+  return index;
+}
+
+function locationsFor(entries: IndexedSymbol[]): Location[] {
+  return entries.map(entry =>
+    Location.create(
+      entry.uri,
+      offsetRange(entry.model.source, entry.symbol.nameStart, entry.symbol.nameEnd),
+    ),
+  );
+}
+
+/** Converts offsets to a range without needing an open TextDocument. */
+function offsetRange(source: string, start: number, end: number): Range {
+  return Range.create(offsetPosition(source, start), offsetPosition(source, end));
+}
+
+function offsetPosition(source: string, offset: number): Position {
+  const clamped = Math.max(0, Math.min(offset, source.length));
+  const before = source.slice(0, clamped);
+  const line = before.split("\n").length - 1;
+  const character = clamped - (before.lastIndexOf("\n") + 1);
+  return Position.create(line, character);
+}
+
+const modelCache = new Map<string, { version: number; model: DocumentModel }>();
+
+function modelFor(document: TextDocument): DocumentModel {
+  const cached = modelCache.get(document.uri);
+
+  if (cached?.version === document.version) {
+    return cached.model;
+  }
+
+  const model = buildDocumentModel(document.getText());
+  modelCache.set(document.uri, { version: document.version, model });
+  return model;
+}
+
+function apexxDocument(uri: string): TextDocument | undefined {
+  const document = documents.get(uri);
+  return document && document.uri.toLowerCase().endsWith(".clsx")
+    ? document
+    : undefined;
+}
+
+function rangeOf(document: TextDocument, start: number, end: number): Range {
+  return Range.create(document.positionAt(start), document.positionAt(end));
+}
+
+interface CursorSymbol {
+  document: TextDocument;
+  model: DocumentModel;
+  symbol: ApexSymbol;
+  identifier: { name: string; start: number; end: number };
+  name: string;
+}
+
+function symbolUnderCursor(uri: string, position: Position): CursorSymbol | undefined {
+  const document = apexxDocument(uri);
+
+  if (!document) {
+    return undefined;
+  }
+
+  const source = document.getText();
+  const offset = document.offsetAt(position);
+  const identifier = identifierAt(source, offset);
+
+  if (!identifier) {
+    return undefined;
+  }
+
+  const model = modelFor(document);
+  const symbol = resolveSymbol(model, identifier.name, offset);
+
+  return symbol
+    ? { document, model, symbol, identifier, name: identifier.name }
+    : undefined;
+}
+
+function occurrenceRanges(document: TextDocument, name: string): Range[] {
+  const source = document.getText();
+  return findOccurrences(source, name).map(offset =>
+    rangeOf(document, offset, offset + name.length),
+  );
+}
+
+const OUTLINE_KINDS: Record<ApexSymbolKind, SymbolKind> = {
+  class: SymbolKind.Class,
+  interface: SymbolKind.Interface,
+  enum: SymbolKind.Enum,
+  method: SymbolKind.Method,
+  constructor: SymbolKind.Constructor,
+  field: SymbolKind.Field,
+  property: SymbolKind.Property,
+  parameter: SymbolKind.Variable,
+  local: SymbolKind.Variable,
+};
+
+/** Types become outline containers; their members nest underneath. Locals and
+ * parameters are deliberately left out, so the outline stays readable. */
+function outline(document: TextDocument, model: DocumentModel): DocumentSymbol[] {
+  const types = model.symbols.filter(
+    symbol =>
+      symbol.kind === "class" ||
+      symbol.kind === "interface" ||
+      symbol.kind === "enum",
+  );
+  const members = model.symbols.filter(
+    symbol =>
+      symbol.kind === "method" ||
+      symbol.kind === "constructor" ||
+      symbol.kind === "field" ||
+      symbol.kind === "property",
+  );
+
+  const toSymbol = (symbol: ApexSymbol, children?: DocumentSymbol[]): DocumentSymbol => ({
+    name: symbol.name,
+    detail: describeSymbol(symbol),
+    kind: OUTLINE_KINDS[symbol.kind],
+    range: rangeOf(document, symbol.declStart, symbol.declEnd),
+    selectionRange: rangeOf(document, symbol.nameStart, symbol.nameEnd),
+    children,
+  });
+
+  const roots = types.filter(type => !type.container);
+  const owned = new Set<ApexSymbol>();
+
+  const build = (type: ApexSymbol): DocumentSymbol => {
+    const nested = types.filter(
+      candidate => candidate.container === type.name && candidate !== type,
+    );
+    const children = [
+      ...members
+        .filter(member => member.container === type.name)
+        .map(member => {
+          owned.add(member);
+          return toSymbol(member);
+        }),
+      ...nested.map(build),
+    ].sort((left, right) => left.range.start.line - right.range.start.line);
+
+    return toSymbol(type, children);
+  };
+
+  const tree = roots.map(build);
+  const orphans = members.filter(member => !owned.has(member)).map(member => toSymbol(member));
+
+  return [...tree, ...orphans];
+}
+
+function describeKind(symbol: ApexSymbol): string {
+  switch (symbol.kind) {
+    case "parameter":
+      return "parameter";
+    case "local":
+      return "local variable";
+    case "constructor":
+      return "constructor";
+    default:
+      return symbol.kind;
+  }
+}
+
+/** Documents an sObject field when the identifier resolves to one, e.g. `a.AnnualRevenue`. */
+function sObjectFieldHover(
+  source: string,
+  offset: number,
+  name: string,
+): string | undefined {
+  const before = source.slice(0, offset).match(/([A-Za-z_][A-Za-z0-9_]*)\s*\.\s*[A-Za-z0-9_]*$/);
+
+  if (!before?.[1]) {
+    return undefined;
+  }
+
+  const receiverType = inferReceiverType(source, offset, before[1]);
+
+  if (!receiverType) {
+    return undefined;
+  }
+
+  const field = getSObjectFields(normalizeType(receiverType), workspaceRoot)?.find(
+    candidate => candidate.name.toLowerCase() === name.toLowerCase(),
+  );
+
+  return field
+    ? `\`\`\`apex\n${field.type} ${normalizeType(receiverType)}.${field.name}\n\`\`\`${field.label ? `\n\n${field.label}` : ""}`
+    : undefined;
+}
+
+/**
+ * Walks back from the cursor to the call it sits inside, skipping balanced
+ * parentheses, and counts top-level commas to find the active parameter.
+ */
+function enclosingCall(
+  source: string,
+  offset: number,
+): { name: string; activeParameter: number } | undefined {
+  let depth = 0;
+  let commas = 0;
+
+  for (let index = offset - 1; index >= 0; index -= 1) {
+    const character = source[index];
+
+    if (character === ")") {
+      depth += 1;
+      continue;
+    }
+
+    if (character === "(") {
+      if (depth > 0) {
+        depth -= 1;
+        continue;
+      }
+
+      const name = /([A-Za-z_][A-Za-z0-9_]*)\s*$/.exec(source.slice(0, index))?.[1];
+      return name ? { name, activeParameter: commas } : undefined;
+    }
+
+    if (character === "," && depth === 0) {
+      commas += 1;
+      continue;
+    }
+
+    if (character === ";" || character === "}" || character === "{") {
+      return undefined;
+    }
+  }
+
+  return undefined;
 }
 
 function hoverDocumentation(word: string): string | undefined {

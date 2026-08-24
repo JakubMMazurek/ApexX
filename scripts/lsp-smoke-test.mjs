@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -289,6 +290,137 @@ try {
     position: funcHoverProbe.position,
   });
   assert.match(funcHover.contents.value, /strongly typed function value/i);
+
+  // Language-service features built on the offset-preserving Apex projection.
+  const serviceSource = `public with sharing class ServiceProbe {
+    private static Decimal LIMIT_VALUE = 10;
+
+    @UserFriendlyError
+    public static List<Account> pick(List<Account> accounts, String mode = 'Revenue') {
+        List<Account> chosen = accounts.filter(a => a.AnnualRevenue > LIMIT_VALUE);
+        return summarise(chosen, mode);
+    }
+
+    public static List<Account> summarise(List<Account> rows, String mode) {
+        return rows;
+    }
+}
+`;
+  const serviceUri = pathToFileURL(
+    path.join(root, "apexx", "classes", "ServiceProbe.clsx"),
+  ).href;
+  notify("textDocument/didOpen", {
+    textDocument: { uri: serviceUri, languageId: "apexx", version: 1, text: serviceSource },
+  });
+
+  const serviceLines = serviceSource.split("\n");
+  const locate = (needle, offset = 1) => {
+    for (let line = 0; line < serviceLines.length; line += 1) {
+      const character = serviceLines[line].indexOf(needle);
+
+      if (character >= 0) {
+        return { line, character: character + offset };
+      }
+    }
+
+    throw new Error(`probe source is missing ${needle}`);
+  };
+
+  const outline = await request("textDocument/documentSymbol", {
+    textDocument: { uri: serviceUri },
+  });
+  assert.equal(outline.length, 1, "expected a single top-level type in the outline");
+  assert.equal(outline[0].name, "ServiceProbe");
+  const outlineChildren = (outline[0].children ?? []).map(child => child.name);
+  for (const expected of ["LIMIT_VALUE", "pick", "summarise"]) {
+    assert.ok(
+      outlineChildren.includes(expected),
+      `outline is missing ${expected}: ${outlineChildren.join(", ")}`,
+    );
+  }
+  assert.match(
+    (outline[0].children ?? []).find(child => child.name === "summarise").detail,
+    /List<Account> summarise\(List<Account> rows, String mode\)/,
+  );
+
+  const definition = await request("textDocument/definition", {
+    textDocument: { uri: serviceUri },
+    position: locate("return summarise(", 8),
+  });
+  assert.ok(definition, "expected a definition for summarise");
+  assert.equal(
+    definition.range.start.line,
+    serviceLines.findIndex(line => line.includes("List<Account> summarise(")),
+    "definition should land on the summarise declaration",
+  );
+
+  const localHover = await request("textDocument/hover", {
+    textDocument: { uri: serviceUri },
+    position: locate("List<Account> chosen", 15),
+  });
+  assert.match(localHover.contents.value, /List<Account> chosen/);
+  assert.match(localHover.contents.value, /local variable/);
+
+  const signature = await request("textDocument/signatureHelp", {
+    textDocument: { uri: serviceUri },
+    position: locate("return summarise(", 25),
+  });
+  assert.match(signature.signatures[0].label, /summarise\(List<Account> rows, String mode\)/);
+
+  const references = await request("textDocument/references", {
+    textDocument: { uri: serviceUri },
+    position: locate("List<Account> chosen", 15),
+    context: { includeDeclaration: true },
+  });
+  assert.ok(references.length >= 2, `expected chosen to have references, got ${references.length}`);
+
+  const renamed = await request("textDocument/rename", {
+    textDocument: { uri: serviceUri },
+    position: locate("List<Account> chosen", 15),
+    newName: "selected",
+  });
+  assert.ok(
+    (renamed.changes[serviceUri] ?? []).length >= 2,
+    "rename should edit every occurrence",
+  );
+
+  // A decorator annotation resolves to the class that implements it, in its own file.
+  const decorator = await request("textDocument/definition", {
+    textDocument: { uri: serviceUri },
+    position: locate("@UserFriendlyError", 3),
+  });
+  const decoratorTargets = Array.isArray(decorator) ? decorator : [decorator];
+  assert.ok(
+    decoratorTargets.some(target => target?.uri.endsWith("UserFriendlyError.clsx")),
+    "@UserFriendlyError should resolve to UserFriendlyError.clsx",
+  );
+
+  // Cross-file: a static call on a type declared in a different file.
+  const consumerPath = path.join(root, "apexx", "classes", "AccountSignalConsumer.clsx");
+  const consumerText = readFileSync(consumerPath, "utf8");
+  const consumerUri = pathToFileURL(consumerPath).href;
+  notify("textDocument/didOpen", {
+    textDocument: { uri: consumerUri, languageId: "apexx", version: 1, text: consumerText },
+  });
+
+  const consumerLines = consumerText.split("\n");
+  const callLine = consumerLines.findIndex(line =>
+    line.includes("AccountSignalProvider.calculate"),
+  );
+  assert.ok(callLine >= 0, "expected AccountSignalConsumer to call AccountSignalProvider");
+
+  const crossFile = await request("textDocument/definition", {
+    textDocument: { uri: consumerUri },
+    position: {
+      line: callLine,
+      character: consumerLines[callLine].indexOf("calculate") + 2,
+    },
+  });
+  const crossTargets = Array.isArray(crossFile) ? crossFile : [crossFile];
+  assert.ok(
+    crossTargets.some(target => target?.uri.endsWith("AccountSignalProvider.clsx")),
+    "calculate should resolve into AccountSignalProvider.clsx",
+  );
 
   await request("shutdown", null);
   notify("exit", undefined);
