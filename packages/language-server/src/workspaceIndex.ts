@@ -143,6 +143,7 @@ export class WorkspaceIndex {
     ).slice(0, 200);
   }
 
+  /** Indexed files, with the mtime used to decide whether work can be skipped. */
   entries(): IndexedFile[] {
     return [...this.files.values()];
   }

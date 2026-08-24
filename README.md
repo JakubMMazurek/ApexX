@@ -399,29 +399,51 @@ Snippet prefixes `apexx-func`, `apexx-func-block`, `apexx-tuple`, `apexx-tuple-m
 
 ## Language Service
 
-The ApexX language server reads `.clsx` directly, so editing feels like editing Apex.
-Alongside completion and diagnostics it provides:
+Editing `.clsx` is meant to feel like editing Apex, so symbols are resolved by the
+same Salesforce Apex language server the Apex extension uses, and the answers are
+reported against the authored source.
 
 | Feature | Behaviour |
 | --- | --- |
+| Hover | The resolved declaration, with overloads and org types resolved by the Apex compiler |
+| Go to definition | Locals, parameters, fields, methods, types; across files; `@Decorator` opens the class implementing it |
+| Find references, highlight, rename | Every occurrence, scoped correctly and skipping comments and strings |
 | Outline and breadcrumbs | Types, methods, fields and properties, nested as declared |
-| Hover | The resolved declaration, e.g. `List<Account> accounts` with its kind and owning method |
-| Go to definition | Locals, parameters, fields, methods and types; across files for `Type.member`; `@Decorator` opens the class implementing it |
-| Find references, highlight, rename | Every occurrence in the file, skipping comments and string literals |
 | Signature help | Parameter list and active argument while typing a call |
-| Workspace symbols | Every declaration in every `.clsx` file in the workspace |
+| Workspace symbols | Every declaration in every `.clsx` in the workspace |
+| Completion, diagnostics | Type-aware ApexX completion and live compiler diagnostics |
 
-This works by projecting `.clsx` onto plain Apex before parsing it with
-`@apexdevtools/apex-parser`. Each ApexX-only construct -- pipelines, `Func` lambdas,
-tuples, tuple destructuring, default arguments -- is replaced by padding of exactly
-the same width, so every offset and line number in the parse tree still addresses the
-original source. Declarations that only exist in ApexX syntax, such as the target of a
-pipeline assignment or the bindings of a tuple destructuring, are recovered from the
-ApexX parse result and merged into the same symbol table.
+### How it resolves symbols
 
-Note that this is a file-scoped symbol service, not a full Apex type checker. Method
-resolution does not consider overloads or argument types, and types from the org rather
-than the workspace are known only through the cached sObject schema.
+`.clsx` is not Apex, so no Apex tool can read it directly. The lowering pipeline
+therefore emits an exact position map alongside the generated `.cls`: every stage
+records which output span came from which input span, and the stage maps are chained.
+The Apex language server is then asked about the generated code, and each answer is
+translated back through the map to the authored file. Generated names are translated
+too, so a hover reads `Func<Account, Boolean>` rather than the signature hash the
+compiler emits.
+
+Two things stay with ApexX's own symbol model, because it is authoritative for them:
+locals and parameters, which it positions exactly even inside statements that lowering
+rewrites, and decorator annotations, which do not survive lowering as annotations.
+
+### Without a JDK
+
+The Apex language server is a Java process. It starts lazily and never blocks the
+editor: until it has indexed the project, and on any machine without a JDK or without
+the Salesforce Apex extension installed, every feature above is served by ApexX's
+built-in symbol model instead. Hover, definition, references, rename, outline and
+completion all keep working; what is lost is overload-aware resolution and knowledge
+of types that live in the org rather than the workspace. The reason is written to the
+ApexX output channel once, not surfaced as an error.
+
+| Setting | Purpose |
+| --- | --- |
+| `apexx.useApexLanguageServer` | Turn the Apex language server off and use only the built-in model |
+| `apexx.javaHome` | JDK to run it with; defaults to `salesforcedx-vscode-apex.java.home`, then `JAVA_HOME` |
+
+`npm run apex-smoke` exercises the Apex-backed path and reports a skip rather than a
+failure when no JDK or jar is present. `npm run test:all` runs it after the rest.
 
 ## Salesforce Showcase
 

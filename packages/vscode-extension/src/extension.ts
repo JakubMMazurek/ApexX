@@ -40,6 +40,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const clientOptions: LanguageClientOptions = {
     documentSelector: [{ scheme: "file", language: "apexx" }],
     outputChannel,
+    initializationOptions: {
+      // Reuse whatever JDK the Salesforce Apex extension is configured with, so
+      // ApexX resolves symbols through the same Apex language server it does.
+      javaHome:
+        vscode.workspace
+          .getConfiguration("salesforcedx-vscode-apex")
+          .get<string>("java.home") ||
+        vscode.workspace.getConfiguration("apexx").get<string>("javaHome") ||
+        undefined,
+      useApexLanguageServer: vscode.workspace
+        .getConfiguration("apexx")
+        .get<boolean>("useApexLanguageServer", true),
+    },
   };
 
   client = new LanguageClient(

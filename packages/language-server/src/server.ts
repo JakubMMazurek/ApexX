@@ -31,6 +31,13 @@ import {
   getSObjectFields,
   type SObjectFieldInfo,
 } from "./sobjectSchema.js";
+import { JorjeClient } from "./jorjeClient.js";
+import {
+  ApexBridge,
+  isGeneratedArtifact,
+  translateGeneratedNames,
+  type BridgedDocument,
+} from "./apexBridge.js";
 import {
   readReferenceContext,
   WorkspaceIndex,
@@ -50,8 +57,26 @@ import {
 const connection = createConnection(ProposedFeatures.all);
 const documents = new TextDocuments(TextDocument);
 let workspaceRoot: string | undefined;
+/** Java home for the Apex language server, supplied by the client if it knows one. */
+let apexJavaHome: string | undefined;
+/**
+ * Set APEXX_DISABLE_APEX_SERVER=1 to run on the built-in symbol model alone, with
+ * no JVM. Everything still works; overloads and org types stop being resolved.
+ */
+let apexServerEnabled = !/^(1|true|yes)$/i.test(
+  process.env.APEXX_DISABLE_APEX_SERVER ?? "",
+);
 
 connection.onInitialize(params => {
+  const initializationOptions = params.initializationOptions as
+    | { javaHome?: string; useApexLanguageServer?: boolean }
+    | undefined;
+  apexJavaHome = initializationOptions?.javaHome ?? process.env.APEXX_JAVA_HOME;
+
+  if (initializationOptions?.useApexLanguageServer === false) {
+    apexServerEnabled = false;
+  }
+
   workspaceRoot = uriToFilePath(
     params.workspaceFolders?.[0]?.uri ?? params.rootUri ?? undefined,
   );
@@ -90,7 +115,7 @@ connection.onCompletion(params => {
   }
 });
 
-connection.onHover(params => {
+connection.onHover(async params => {
   const document = apexxDocument(params.textDocument.uri);
 
   if (!document) {
@@ -102,10 +127,23 @@ connection.onHover(params => {
   const identifier = identifierAt(source, offset);
   const sections: string[] = [];
 
+  // The Apex language server resolves overloads and org types, so its answer wins
+  // whenever it has one and the symbol is not ApexX-only.
+  const apex = await askApex<{ contents?: { value?: string } | string }>(
+    "textDocument/hover",
+    document,
+    params.position,
+  );
+  const apexHover = hoverText(apex?.result?.contents);
+
+  if (apexHover && !isGeneratedArtifact(apexHover)) {
+    sections.push(translateGeneratedNames(apexHover, bridge?.documents() ?? []).trim());
+  }
+
   if (identifier) {
     const symbol = resolveSymbol(modelFor(document), identifier.name, offset);
 
-    if (symbol) {
+    if (symbol && sections.length === 0) {
       // Apex hover shows the declaration and nothing else; prose about which
       // method a variable belongs to is noise the editor already makes obvious.
       sections.push(
@@ -141,7 +179,7 @@ connection.onDocumentSymbol(params => {
   return outline(document, modelFor(document));
 });
 
-connection.onDefinition(params => {
+connection.onDefinition(async params => {
   const document = apexxDocument(params.textDocument.uri);
 
   if (!document) {
@@ -158,6 +196,34 @@ connection.onDefinition(params => {
 
   const context = readReferenceContext(source, identifier.start);
   const index = workspaceIndex();
+  const local = resolveSymbol(modelFor(document), identifier.name, offset);
+
+  // Locals and parameters are resolved here rather than by the Apex server. Ours
+  // are exact even inside lowered statements, where a generated position can only
+  // map back to the statement it came from.
+  if (local && (local.kind === "local" || local.kind === "parameter")) {
+    return Location.create(
+      params.textDocument.uri,
+      rangeOf(document, local.nameStart, local.nameEnd),
+    );
+  }
+
+  // A decorator annotation is ApexX-only: it does not survive lowering as an
+  // annotation, so the workspace index answers it rather than the Apex server.
+  if (!context.isAnnotation) {
+    const apex = await askApex<LspLocation[] | LspLocation>(
+      "textDocument/definition",
+      document,
+      params.position,
+    );
+    const mapped = asArray(apex?.result)
+      .map(toAuthoredLocation)
+      .filter((location): location is Location => location !== undefined);
+
+    if (mapped.length > 0) {
+      return mapped;
+    }
+  }
 
   // `@UserFriendlyError` points at the decorator class that implements it.
   if (context.isAnnotation) {
@@ -181,8 +247,6 @@ connection.onDefinition(params => {
   }
 
   // A declaration in this file wins over anything else.
-  const local = resolveSymbol(modelFor(document), identifier.name, offset);
-
   if (local) {
     return Location.create(
       params.textDocument.uri,
@@ -221,7 +285,33 @@ connection.onWorkspaceSymbol(params => {
   }));
 });
 
-connection.onReferences(params => {
+connection.onReferences(async params => {
+  const document = apexxDocument(params.textDocument.uri);
+  const scoped = symbolUnderCursor(params.textDocument.uri, params.position);
+
+  // A local or parameter is scope-bound, so the local model answers it exactly.
+  if (scoped && (scoped.symbol.kind === "local" || scoped.symbol.kind === "parameter")) {
+    return occurrenceRanges(scoped.document, scoped.name, scoped.symbol).map(range =>
+      Location.create(params.textDocument.uri, range),
+    );
+  }
+
+  if (document) {
+    const apex = await askApex<LspLocation[]>(
+      "textDocument/references",
+      document,
+      params.position,
+      { context: { includeDeclaration: true } },
+    );
+    const mapped = asArray(apex?.result)
+      .map(toAuthoredLocation)
+      .filter((location): location is Location => location !== undefined);
+
+    if (mapped.length > 0) {
+      return dedupeLocations(mapped);
+    }
+  }
+
   const found = symbolUnderCursor(params.textDocument.uri, params.position);
 
   if (!found) {
@@ -418,6 +508,218 @@ function wordAtPosition(
  * Parsing is memoised per document version: hover, highlight and signature help
  * all fire on the same keystroke, and each would otherwise reparse the file.
  */
+interface LspLocation {
+  uri: string;
+  range: {
+    start: { line: number; character: number };
+    end: { line: number; character: number };
+  };
+}
+
+function asArray<T>(value: T[] | T | undefined | null): T[] {
+  if (value === undefined || value === null) {
+    return [];
+  }
+
+  return Array.isArray(value) ? value : [value];
+}
+
+/** Hover contents arrive as markup, a string, or an array of either. */
+function hoverText(contents: unknown): string | undefined {
+  if (!contents) {
+    return undefined;
+  }
+
+  if (typeof contents === "string") {
+    return contents;
+  }
+
+  if (Array.isArray(contents)) {
+    return contents.map(entry => hoverText(entry) ?? "").filter(Boolean).join("\n\n");
+  }
+
+  const value = (contents as { value?: unknown }).value;
+  return typeof value === "string" ? value : undefined;
+}
+
+function dedupeLocations(locations: Location[]): Location[] {
+  const seen = new Set<string>();
+
+  return locations.filter(location => {
+    const key = `${location.uri}:${location.range.start.line}:${location.range.start.character}`;
+
+    if (seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+    return true;
+  });
+}
+
+let jorje: JorjeClient | undefined;
+let bridge: ApexBridge | undefined;
+
+/**
+ * The Apex language server and the ApexX bridge, started on first use. Startup is
+ * lazy and failure is silent by design: every handler falls back to the local
+ * symbol model, so the editor stays responsive while the project is indexed and
+ * keeps working when Java or the Apex extension is absent.
+ */
+function apexBackend(): { jorje: JorjeClient; bridge: ApexBridge } | undefined {
+  if (!workspaceRoot || !apexServerEnabled) {
+    return undefined;
+  }
+
+  bridge ??= new ApexBridge({ workspaceRoot });
+  jorje ??= new JorjeClient({
+    workspaceRoot,
+    javaHome: apexJavaHome,
+    jarPath: process.env.APEXX_APEX_JAR,
+    log: message => connection.console.log(`[apexx] ${message}`),
+  });
+
+  // Warm the server up without blocking this request.
+  void jorje.ready();
+
+  return { jorje, bridge };
+}
+
+/** Bridges every `.clsx` in the workspace so cross-file answers can be translated. */
+function refreshBridge(activeBridge: ApexBridge): void {
+  const seen = new Set<string>();
+
+  for (const document of documents.all()) {
+    if (document.uri.toLowerCase().endsWith(".clsx")) {
+      seen.add(document.uri);
+      activeBridge.bridge(document.uri, document.getText(), `v${document.version}`);
+    }
+  }
+
+  for (const entry of workspaceIndex()?.entries() ?? []) {
+    if (seen.has(entry.uri)) {
+      continue;
+    }
+
+    // Keyed on mtime so an unchanged file is neither re-read nor re-transpiled.
+    const stamp = `disk:${entry.mtimeMs}`;
+
+    if (bridgedDiskStamps.get(entry.uri) === stamp) {
+      continue;
+    }
+
+    const source = activeBridge.readAuthored(entry.filePath);
+
+    if (source !== undefined) {
+      activeBridge.bridge(entry.uri, source, stamp);
+      bridgedDiskStamps.set(entry.uri, stamp);
+    }
+  }
+}
+
+const bridgedDiskStamps = new Map<string, string>();
+
+/**
+ * Asks the Apex language server a positional question about the generated code
+ * equivalent of an authored position.
+ */
+async function askApex<T>(
+  method: string,
+  document: TextDocument,
+  position: Position,
+  extra: Record<string, unknown> = {},
+): Promise<{ result: T; bridged: BridgedDocument } | undefined> {
+  const backend = apexBackend();
+
+  if (!backend?.jorje.isReady) {
+    return undefined;
+  }
+
+  refreshBridge(backend.bridge);
+  const bridged = backend.bridge.bridge(
+    document.uri,
+    document.getText(),
+    `v${document.version}`,
+  );
+
+  if (!bridged) {
+    return undefined;
+  }
+
+  const generatedOffset = backend.bridge.toGenerated(
+    bridged,
+    document.offsetAt(position),
+  );
+
+  if (generatedOffset === undefined) {
+    return undefined;
+  }
+
+  backend.jorje.syncDocument(bridged.generatedUri, bridged.output);
+
+  const result = await backend.jorje.send<T>(method, {
+    textDocument: { uri: bridged.generatedUri },
+    position: offsetPosition(bridged.output, generatedOffset),
+    ...extra,
+  });
+
+  return result === undefined || result === null ? undefined : { result, bridged };
+}
+
+/**
+ * Rewrites a location reported in generated Apex as a location in the authored
+ * `.clsx`. Locations inside generated-only scaffolding are dropped rather than
+ * pointed at code the user never wrote.
+ */
+function toAuthoredLocation(location: {
+  uri: string;
+  range: { start: { line: number; character: number }; end: { line: number; character: number } };
+}): Location | undefined {
+  const activeBridge = bridge;
+
+  if (!activeBridge) {
+    return undefined;
+  }
+
+  const bridged = activeBridge.authoredFor(location.uri);
+
+  if (!bridged) {
+    // A location in a file ApexX did not generate, such as hand-written Apex.
+    return Location.create(location.uri, location.range);
+  }
+
+  const startOffset = positionOffset(bridged.output, location.range.start);
+  const endOffset = positionOffset(bridged.output, location.range.end);
+  const authoredStart = activeBridge.toAuthored(bridged, startOffset);
+  const authoredEnd = activeBridge.toAuthored(bridged, endOffset);
+
+  if (authoredStart === undefined) {
+    return undefined;
+  }
+
+  return Location.create(
+    bridged.authoredUri,
+    Range.create(
+      offsetPosition(bridged.source, authoredStart),
+      offsetPosition(bridged.source, authoredEnd ?? authoredStart),
+    ),
+  );
+}
+
+function positionOffset(
+  source: string,
+  position: { line: number; character: number },
+): number {
+  const lines = source.split("\n");
+  let offset = 0;
+
+  for (let line = 0; line < position.line && line < lines.length; line += 1) {
+    offset += (lines[line]?.length ?? 0) + 1;
+  }
+
+  return offset + position.character;
+}
+
 let index: WorkspaceIndex | undefined;
 
 /** The workspace index, refreshed against open documents and disk on each use. */

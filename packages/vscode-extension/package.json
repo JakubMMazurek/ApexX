@@ -21,8 +21,13 @@
     "languages": [
       {
         "id": "apexx",
-        "aliases": ["ApexX", "Apex Extended"],
-        "extensions": [".clsx"],
+        "aliases": [
+          "ApexX",
+          "Apex Extended"
+        ],
+        "extensions": [
+          ".clsx"
+        ],
         "configuration": "./language-configuration.json"
       }
     ],
@@ -35,7 +40,9 @@
       {
         "scopeName": "source.apex.apexx.injection",
         "path": "./syntaxes/apexx-injection.tmLanguage.json",
-        "injectTo": ["source.apex"]
+        "injectTo": [
+          "source.apex"
+        ]
       }
     ],
     "snippets": [
@@ -72,6 +79,16 @@
           "type": "string",
           "default": "",
           "description": "Apex metadata API version for generated .cls-meta.xml files. Leave empty to use sfdx-project.json sourceApiVersion, then ApexX's fallback."
+        },
+        "apexx.javaHome": {
+          "type": "string",
+          "default": "",
+          "description": "JDK directory used to run the Salesforce Apex language server for symbol resolution. Leave empty to reuse salesforcedx-vscode-apex.java.home, then JAVA_HOME."
+        },
+        "apexx.useApexLanguageServer": {
+          "type": "boolean",
+          "default": true,
+          "description": "Resolve symbols through the Salesforce Apex language server for overload-aware and org-aware results. Turn off to use only ApexX's built-in symbol model, which needs no JDK."
         }
       }
     }
