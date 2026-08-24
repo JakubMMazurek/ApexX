@@ -15,7 +15,7 @@ The mental model is TypeScript and JavaScript: the richer source is for people, 
 - trailing default arguments, compiled to ordinary Apex overloads
 - user-defined method decorators, compiled to explicit Apex control flow
 - a VS Code language mode with syntax highlighting, snippets, diagnostics, type-aware completion, and compile on save
-- a language service over `.clsx`: outline, go to definition across files, find references, rename, signature help, and hover reporting real declared types
+- a language service over `.clsx`: outline, go to definition across files, find references, rename, signature help, and hover reporting real declared types, with an exact position map back to the authored source
 
 Every feature lowers to statically typed Apex. Shared function and tuple signatures are collected into deterministic nested types in `ApexXFuncs.cls` and `ApexXTuples.cls`, avoiding one generated file per structural type.
 
@@ -364,12 +364,24 @@ ApexX removes the custom annotation, preserves native annotations, generates def
 
 ## Architecture And Development Notes
 
-Current upstream snapshots inspected during setup:
+Upstream dependencies and what each is actually good for:
 
-- `apex-dev-tools/apex-parser` at `ece2f32`, npm package `@apexdevtools/apex-parser@5.1.0`
-- `forcedotcom/apex-language-support` at `9a54f45`, including `apex-parser-ast`, `apex-ls`, and `apex-lsp-vscode-extension`
+- `@apexdevtools/apex-parser@5.1.0` -- an ANTLR Apex grammar. Syntax only: it produces a
+  parse tree, with no symbol table or type resolution. Used both to validate generated
+  `.cls` files and, over the offset-preserving projection, to build the symbol model.
+- `@apexdevtools/apex-ls` -- BSD-3 and on npm, and it does perform semantic analysis, but
+  only in the JVM build. The published JavaScript build exposes `Workspaces.get(path)`
+  and `Workspace.findType(name)` and nothing else, so it is not usable here.
+- `forcedotcom/apex-language-support` -- a TypeScript LSP implementation with the right
+  feature set, but the repository states it is experimental and not to be used, and
+  `@salesforce/apex-ls` is not published to npm.
+- `apex-jorje-lsp.jar`, from the Salesforce Apex extension -- the only production-grade
+  Apex language service available. Closed source, JVM, Apex-only, and it owns a
+  per-workspace index that must not be shared. See the Language Service section.
 
-ApexX starts as an integration layer over `@apexdevtools/apex-parser`. A grammar fork remains available later when the language surface grows beyond shallow `.clsx` recognition.
+There is no open-source JavaScript Apex semantic layer to build on today, which is why
+ApexX carries its own symbol model and treats the Salesforce server as an optional
+accelerator rather than a dependency.
 
 See [docs/architecture.md](docs/architecture.md) and [docs/development.md](docs/development.md).
 
@@ -392,82 +404,106 @@ For the Visual Studio Code portion of the presentation, open `apexx/classes/Acco
 4. Hover `Func`, a collection helper, or `UserFriendlyError` to show the language contract in place.
 5. Hover a local, a parameter or a method to show its resolved declaration, then press F12 on a call to jump to it.
 6. Press F12 on `@UserFriendlyError` to open the decorator class, and on a `PortfolioRuleProvider.resolve` call to cross a file boundary.
-7. Open the outline, then rename a variable with F2 to show every occurrence updating.
+7. Open the outline, then rename a variable with F2 to show every occurrence updating. Rename a lambda parameter to show that a same-named parameter in another method is untouched.
 8. Save the file and show the generated `.cls` and `.cls-meta.xml` files reported by the ApexX output channel.
+
+Every step above uses the built-in symbol model, so none of it depends on a JDK or on
+the Salesforce Apex extension being installed.
 
 Snippet prefixes `apexx-func`, `apexx-func-block`, `apexx-tuple`, `apexx-tuple-map`, `apexx-pipeline`, `apexx-defaults`, and `apexx-decorator` are available for a quick authoring demonstration.
 
 ## Language Service
 
-Editing `.clsx` is meant to feel like editing Apex, so symbols are resolved by the
-same Salesforce Apex language server the Apex extension uses, and the answers are
-reported against the authored source.
+Editing `.clsx` is meant to feel like editing Apex. Everything below is served by
+ApexX's own symbol model, which needs no JDK and is on by default.
 
 | Feature | Behaviour |
 | --- | --- |
-| Hover | The resolved declaration, with overloads and org types resolved by the Apex compiler |
-| Go to definition | Locals, parameters, fields, methods, types; across files; `@Decorator` opens the class implementing it |
-| Find references, highlight, rename | Every occurrence, scoped correctly and skipping comments and strings |
+| Hover | The declaration as Apex would write it, e.g. `private static final Decimal AccountService.MIN_REVENUE_PER_EMPLOYEE` |
+| Go to definition | Locals, parameters, fields, methods and types; across files for `Type.member`; `@Decorator` opens the class implementing it |
+| Find references, highlight | Every occurrence, scoped to the declaration, skipping comments and string literals |
+| Rename | Locals and parameters within their scope; types and members across the file |
 | Outline and breadcrumbs | Types, methods, fields and properties, nested as declared |
 | Signature help | Parameter list and active argument while typing a call |
 | Workspace symbols | Every declaration in every `.clsx` in the workspace |
-| Completion | ApexX helpers and lambda-aware sObject fields, plus everything the Apex compiler knows about the org |
-| Rename | Locals and parameters within their scope; types and members across every file |
-| Quick fixes | Offered when the Apex compiler suggests one and the edit lands in authored code |
-| Diagnostics | ApexX compiler errors always; Apex semantic errors when `apexx.apexDiagnostics` is on |
+| Completion | ApexX collection helpers, `Func` and tuple snippets, and lambda-aware sObject fields |
+| Diagnostics | ApexX compiler errors, live on every edit |
 
-### How it resolves symbols
+### How it reads `.clsx`
 
-`.clsx` is not Apex, so no Apex tool can read it directly. The lowering pipeline
-therefore emits an exact position map alongside the generated `.cls`: every stage
-records which output span came from which input span, and the stage maps are chained.
-The Apex language server is then asked about the generated code, and each answer is
-translated back through the map to the authored file. Generated names are translated
-too, so a hover reads `Func<Account, Boolean>` rather than the signature hash the
-compiler emits.
+`.clsx` is not Apex, so the Apex grammar cannot parse it directly. The language server
+projects the source onto plain Apex first: each ApexX-only construct -- pipelines,
+`Func` lambdas, tuples, tuple destructuring, default arguments -- is replaced by
+padding of exactly the same width, and newlines are never touched. Offsets and line
+numbers in the resulting parse tree therefore address the original file, and can be
+reported straight back to the editor.
 
-Two things stay with ApexX's own symbol model, because it is authoritative for them:
-locals and parameters, which it positions exactly even inside statements that lowering
-rewrites, and decorator annotations, which do not survive lowering as annotations.
+Across the checked-in sources this takes the Apex parse from 62 syntax errors to 0,
+with no offset drift and none of the 359 recovered declarations mispositioned.
 
-### Without a JDK
+Declarations that exist only in ApexX syntax are recovered from the ApexX parse result
+and merged into the same symbol table: the target of a pipeline assignment, `Func`
+lambda variables, lambda parameters, and tuple destructuring bindings. Lambda
+parameters are typed from the receiver list, so `accounts.filter(a => ...)` reports `a`
+as `Account`.
 
-The Apex language server is a Java process. It starts lazily and never blocks the
-editor: until it has indexed the project, and on any machine without a JDK or without
-the Salesforce Apex extension installed, every feature above is served by ApexX's
-built-in symbol model instead. Hover, definition, references, rename, outline and
-completion all keep working; what is lost is overload-aware resolution and knowledge
-of types that live in the org rather than the workspace. The reason is written to the
-ApexX output channel once, not surfaced as an error.
+Scoping is per method and per lambda. A lambda parameter shadows an outer local of the
+same name, and a local is never resolved to a same-named local in another method --
+which is also why renaming one cannot touch the other.
 
-| Setting | Purpose |
-| --- | --- |
-| `apexx.useApexLanguageServer` | Turn the Apex language server off and use only the built-in model |
-| `apexx.javaHome` | JDK to run it with; defaults to `salesforcedx-vscode-apex.java.home`, then `JAVA_HOME` |
-| `apexx.apexDiagnostics` | Report Apex semantic errors too. Off by default: they catch real mistakes such as calling a method that does not exist, but they also flag code the platform compiles and deploys, so they are advisory rather than authoritative |
+This is a symbol service, not an Apex type checker. Method resolution ignores overloads
+and argument types, so an overloaded name may offer several signatures. Types that live
+in the org rather than the workspace are known only through the cached sObject schema.
+Block scoping is per method, so two `for` loops in one method each declaring `Integer i`
+are treated as one variable.
 
-`apexx.useApexLanguageServer` is off by default, and the reason matters. The Apex
+### Resolving through the Salesforce Apex language server
+
+The Apex language server that ships with the Salesforce Apex extension resolves what
+the built-in model cannot: overloads, the Apex standard library, and org types. ApexX
+can drive it, because the lowering pipeline emits an exact position map alongside the
+generated `.cls` -- so the server is asked about the generated code and every answer is
+translated back to the authored file, with generated names rewritten so a hover reads
+`Func<Account, Boolean>` rather than a signature hash.
+
+Measured when enabled: cross-file definition, overload-aware hover, 190 `System.`
+members, 576 members after `accounts.`, and Apex semantic errors reported on the
+authored line.
+
+**`apexx.useApexLanguageServer` is off by default, and the reason matters.** The Apex
 language server keeps a persistent index at `.sfdx/tools/<version>/apex.db` for the
 workspace it runs in, and the Salesforce Apex extension already runs one per open
 workspace. Enabling it here starts a second server on the same project, so two
-processes write one database. That corrupts it, and a corrupt `apex.db` takes the
-Salesforce Apex extension down too:
+processes write one database. That corrupts it, and a corrupt `apex.db` stops the
+Salesforce Apex extension from starting at all:
 
 ```text
 IndexException: Corrupted database: apex.db
 Apex Language Server client: couldn't create connection to server.
 ```
 
-The fix if it happens is to close the editor and delete `.sfdx/tools/<version>`, which
-is a cache and is rebuilt on the next start.
+The remedy is to close the editor and delete `.sfdx/tools/<version>`, which is a cache
+and is rebuilt on the next start.
 
-Making this safe to turn on means running ApexX's server against an isolated shadow
-project with its own `apex.db`, which is not built yet. Until then, everything above is
-served by the built-in symbol model, which needs no JDK. `npm run apex-smoke` opts in
-explicitly and reports which of the two paths it verified.
+As a second line of defence, ApexX refuses to start the Apex server at all when it
+finds an existing `apex.db` in the workspace, whatever the setting says. Enabling the
+setting on a project the Apex extension is already indexing therefore does nothing,
+rather than doing harm.
 
-`npm run apex-smoke` exercises the Apex-backed path and reports a skip rather than a
-failure when no JDK or jar is present. `npm run test:all` runs it after the rest.
+Making this safe to enable means running ApexX's server against an isolated shadow
+project with its own index. That is the outstanding work; the position map it needs is
+already in place. Until then, enable it only on a workspace the Apex extension is not
+indexing.
+
+| Setting | Purpose |
+| --- | --- |
+| `apexx.useApexLanguageServer` | Resolve through the Apex language server. Off by default; see above |
+| `apexx.javaHome` | JDK to run it with; defaults to `salesforcedx-vscode-apex.java.home`, then `JAVA_HOME` |
+| `apexx.apexDiagnostics` | Also report Apex semantic errors. Off by default: they catch real mistakes such as calling a method that does not exist, but they also flag code the platform compiles and deploys, so they are advisory. A validate-only deploy of the checked-in classes succeeds while the Apex server reports six errors in them |
+
+`npm run apex-smoke` exercises the Apex-backed path, opting in explicitly. It reports
+which of the two paths it managed to verify, and skips rather than fails when no JDK or
+jar is present.
 
 ## Salesforce Showcase
 
@@ -498,6 +534,8 @@ npm run schema:refresh -- --target-org apexx Account
 | --- | --- |
 | `npm ci` | Install the exact dependency versions from `package-lock.json`. |
 | `npm test` | Build all packages and run compiler plus language-server smoke tests. |
+| `npm run apex-smoke` | Exercise the Apex-language-server path; skips without a JDK or jar. |
+| `npm run test:all` | Run `npm test` followed by `npm run apex-smoke`. |
 | `npm run apexx -- build` | Compile every project `.clsx` source to Salesforce source format. |
 | `npm run apexx -- parse <file.clsx>` | Compile and validate one source file without deploying it. |
 | `npm run schema:refresh -- --target-org apexx Account` | Cache org schema for richer sObject completion. |
@@ -513,6 +551,8 @@ npm run schema:refresh -- --target-org apexx Account
 - **`sf` or `code` is not recognized:** install the Salesforce CLI or VS Code, then open a new terminal so the updated `PATH` is loaded.
 - **The `apexx` alias is missing:** rerun `sf org login web --alias apexx --set-default`. Authentication and aliases are local to each computer and are intentionally excluded from Git.
 - **The Apex extension reports an unsupported Java runtime:** the JDK path is machine-specific, so it is deliberately not committed to `.vscode/settings.json`. The Salesforce Apex extension detects a JDK automatically; if it cannot, set `salesforcedx-vscode-apex.java.home` in your **user** settings rather than the workspace, for example `C:\\Program Files\\Java\\latest\\jdk-21` on Windows or `/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home` on macOS. This setting is unrelated to ApexX, which needs only Node.
+- **The Salesforce Apex extension will not start, reporting `Corrupted database: apex.db`:** two Apex language servers wrote one index. Close the editor, delete `.sfdx/tools/<version>` -- a cache, rebuilt on next start -- and leave `apexx.useApexLanguageServer` off, which is the default.
+- **Hover shows a declaration but not an overload, or `System.` offers nothing:** that is the built-in symbol model, which does not resolve overloads or the Apex standard library. Resolving those needs `apexx.useApexLanguageServer`, which is off by default for the reason above.
 - **VS Code still treats `.clsx` as plain text:** run `npm run build`, reinstall with `npm run vscode:install`, and reload the VS Code window.
 - **Completion is missing an org field:** refresh the relevant object with `npm run schema:refresh -- --target-org apexx <ObjectApiName>` and reload the editor window.
 - **Lightning shows an older component bundle:** reopen the showcase, then hard-refresh the page. Salesforce persistent component caching can take a short time to invalidate after deployment.

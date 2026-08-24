@@ -26,6 +26,11 @@ export interface JorjeOptions {
   indexTimeoutMs?: number;
   /** Grace period after the handshake before the server is relied on. */
   warmUpMs?: number;
+  /**
+   * Start even when the workspace already has an Apex index. Only safe when no
+   * other Apex language server is running against this project.
+   */
+  allowSharedIndex?: boolean;
   log?: (message: string) => void;
   /** Receives server-initiated notifications, such as published diagnostics. */
   onNotification?: (method: string, params: unknown) => void;
@@ -106,6 +111,19 @@ export class JorjeClient {
     if (!jar) {
       return this.giveUp(
         "apex-jorje-lsp.jar not found. Install the Salesforce Apex extension to enable Apex-accurate resolution.",
+      );
+    }
+
+    // Refuse to become a second writer on an index another Apex server owns.
+    // Two processes on one apex.db corrupt it, which stops the Salesforce Apex
+    // extension from starting at all -- a failure well outside this project.
+    const owned = existingApexIndex(this.options.workspaceRoot);
+
+    if (owned && !this.options.allowSharedIndex) {
+      return this.giveUp(
+        `the Salesforce Apex extension already owns this workspace's index (${owned}). ` +
+          "Starting a second Apex language server here would corrupt it, so symbol " +
+          "resolution stays on ApexX's built-in model.",
       );
     }
 
@@ -497,4 +515,32 @@ function compareVersionPaths(left: string, right: string): number {
   }
 
   return 0;
+}
+
+/**
+ * The Apex index another server has already built for this workspace, if any.
+ *
+ * The Apex language server keeps a persistent index at `.sfdx/tools/<version>/apex.db`
+ * and does not lock it, so a second server writing the same file corrupts it.
+ */
+export function existingApexIndex(workspaceRoot: string): string | undefined {
+  const tools = path.join(workspaceRoot, ".sfdx", "tools");
+
+  let entries: string[];
+
+  try {
+    entries = fs.readdirSync(tools);
+  } catch {
+    return undefined;
+  }
+
+  for (const entry of entries) {
+    const candidate = path.join(tools, entry, "apex.db");
+
+    if (fs.existsSync(candidate)) {
+      return path.relative(workspaceRoot, candidate);
+    }
+  }
+
+  return undefined;
 }

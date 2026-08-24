@@ -8,21 +8,91 @@ The v0.1 compatibility rule is simple: if a `.clsx` file contains ordinary Apex,
 
 ## Upstream Strategy
 
-`apex-dev-tools/apex-parser` is the primary parser dependency. It provides ANTLR grammars and TypeScript APIs such as `ApexParserFactory`. ApexX uses it to validate generated `.cls` files.
+`@apexdevtools/apex-parser` is the parser dependency: an ANTLR Apex grammar with
+TypeScript APIs such as `ApexParserFactory`. It is syntax only -- a parse tree, with no
+symbol table and no type resolution. ApexX uses it twice: to validate generated `.cls`
+files, and to build the symbol model from an offset-preserving projection of `.clsx`.
 
-`forcedotcom/apex-language-support` is the main reference for language-server structure. It currently contains package boundaries for parser AST, LSP services, `apex-ls`, and the VS Code extension. ApexX mirrors that separation at a much smaller scale.
+There is no open-source JavaScript Apex semantic layer to build on:
 
-The first implementation does not fork the grammar. Instead, it recognizes a tiny ApexX surface and lowers it before passing generated Apex to the upstream parser. A future grammar fork belongs under `packages/parser/grammar` or a dedicated `packages/grammar-fork` package once ApexX syntax needs full CST support.
+- `@apexdevtools/apex-ls` is BSD-3, published, and does perform semantic analysis, but
+  only in its JVM build. The published JavaScript build exposes `Workspaces.get(path)`
+  and `Workspace.findType(name)` and nothing more.
+- `forcedotcom/apex-language-support` is TypeScript with the right feature set, but the
+  repository states it is experimental and not to be used, and `@salesforce/apex-ls` is
+  not published to npm.
+- `apex-jorje-lsp.jar`, inside the Salesforce Apex extension, is the only
+  production-grade Apex language service available. It is closed source, JVM-only,
+  understands Apex only, and owns a per-workspace index that must not be shared.
+
+So ApexX carries its own symbol model and treats the Salesforce server as an optional
+accelerator. The grammar is still not forked: ApexX recognises its own surface, lowers
+it, and hands plain Apex to the upstream parser. A fork belongs under
+`packages/parser/grammar` once ApexX syntax needs full CST support.
+
+## Position Mapping
+
+Every stage of lowering rewrites text as a set of non-overlapping splices, so each
+stage can report which output span came from which input span. `packages/transpiler/src/sourceMap.ts`
+records those spans and chains the six stage maps -- tuple lowering, the main
+transformation pass, the `Func` type rewrite, generated-type insertion, trailing
+whitespace trimming, and the header -- into one exact offset mapping, exposed as
+`TranspileResult.sourceMap`.
+
+Verified across the checked-in sources: 25834 generated characters are reported
+verbatim and all 25834 map to the identical authored character.
+
+An offset inside a rewritten span maps to the span, because the span as a whole was
+replaced. `mapIdentifierOffset` narrows that to a token by locating the authored
+identifier inside the generated replacement, which is what lets a position inside a
+lowered statement still be addressed.
+
+`TranspileResult.generatedTypeNames` maps a generated interface name back to the ApexX
+type it stands for, so a message can say `Func<Account, Boolean>` rather than
+`ApexXFuncs.ApexXFunc_8420216b86a6`. Those names are signature hashes and cannot be
+inverted by computation, so the table is emitted by the compiler that created them.
+
+## Language Service
+
+`packages/language-server` is a symbol service over `.clsx`, not just diagnostics:
+
+- `apexModel.ts` projects `.clsx` onto plain Apex by replacing each ApexX-only
+  construct with padding of exactly the same width, never touching newlines, so the
+  parse tree addresses the original file. It then walks the tree for declarations,
+  merges in declarations that exist only in ApexX syntax, and resolves identifiers by
+  innermost scope. Across the checked-in sources this takes the Apex parse from 62
+  syntax errors to 0, with none of the 359 declarations mispositioned.
+- `workspaceIndex.ts` keeps a parsed model of every `.clsx` in the workspace, with open
+  documents taking precedence over disk, so cross-file resolution sees unsaved edits.
+- `jorjeClient.ts` and `apexBridge.ts` are the optional Apex-server path: the bridge
+  transpiles in memory, maps positions both ways through the source map, and rewrites
+  generated names; the client owns the JVM process and degrades quietly.
+
+### Why the Apex server is opt-in
+
+The Apex language server keeps a persistent index at `.sfdx/tools/<version>/apex.db`
+for the workspace it runs in, and does not lock it. The Salesforce Apex extension
+already runs one per open workspace, so a second server on the same project means two
+writers on one database. That corrupts it, and a corrupt index stops the Salesforce
+Apex extension from starting at all -- a failure outside this project's blast radius.
+
+`apexx.useApexLanguageServer` therefore defaults to off, and the client additionally
+refuses to start when it finds an existing `apex.db` in the workspace, regardless of
+the setting. Making it safe to enable by default means giving ApexX's server an
+isolated shadow project with its own index, which is the outstanding work.
 
 ## Packages
 
 - `@apexx/ast`: shared AST and diagnostic types for ApexX additions
 - `@apexx/semantics`: small semantic helpers, currently `List<T>` receiver discovery and generated-name allocation
 - `@apexx/parser`: upstream Apex parser wrapper plus ApexX lambda/list-method discovery
-- `@apexx/transpiler`: lowers `.clsx` source into `.cls` source
+- `@apexx/transpiler`: lowers `.clsx` source into `.cls` source, and emits the position
+  map and generated-name table that let editors report generated code as authored code
 - `@apexx/sfdx`: Salesforce DX layout detection and `.cls-meta.xml` generation
 - `@apexx/cli`: command-line build and parse entry point
-- `@apexx/language-server`: minimal LSP diagnostics for `.clsx`
+- `@apexx/language-server`: symbol service for `.clsx` -- hover, definition,
+  references, rename, outline, signature help, workspace symbols, completion and
+  diagnostics, with an optional Apex-language-server path
 - `apexx-vscode-extension`: local VS Code extension shell for `.clsx`
 
 ## v0.1 Lambda Shape

@@ -10,12 +10,28 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { findJorjeJar, resolveJava } from "../packages/language-server/dist/jorjeClient.js";
+import {
+  existingApexIndex,
+  findJorjeJar,
+  resolveJava,
+} from "../packages/language-server/dist/jorjeClient.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 if (!resolveJava() || !findJorjeJar()) {
   console.log("Apex smoke test skipped: no JDK or apex-jorje-lsp.jar on this machine.");
+  process.exit(0);
+}
+
+// Never become a second writer on an index the editor's Apex server owns.
+const ownedIndex = existingApexIndex(root);
+
+if (ownedIndex && !process.env.APEXX_ALLOW_SHARED_APEX_INDEX) {
+  console.log(
+    `Apex smoke test skipped: this workspace already has an Apex index (${ownedIndex}). ` +
+      "Close the editor, delete that directory, and rerun -- or set " +
+      "APEXX_ALLOW_SHARED_APEX_INDEX=1 if no other Apex server is running.",
+  );
   process.exit(0);
 }
 
@@ -115,6 +131,25 @@ const targets = value =>
     file: path.basename(fileURLToPath(entry.uri)),
     line: entry.range.start.line + 1,
   }));
+
+// The server builds a persistent index while it runs. This test only starts when no
+// index exists, so anything created here is ours and is removed again -- leaving it
+// behind would block the editor's own Apex server from building its own.
+const createdIndexDirs = () => {
+  try {
+    return fs
+      .readdirSync(path.join(root, ".sfdx", "tools"))
+      .filter(entry => fs.existsSync(path.join(root, ".sfdx", "tools", entry, "apex.db")));
+  } catch {
+    return [];
+  }
+};
+
+const removeCreatedIndexes = () => {
+  for (const entry of createdIndexDirs()) {
+    fs.rmSync(path.join(root, ".sfdx", "tools", entry), { recursive: true, force: true });
+  }
+};
 
 try {
   const workspaceUri = pathToFileURL(`${root}${path.sep}`).href;
@@ -342,6 +377,8 @@ try {
 
   await request("shutdown", null).catch(() => {});
   notify("exit", undefined);
+  await new Promise(resolve => setTimeout(resolve, 500));
+  removeCreatedIndexes();
   console.log(
     apexContributed
       ? "Apex smoke test passed (Apex language server contributed)."
@@ -351,6 +388,7 @@ try {
   server.kill();
 } catch (error) {
   server.kill();
+  removeCreatedIndexes();
   console.error(logs.split("\n").filter(line => line.includes("[apexx]")).join("\n"));
   throw error;
 }

@@ -23,6 +23,11 @@ Outside a Salesforce DX project, this writes Salesforce source-format files unde
 npm run test
 ```
 
+`npm run test:all` adds `npm run apex-smoke`, which exercises the optional
+Apex-language-server path. It skips, rather than fails, when there is no JDK, no
+`apex-jorje-lsp.jar`, or when the workspace already has an Apex index that another
+server owns -- and it reports which of the two resolution paths it managed to verify.
+
 The smoke test builds `apexx/classes` and checks that the generated output contains the expected typed loops, default-argument overloads, decorator lowering, generated `ApexX.cls` support, the aggregated `ApexXFuncs.cls` and `ApexXTuples.cls` structural registries, unresolved decorator diagnostics, and valid editor contributions. The LSP smoke test opens in-memory `.clsx` documents against the real ApexX language server and checks completion labels for list chains and lambda parameters as well as feature hover documentation.
 
 The `apexx/classes` directory is the living showcase. It contains collection helpers, default arguments, first-class `Func` values, general block lambdas, arbitrary-arity tuples, tuple-valued maps, deterministic cross-class structural contracts, generated decorators, and the user-defined `UserFriendlyError` policy class.
@@ -51,6 +56,45 @@ npm run apexx -- parse apexx/classes/AccountService.clsx
 ```
 
 `parse` runs the ApexX lowering path and validates the generated Apex through `@apexdevtools/apex-parser`.
+
+## Language Server
+
+`packages/language-server` is a symbol service, not only diagnostics. The modules:
+
+| Module | Responsibility |
+| --- | --- |
+| `apexModel.ts` | Projects `.clsx` onto plain Apex at identical offsets, walks the parse tree for declarations, recovers declarations that exist only in ApexX syntax, and resolves identifiers by innermost scope |
+| `workspaceIndex.ts` | A parsed model of every `.clsx` in the workspace, open documents taking precedence over disk, for cross-file resolution |
+| `sobjectSchema.ts` | The cached org schema used for sObject field completion |
+| `jorjeClient.ts` | Optional: owns the Salesforce Apex language server process, discovers the jar and a JDK, and degrades quietly when either is missing |
+| `apexBridge.ts` | Optional: transpiles in memory, maps positions both ways through the compiler's source map, and rewrites generated names |
+
+The projection is what makes the rest possible. Each ApexX-only construct -- pipelines,
+`Func` lambdas, tuples, tuple destructuring, default arguments -- is replaced by padding
+of exactly the same width, and newlines are never touched, so offsets and line numbers
+in the parse tree address the authored file. Declarations that only exist in ApexX
+syntax are recovered from the ApexX parse result: the target of a pipeline assignment,
+`Func` lambda variables, lambda parameters, and tuple destructuring bindings.
+
+Scoping is per method and per lambda, so a lambda parameter shadows an outer local and
+a rename cannot reach a same-named local in another method.
+
+Locals, parameters and decorator annotations are always answered by this model even
+when the Apex server is enabled: it positions them exactly inside lowered statements,
+where a generated position can only map back to the statement, and annotations do not
+survive lowering as annotations.
+
+### The optional Apex-language-server path
+
+`apexx.useApexLanguageServer` is off by default. The Apex language server keeps a
+persistent index at `.sfdx/tools/<version>/apex.db` for its workspace and does not lock
+it, and the Salesforce Apex extension already runs one per open workspace. A second
+server on the same project corrupts that index, which stops the Salesforce Apex
+extension from starting at all. `jorjeClient` also refuses to start when it finds an
+existing `apex.db`, regardless of the setting.
+
+If an index does get corrupted, close the editor and delete `.sfdx/tools/<version>`;
+it is a cache and is rebuilt on the next start.
 
 ## VS Code Extension
 

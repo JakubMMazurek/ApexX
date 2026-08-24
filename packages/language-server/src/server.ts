@@ -835,6 +835,9 @@ function apexBackend(): { jorje: JorjeClient; bridge: ApexBridge } | undefined {
     workspaceRoot,
     javaHome: apexJavaHome,
     jarPath: process.env.APEXX_APEX_JAR,
+    allowSharedIndex: /^(1|true|yes)$/i.test(
+      process.env.APEXX_ALLOW_SHARED_APEX_INDEX ?? "",
+    ),
     log: message => connection.console.log(`[apexx] ${message}`),
     onNotification: (method, params) => {
       if (method === "textDocument/publishDiagnostics") {
