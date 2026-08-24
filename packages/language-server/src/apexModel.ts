@@ -29,7 +29,16 @@ export interface ApexSymbol {
   kind: ApexSymbolKind;
   /** Declared type, or the return type for a method. */
   type?: string;
+  /** Modifiers as written, e.g. `public static`, so hover can echo the declaration. */
+  modifiers?: string;
   parameters?: ApexParameter[];
+  /**
+   * Offsets a local or parameter is visible within: the enclosing method, or the
+   * lambda for a lambda parameter. Members declared on a type have no scope and
+   * are visible throughout it.
+   */
+  scopeStart?: number;
+  scopeEnd?: number;
   /** Name of the enclosing class or method, when there is one. */
   container?: string;
   /** Offsets of the declared identifier itself. */
@@ -76,9 +85,15 @@ const TUPLE_BINDING = /[A-Za-z_][A-Za-z0-9_.<>,\s]*\s+[A-Za-z_][A-Za-z0-9_]*\s*$
  * source text. That is what lets the Apex parse tree be reported back to the
  * editor as positions in the original `.clsx` file.
  */
+interface ScopedBinding extends ApexParameter {
+  scopeStart: number;
+  scopeEnd: number;
+}
+
 export function normalizeToApex(source: string): {
   text: string;
   tupleBindings: ApexParameter[];
+  lambdaParameters: ScopedBinding[];
 } {
   const apexx = parseApexX(source);
   const characters = [...source];
@@ -111,6 +126,7 @@ export function normalizeToApex(source: string): {
 
   let text = characters.join("");
   const tupleBindings: ApexParameter[] = [];
+  const lambdaParameters: ScopedBinding[] = [];
 
   // A variable declared by an ApexX pipeline or Func lambda is blanked along with
   // its statement, so its declaration is recovered from the ApexX parse result.
@@ -121,13 +137,44 @@ export function normalizeToApex(source: string): {
         call.range.start.offset,
         call.range.end.offset,
         call.targetName,
-        call.targetType ?? call.resultType ?? "Object",
+        stripTrailingName(call.targetType ?? call.resultType, call.targetName),
         tupleBindings,
       );
     }
   }
 
+  // Lambda parameters live inside statements that get blanked, so they are taken
+  // from the ApexX parse result and scoped to the lambda that introduces them.
+  for (const call of apexx.listMethodCalls) {
+    call.steps?.forEach((step, index) => {
+      const elementType =
+        call.stepInputTypes?.[index] ?? call.elementType ?? "Object";
+
+      for (const parameter of step.lambda?.parameters ?? []) {
+        lambdaParameters.push({
+          name: parameter.name,
+          type: elementType,
+          nameStart: parameter.range.start.offset,
+          nameEnd: parameter.range.end.offset,
+          scopeStart: step.lambda.range.start.offset,
+          scopeEnd: step.lambda.range.end.offset,
+        });
+      }
+    });
+  }
+
   for (const assignment of apexx.funcLambdaAssignments) {
+    assignment.lambda?.parameters?.forEach((parameter, index) => {
+      lambdaParameters.push({
+        name: parameter.name,
+        type: assignment.parameterTypes?.[index] ?? "Object",
+        nameStart: parameter.range.start.offset,
+        nameEnd: parameter.range.end.offset,
+        scopeStart: assignment.lambda.range.start.offset,
+        scopeEnd: assignment.lambda.range.end.offset,
+      });
+    });
+
     if (!assignment.isReassignment && assignment.variableName) {
       recordBinding(
         source,
@@ -200,7 +247,22 @@ export function normalizeToApex(source: string): {
         : match,
   );
 
-  return { text, tupleBindings };
+  return { text, tupleBindings, lambdaParameters };
+}
+
+/** The ApexX parser reports an assignment target as `Type name`; hover wants the type. */
+function stripTrailingName(
+  declared: string | undefined,
+  name: string,
+): string {
+  if (!declared) {
+    return "Object";
+  }
+
+  const trimmed = declared.trim();
+  return trimmed.endsWith(name)
+    ? trimmed.slice(0, -name.length).trim() || "Object"
+    : trimmed;
 }
 
 /** Locates `name` inside a blanked statement so its declaration keeps a real position. */
@@ -264,7 +326,8 @@ function collectTupleBindings(
  * offsets that address the original source.
  */
 export function buildDocumentModel(source: string): DocumentModel {
-  const { text: normalizedApex, tupleBindings } = normalizeToApex(source);
+  const { text: normalizedApex, tupleBindings, lambdaParameters } =
+    normalizeToApex(source);
   const errorListener = new CollectingErrorListener();
   const symbols: ApexSymbol[] = [];
 
@@ -280,16 +343,42 @@ export function buildDocumentModel(source: string): DocumentModel {
   }
 
   for (const binding of tupleBindings) {
+    const owner = enclosingMethod(symbols, binding.nameStart);
     symbols.push({
       name: binding.name,
       kind: "local",
       type: binding.type,
-      container: enclosingMethodName(symbols, binding.nameStart),
+      container: owner?.name,
+      scopeStart: owner?.declStart,
+      scopeEnd: owner?.declEnd,
       nameStart: binding.nameStart,
       nameEnd: binding.nameEnd,
       declStart: binding.nameStart,
       declEnd: binding.nameEnd,
     });
+  }
+
+  for (const parameter of lambdaParameters) {
+    symbols.push({
+      name: parameter.name,
+      kind: "parameter",
+      type: parameter.type,
+      container: enclosingMethod(symbols, parameter.nameStart)?.name,
+      scopeStart: parameter.scopeStart,
+      scopeEnd: parameter.scopeEnd,
+      nameStart: parameter.nameStart,
+      nameEnd: parameter.nameEnd,
+      declStart: parameter.nameStart,
+      declEnd: parameter.nameEnd,
+    });
+  }
+
+  // Modifiers are not reachable from the method context, but they always sit
+  // immediately before the declaration in the source.
+  for (const symbol of symbols) {
+    if (symbol.kind !== "local" && symbol.kind !== "parameter") {
+      symbol.modifiers = readModifiers(source, symbol.declStart);
+    }
   }
 
   symbols.sort((left, right) => left.nameStart - right.nameStart);
@@ -302,10 +391,10 @@ export function buildDocumentModel(source: string): DocumentModel {
   };
 }
 
-function enclosingMethodName(
+function enclosingMethod(
   symbols: ApexSymbol[],
   offset: number,
-): string | undefined {
+): ApexSymbol | undefined {
   let best: ApexSymbol | undefined;
 
   for (const symbol of symbols) {
@@ -319,13 +408,49 @@ function enclosingMethodName(
     }
   }
 
-  return best?.name;
+  return best;
+}
+
+const MODIFIER_WORDS = new Set([
+  "public",
+  "private",
+  "protected",
+  "global",
+  "static",
+  "final",
+  "override",
+  "virtual",
+  "abstract",
+  "transient",
+  "webservice",
+  "testmethod",
+  "with",
+  "without",
+  "inherited",
+  "sharing",
+]);
+
+/** Reads the modifier keywords immediately preceding a declaration. */
+function readModifiers(source: string, declStart: number): string | undefined {
+  const boundary = Math.max(
+    source.lastIndexOf(";", declStart - 1),
+    source.lastIndexOf("{", declStart - 1),
+    source.lastIndexOf("}", declStart - 1),
+    source.lastIndexOf("\n", declStart - 1),
+  );
+  const words = source
+    .slice(boundary + 1, declStart)
+    .split(/\s+/)
+    .filter(word => MODIFIER_WORDS.has(word.toLowerCase()));
+
+  return words.length > 0 ? words.join(" ") : undefined;
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 class DeclarationListener extends ApexParserBaseListener {
   private readonly typeStack: string[] = [];
   private readonly methodStack: string[] = [];
+  private readonly scopeStack: { start: number; end: number }[] = [];
 
   constructor(private readonly symbols: ApexSymbol[]) {
     super();
@@ -333,6 +458,12 @@ class DeclarationListener extends ApexParserBaseListener {
 
   private get container(): string | undefined {
     return this.methodStack.at(-1) ?? this.typeStack.at(-1);
+  }
+
+  /** The range a local or parameter declared here is visible within. */
+  private get scope(): { scopeStart?: number; scopeEnd?: number } {
+    const current = this.scopeStack.at(-1);
+    return current ? { scopeStart: current.start, scopeEnd: current.end } : {};
   }
 
   private pushType(context: any, kind: ApexSymbolKind): void {
@@ -393,10 +524,12 @@ class DeclarationListener extends ApexParserBaseListener {
       ...declarationRange(context),
     });
     this.methodStack.push(name);
+    this.scopeStack.push(declarationRangeOf(context));
   }
 
   exitMethodDeclaration(): void {
     this.methodStack.pop();
+    this.scopeStack.pop();
   }
 
   enterConstructorDeclaration(context: any): void {
@@ -415,10 +548,12 @@ class DeclarationListener extends ApexParserBaseListener {
       ...declarationRange(context),
     });
     this.methodStack.push(name);
+    this.scopeStack.push(declarationRangeOf(context));
   }
 
   exitConstructorDeclaration(): void {
     this.methodStack.pop();
+    this.scopeStack.pop();
   }
 
   enterFormalParameter(context: any): void {
@@ -433,6 +568,7 @@ class DeclarationListener extends ApexParserBaseListener {
       kind: "parameter",
       type: text(context?.typeRef?.()),
       container: this.container,
+      ...this.scope,
       ...identifierRange(context.id()),
       ...declarationRange(context),
     });
@@ -480,6 +616,7 @@ class DeclarationListener extends ApexParserBaseListener {
         kind,
         type,
         container: this.container,
+        ...(kind === "local" ? this.scope : {}),
         ...identifierRange(declarator.id()),
         ...declarationRange(declarator),
       });
@@ -530,6 +667,11 @@ function declarationRange(context: any): { declStart: number; declEnd: number } 
   const start = context?.start?.start ?? 0;
   const stop = context?.stop?.stop ?? start;
   return { declStart: start, declEnd: stop + 1 };
+}
+
+function declarationRangeOf(context: any): { start: number; end: number } {
+  const { declStart, declEnd } = declarationRange(context);
+  return { start: declStart, end: declEnd };
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
@@ -644,53 +786,55 @@ export function resolveSymbol(
     return undefined;
   }
 
-  const method = model.symbols.find(
-    symbol =>
-      (symbol.kind === "method" || symbol.kind === "constructor") &&
-      symbol.declStart <= offset &&
-      offset <= symbol.declEnd,
-  );
-
-  if (method) {
-    const scoped = candidates.find(
+  // A local or parameter is only visible inside its own scope. The innermost
+  // scope wins, so a lambda parameter shadows a local of the same name.
+  const inScope = candidates
+    .filter(
       symbol =>
         (symbol.kind === "local" || symbol.kind === "parameter") &&
-        symbol.container === method.name,
-    );
+        symbol.scopeStart !== undefined &&
+        symbol.scopeEnd !== undefined &&
+        symbol.scopeStart <= offset &&
+        offset <= symbol.scopeEnd,
+    )
+    .sort((left, right) => (right.scopeStart ?? 0) - (left.scopeStart ?? 0));
 
-    if (scoped) {
-      return scoped;
-    }
+  if (inScope.length > 0) {
+    return inScope[0];
   }
 
-  const rank: Record<ApexSymbolKind, number> = {
-    parameter: 0,
-    local: 1,
-    property: 2,
-    field: 3,
-    method: 4,
-    constructor: 5,
-    class: 6,
-    interface: 7,
-    enum: 8,
+  // Otherwise only type-level declarations are in view. Returning a local or
+  // parameter belonging to some other method would be worse than nothing.
+  const rank: Partial<Record<ApexSymbolKind, number>> = {
+    property: 0,
+    field: 1,
+    method: 2,
+    constructor: 3,
+    class: 4,
+    interface: 5,
+    enum: 6,
   };
 
-  return [...candidates].sort((left, right) => rank[left.kind] - rank[right.kind])[0];
+  return candidates
+    .filter(symbol => rank[symbol.kind] !== undefined)
+    .sort((left, right) => (rank[left.kind] ?? 9) - (rank[right.kind] ?? 9))[0];
 }
 
-/** A human-readable signature, used for hover text and outline detail. */
+/** The declaration as Apex would write it, used for hover text and outline detail. */
 export function describeSymbol(symbol: ApexSymbol): string {
+  const modifiers = symbol.modifiers ? `${symbol.modifiers} ` : "";
+
   if (symbol.kind === "method" || symbol.kind === "constructor") {
     const parameters = (symbol.parameters ?? [])
       .map(parameter => `${parameter.type} ${parameter.name}`)
       .join(", ");
     const returnType = symbol.kind === "method" ? `${symbol.type ?? "void"} ` : "";
-    return `${returnType}${symbol.name}(${parameters})`;
+    return `${modifiers}${returnType}${symbol.name}(${parameters})`;
   }
 
   if (symbol.kind === "class" || symbol.kind === "interface" || symbol.kind === "enum") {
-    return `${symbol.kind} ${symbol.name}`;
+    return `${modifiers}${symbol.kind} ${symbol.name}`;
   }
 
-  return `${symbol.type ?? "Object"} ${symbol.name}`;
+  return `${modifiers}${symbol.type ?? "Object"} ${symbol.name}`;
 }

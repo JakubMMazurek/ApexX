@@ -359,7 +359,66 @@ try {
     position: locate("List<Account> chosen", 15),
   });
   assert.match(localHover.contents.value, /List<Account> chosen/);
-  assert.match(localHover.contents.value, /local variable/);
+  // Hover echoes the declaration only, the way Apex tooling reports it.
+  assert.doesNotMatch(localHover.contents.value, /local variable|parameter in/);
+
+  // A lambda parameter must resolve to the lambda that introduces it, and be typed
+  // from the receiver list -- not to a same-named parameter of an unrelated method.
+  const shadowSource = `public with sharing class ShadowProbe {
+    public static Account save(Account account, Boolean validate) {
+        return account;
+    }
+
+    public static List<Account> withRevenue(List<Account> rows) {
+        return rows.filter(account => account.AnnualRevenue != null);
+    }
+}
+`;
+  const shadowUri = pathToFileURL(
+    path.join(root, "apexx", "classes", "ShadowProbe.clsx"),
+  ).href;
+  notify("textDocument/didOpen", {
+    textDocument: { uri: shadowUri, languageId: "apexx", version: 1, text: shadowSource },
+  });
+
+  const shadowLines = shadowSource.split("\n");
+  const lambdaLine = shadowLines.findIndex(line => line.includes("rows.filter(account"));
+  const lambdaPosition = {
+    line: lambdaLine,
+    character: shadowLines[lambdaLine].indexOf("account =>") + 3,
+  };
+
+  const lambdaHover = await request("textDocument/hover", {
+    textDocument: { uri: shadowUri },
+    position: lambdaPosition,
+  });
+  assert.match(
+    lambdaHover.contents.value,
+    /Account account/,
+    "a lambda parameter should be typed from the receiver list",
+  );
+
+  const lambdaDefinition = await request("textDocument/definition", {
+    textDocument: { uri: shadowUri },
+    position: lambdaPosition,
+  });
+  assert.equal(
+    (Array.isArray(lambdaDefinition) ? lambdaDefinition[0] : lambdaDefinition).range.start
+      .line,
+    lambdaLine,
+    "a lambda parameter must not resolve to a parameter of another method",
+  );
+
+  // The same name declared in a different method stays independent.
+  const otherMethodLine = shadowLines.findIndex(line => line.includes("Account save("));
+  const otherHover = await request("textDocument/hover", {
+    textDocument: { uri: shadowUri },
+    position: {
+      line: otherMethodLine,
+      character: shadowLines[otherMethodLine].indexOf("Account account") + 9,
+    },
+  });
+  assert.match(otherHover.contents.value, /Account account/);
 
   const signature = await request("textDocument/signatureHelp", {
     textDocument: { uri: serviceUri },

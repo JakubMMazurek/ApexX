@@ -106,11 +106,10 @@ connection.onHover(params => {
     const symbol = resolveSymbol(modelFor(document), identifier.name, offset);
 
     if (symbol) {
+      // Apex hover shows the declaration and nothing else; prose about which
+      // method a variable belongs to is noise the editor already makes obvious.
       sections.push(
-        [
-          `\`\`\`apex\n${describeSymbol(symbol)}\n\`\`\``,
-          `*${describeKind(symbol)}*${symbol.container ? ` in \`${symbol.container}\`` : ""}`,
-        ].join("\n\n"),
+        `\`\`\`apex\n${declarationText(refineType(symbol, source, offset))}\n\`\`\``,
       );
     }
 
@@ -229,7 +228,7 @@ connection.onReferences(params => {
     return [];
   }
 
-  return occurrenceRanges(found.document, found.name).map(range =>
+  return occurrenceRanges(found.document, found.name, found.symbol).map(range =>
     Location.create(params.textDocument.uri, range),
   );
 });
@@ -241,7 +240,7 @@ connection.onDocumentHighlight(params => {
     return [];
   }
 
-  return occurrenceRanges(found.document, found.name).map(range => ({
+  return occurrenceRanges(found.document, found.name, found.symbol).map(range => ({
     range,
     kind: DocumentHighlightKind.Text,
   }));
@@ -267,7 +266,7 @@ connection.onRenameRequest(params => {
     return null;
   }
 
-  const edits = occurrenceRanges(found.document, found.name).map(range => ({
+  const edits = occurrenceRanges(found.document, found.name, found.symbol).map(range => ({
     range,
     newText: params.newName,
   }));
@@ -522,11 +521,27 @@ function symbolUnderCursor(uri: string, position: Position): CursorSymbol | unde
     : undefined;
 }
 
-function occurrenceRanges(document: TextDocument, name: string): Range[] {
+/**
+ * Occurrences of a local or parameter are confined to its scope, so renaming a
+ * lambda parameter cannot rewrite a same-named parameter of another method.
+ */
+function occurrenceRanges(
+  document: TextDocument,
+  name: string,
+  symbol?: ApexSymbol,
+): Range[] {
   const source = document.getText();
-  return findOccurrences(source, name).map(offset =>
-    rangeOf(document, offset, offset + name.length),
-  );
+  const scoped =
+    symbol &&
+    (symbol.kind === "local" || symbol.kind === "parameter") &&
+    symbol.scopeStart !== undefined &&
+    symbol.scopeEnd !== undefined
+      ? { start: symbol.scopeStart, end: symbol.scopeEnd }
+      : undefined;
+
+  return findOccurrences(source, name)
+    .filter(offset => !scoped || (offset >= scoped.start && offset <= scoped.end))
+    .map(offset => rangeOf(document, offset, offset + name.length));
 }
 
 const OUTLINE_KINDS: Record<ApexSymbolKind, SymbolKind> = {
@@ -593,17 +608,50 @@ function outline(document: TextDocument, model: DocumentModel): DocumentSymbol[]
   return [...tree, ...orphans];
 }
 
-function describeKind(symbol: ApexSymbol): string {
-  switch (symbol.kind) {
-    case "parameter":
-      return "parameter";
-    case "local":
-      return "local variable";
-    case "constructor":
-      return "constructor";
-    default:
-      return symbol.kind;
+/**
+ * A lambda parameter's type is not written down anywhere, so it is inferred from
+ * the receiver list -- the same inference that drives field completion inside a
+ * lambda. Anything already carrying a concrete type is left alone.
+ */
+function refineType(
+  symbol: ApexSymbol,
+  source: string,
+  offset: number,
+): ApexSymbol {
+  if (symbol.kind !== "parameter" || (symbol.type && symbol.type !== "Object")) {
+    return symbol;
   }
+
+  // The inference scans backwards for `name =>`, which is not yet in the prefix
+  // when the cursor sits on the parameter itself, so look from the lambda's end.
+  const from = Math.max(offset, symbol.scopeEnd ?? offset);
+  const inferred = inferReceiverType(source, from, symbol.name);
+
+  return inferred ? { ...symbol, type: normalizeType(inferred) } : symbol;
+}
+
+/**
+ * Members are shown qualified by their type, matching how Apex tooling reports
+ * them. Locals and parameters stay bare, because a qualifier would be wrong.
+ */
+function declarationText(symbol: ApexSymbol): string {
+  const declaration = describeSymbol(symbol);
+
+  if (
+    !symbol.container ||
+    symbol.kind === "local" ||
+    symbol.kind === "parameter" ||
+    symbol.kind === "class" ||
+    symbol.kind === "interface" ||
+    symbol.kind === "enum"
+  ) {
+    return declaration;
+  }
+
+  return declaration.replace(
+    new RegExp(`\\b${symbol.name}\\b`),
+    `${symbol.container}.${symbol.name}`,
+  );
 }
 
 /** Documents an sObject field when the identifier resolves to one, e.g. `a.AnnualRevenue`. */
