@@ -23,7 +23,7 @@
     "sf:seed": "sf apex run --file scripts/seed-apexx-data.apex",
     "sf:test": "sf apex run test --tests AccountServiceTest --wait 15 --code-coverage --result-format human",
     "sf:open:showcase": "sf org open --path lightning/n/ApexX_Showcase",
-    "vscode:install": "powershell -ExecutionPolicy Bypass -File scripts/install-vscode-extension.ps1"
+    "vscode:install": "node scripts/install-vscode-extension.mjs"
   },
   "dependencies": {
     "@apexdevtools/apex-parser": "5.1.0",

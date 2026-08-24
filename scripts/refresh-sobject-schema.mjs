@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -26,12 +26,12 @@ if (sObjects.length === 0) {
 
 for (const sObjectName of sObjects) {
   if (!/^[A-Za-z][A-Za-z0-9_]*(__c)?$/.test(sObjectName)) {
-    throw new Error(`Invalid sObject API name: ${sObjectName}`);
+    fail(`Invalid sObject API name: ${sObjectName}`);
   }
 }
 
 if (targetOrg && !/^[A-Za-z0-9_.@+-]+$/.test(targetOrg)) {
-  throw new Error(`Invalid target org alias or username: ${targetOrg}`);
+  fail(`Invalid target org alias or username: ${targetOrg}`);
 }
 
 const outputDir = path.join(root, ".apexx", "schema", "sobjects");
@@ -50,14 +50,13 @@ for (const sObjectName of sObjects) {
     describeArgs.push("--target-org", targetOrg);
   }
 
-  const rawDescribe = runSf(describeArgs);
-  const describe = JSON.parse(rawDescribe);
+  const describe = sfJson(describeArgs);
+  const result = describe.result;
 
-  if (describe.status !== 0) {
-    throw new Error(`Salesforce describe failed for ${sObjectName}`);
+  if (!result) {
+    fail(`Salesforce describe returned no result for ${sObjectName}.`);
   }
 
-  const result = describe.result;
   const fields = (result.fields ?? [])
     .map(fieldInfo => ({
       name: fieldInfo.name,
@@ -82,15 +81,44 @@ for (const sObjectName of sObjects) {
   console.log(`Wrote ${path.relative(root, outputPath)} (${fields.length} fields)`);
 }
 
-function runSf(args) {
+// The Salesforce CLI reports failures as JSON on stdout, so the exit status is
+// read rather than thrown on. execFileSync would surface a Node stack trace and
+// bury the actual CLI message.
+function sfJson(args) {
   const command =
     process.platform === "win32" ? (process.env.ComSpec ?? "cmd.exe") : "sf";
   const commandArgs =
     process.platform === "win32" ? ["/d", "/s", "/c", "sf", ...args] : args;
 
-  return execFileSync(command, commandArgs, {
+  const result = spawnSync(command, commandArgs, {
     cwd: root,
     encoding: "utf8",
-    stdio: ["ignore", "pipe", "inherit"],
+    windowsHide: true,
   });
+
+  if (result.error) {
+    fail(`Unable to run Salesforce CLI: ${result.error.message}`);
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(result.stdout);
+  } catch {
+    fail(result.stderr || result.stdout || "Salesforce CLI returned no JSON output.");
+  }
+
+  if (result.status !== 0 || parsed.status !== 0) {
+    const actions = (parsed.actions ?? []).map(action => `\n  ${action}`).join("");
+    fail(
+      (parsed.message || result.stderr || `Salesforce CLI exited with ${result.status}.`) +
+        actions,
+    );
+  }
+
+  return parsed;
+}
+
+function fail(message) {
+  console.error(`ApexX schema refresh failed: ${message}`);
+  process.exit(1);
 }
