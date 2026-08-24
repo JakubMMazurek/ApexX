@@ -40,7 +40,7 @@ Every feature lowers to statically typed Apex. Shared function and tuple signatu
 
 The repository is private, so authenticate Git with the GitHub account that has access before cloning it.
 
-```powershell
+```bash
 git clone https://github.com/JakubMMazurek/ApexX.git
 cd ApexX
 npm ci
@@ -51,7 +51,7 @@ npm test
 
 Compile all checked-in `.clsx` sources:
 
-```powershell
+```bash
 npm run apexx -- build
 ```
 
@@ -61,7 +61,7 @@ Inside this Salesforce DX project, compilation writes deployable `.cls` and `.cl
 
 The alias `apexx` is only a local convenience; creating it does not change the org. Log in with the same demo-org credentials on each computer:
 
-```powershell
+```bash
 sf org login web --alias apexx --set-default
 ```
 
@@ -69,7 +69,7 @@ For a Salesforce sandbox that uses the standard test login endpoint, add `--inst
 
 Build, deploy, seed the deterministic dataset, run the native Apex suite, verify readiness, and open the showcase:
 
-```powershell
+```bash
 npm run apexx -- build
 npm run sf:deploy -- --target-org apexx
 npm run sf:seed -- --target-org apexx
@@ -84,17 +84,25 @@ For normal preparation on demo day, the same sequence is safe to rerun. `demo:ch
 
 ## Install The VS Code Experience
 
-On Windows, after `npm ci` and `npm run build`:
+On Windows, macOS, or Linux, after `npm ci` and `npm run build`:
 
-```powershell
+```bash
 npm run vscode:install
+```
+
+The installer targets `~/.vscode/extensions`, links the built workspace packages
+so the language server and compiler run from this repo, and is safe to rerun after
+every `npm run build`. For a VS Code fork or a portable install, point it elsewhere:
+
+```bash
+npm run vscode:install -- --extensions-dir ~/.vscode-insiders/extensions
 ```
 
 Reload VS Code and open `apexx/classes/AccountService.clsx`. The extension supplies dedicated coloring, indentation and folding, feature snippets, live compiler diagnostics, hover documentation, type-aware completion, and compile-on-save behavior.
 
 For org-backed sObject completion, cache only the objects needed for the demo:
 
-```powershell
+```bash
 npm run schema:refresh -- --target-org apexx Account Contact
 ```
 
@@ -389,13 +397,13 @@ Snippet prefixes `apexx-func`, `apexx-func-block`, `apexx-tuple`, `apexx-tuple-m
 
 The project includes an interactive `apexxShowcase` Lightning Web Component and an `ApexX Showcase` Lightning tab. Four presentation chapters establish why the project exists and reveal its compatibility model, unpack each language primitive with executable comparisons, prove the editor and compilation toolchain, and finish with the live portfolio workflow. Every comparison starts from realistic authored Apex and runs against deterministic org data. The language tour covers the complete collection toolkit, block lambdas, a captured `Func` selected from three runtime modes, a cross-class `Map<Id, (Decimal, Boolean)>`, two default parameters with all three call shapes, and a custom decorator whose raw and translated failures can be compared live. Comparisons explicitly retain strong conventional choices such as fused loops and mode helpers, and explain when the ApexX abstraction earns its cost. The final workflow includes all feature-specific authored helpers on both sides and calculates the source reduction directly from the snippets shown. Seed the shared dataset with:
 
-```powershell
+```bash
 npm run sf:seed -- --target-org apexx
 ```
 
 Immediately before presenting, run the non-mutating readiness check. It runs the compiler and editor suite, confirms the generated shared contracts, verifies Salesforce authentication, and checks for exactly four demo Accounts and four Contacts:
 
-```powershell
+```bash
 npm run demo:check -- --target-org apexx
 ```
 
@@ -403,7 +411,7 @@ The VS Code integration intentionally does not promote a dedicated “Preview Ge
 
 For `List<Account>.filter(a => a.)`, `List<Account>.map(a => a.)`, and the other ApexX list helpers, completions infer the lambda parameter from the receiver list. ApexX includes a small built-in Account/Contact fallback and can also read org schema cached under `.apexx/schema/sobjects`. Refresh the local cache from your default org or a specific alias:
 
-```powershell
+```bash
 npm run schema:refresh -- Account
 npm run schema:refresh -- --target-org apexx Account
 ```
@@ -417,7 +425,7 @@ npm run schema:refresh -- --target-org apexx Account
 | `npm run apexx -- build` | Compile every project `.clsx` source to Salesforce source format. |
 | `npm run apexx -- parse <file.clsx>` | Compile and validate one source file without deploying it. |
 | `npm run schema:refresh -- --target-org apexx Account` | Cache org schema for richer sObject completion. |
-| `npm run vscode:install` | Install the locally built VS Code extension on Windows. |
+| `npm run vscode:install` | Install the locally built VS Code extension on Windows, macOS, or Linux. |
 | `npm run sf:deploy -- --target-org apexx` | Deploy the generated Apex and Lightning metadata. |
 | `npm run sf:seed -- --target-org apexx` | Recreate the dedicated showcase dataset. |
 | `npm run sf:test -- --target-org apexx` | Run `AccountServiceTest` with Apex code coverage. |
@@ -428,6 +436,7 @@ npm run schema:refresh -- --target-org apexx Account
 
 - **`sf` or `code` is not recognized:** install the Salesforce CLI or VS Code, then open a new terminal so the updated `PATH` is loaded.
 - **The `apexx` alias is missing:** rerun `sf org login web --alias apexx --set-default`. Authentication and aliases are local to each computer and are intentionally excluded from Git.
+- **The Apex extension reports an unsupported Java runtime:** the JDK path is machine-specific, so it is deliberately not committed to `.vscode/settings.json`. The Salesforce Apex extension detects a JDK automatically; if it cannot, set `salesforcedx-vscode-apex.java.home` in your **user** settings rather than the workspace, for example `C:\\Program Files\\Java\\latest\\jdk-21` on Windows or `/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home` on macOS. This setting is unrelated to ApexX, which needs only Node.
 - **VS Code still treats `.clsx` as plain text:** run `npm run build`, reinstall with `npm run vscode:install`, and reload the VS Code window.
 - **Completion is missing an org field:** refresh the relevant object with `npm run schema:refresh -- --target-org apexx <ObjectApiName>` and reload the editor window.
 - **Lightning shows an older component bundle:** reopen the showcase, then hard-refresh the page. Salesforce persistent component caching can take a short time to invalidate after deployment.

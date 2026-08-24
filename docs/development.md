@@ -2,7 +2,7 @@
 
 ## Install And Build
 
-```powershell
+```bash
 git clone https://github.com/JakubMMazurek/ApexX.git
 cd ApexX
 npm ci
@@ -11,7 +11,7 @@ npm run build
 
 ## Run The PoC
 
-```powershell
+```bash
 npm run apexx -- build
 ```
 
@@ -19,7 +19,7 @@ Outside a Salesforce DX project, this writes Salesforce source-format files unde
 
 ## Validate
 
-```powershell
+```bash
 npm run test
 ```
 
@@ -31,7 +31,7 @@ The `apexx/classes` directory is the living showcase. It contains collection hel
 
 Build, deploy, seed test data, and open the Lightning tab:
 
-```powershell
+```bash
 npm run apexx -- build
 npm run sf:deploy -- --target-org apexx
 npm run sf:seed -- --target-org apexx
@@ -46,8 +46,8 @@ The `apexxShowcase` LWC is an executable, four-chapter presentation. It opens wi
 
 ## Parse A Single File
 
-```powershell
-npm run apexx -- parse apexx\classes\AccountService.clsx
+```bash
+npm run apexx -- parse apexx/classes/AccountService.clsx
 ```
 
 `parse` runs the ApexX lowering path and validates the generated Apex through `@apexdevtools/apex-parser`.
@@ -67,7 +67,7 @@ Compile-on-save rescans the workspace's `.clsx` sources and regenerates the two 
 
 The language server infers a lambda parameter from the receiver list. For example, in `accounts.filter(a => a.)`, `accounts.map(a => a.)`, or `accounts.find(a => a.)`, `a` is treated as `Account` when `accounts` is declared as `List<Account>`. It also follows typed chains such as `accounts.flatMap(a => a.Contacts).map(c => c.)`, where `c` is treated as `Contact`. sObject field completions use built-in fallbacks first, and they can use a local org schema cache:
 
-```powershell
+```bash
 npm run schema:refresh -- --target-org apexx Account
 ```
 
@@ -77,9 +77,9 @@ The extension uses the default `packageDirectories` entry and `sourceApiVersion`
 
 Open `packages/vscode-extension` as an extension development host target after running:
 
-```powershell
+```bash
 npm install
 npm run build
 ```
 
-For a demo-machine install, run `npm run vscode:install`, reload VS Code, and open `apexx/classes/AccountService.clsx`. The installer copies the extension UI contributions and uses the built workspace packages for the language server and compiler.
+For a demo-machine install, run `npm run vscode:install`, reload VS Code, and open `apexx/classes/AccountService.clsx`. The installer copies the extension UI contributions and uses the built workspace packages for the language server and compiler. It runs on Windows, macOS, and Linux, installs into `~/.vscode/extensions`, and accepts `--extensions-dir` for VS Code forks.
