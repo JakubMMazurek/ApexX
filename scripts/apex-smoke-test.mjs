@@ -124,7 +124,7 @@ try {
     rootPath: root,
     workspaceFolders: [{ uri: workspaceUri, name: "ApexX" }],
     capabilities: {},
-    initializationOptions: { apexDiagnostics: true },
+    initializationOptions: { useApexLanguageServer: true, apexDiagnostics: true },
   });
   notify("initialized", {});
 

@@ -446,11 +446,25 @@ ApexX output channel once, not surfaced as an error.
 | `apexx.javaHome` | JDK to run it with; defaults to `salesforcedx-vscode-apex.java.home`, then `JAVA_HOME` |
 | `apexx.apexDiagnostics` | Report Apex semantic errors too. Off by default: they catch real mistakes such as calling a method that does not exist, but they also flag code the platform compiles and deploys, so they are advisory rather than authoritative |
 
-The Apex language server is a JVM process that holds a few hundred megabytes while it
-indexes the project, and the Salesforce Apex extension already runs one per open
-workspace. On a machine that is short of memory it will answer nothing, and ApexX
-falls back to the built-in model; `npm run apex-smoke` says which of the two paths it
-managed to verify.
+`apexx.useApexLanguageServer` is off by default, and the reason matters. The Apex
+language server keeps a persistent index at `.sfdx/tools/<version>/apex.db` for the
+workspace it runs in, and the Salesforce Apex extension already runs one per open
+workspace. Enabling it here starts a second server on the same project, so two
+processes write one database. That corrupts it, and a corrupt `apex.db` takes the
+Salesforce Apex extension down too:
+
+```text
+IndexException: Corrupted database: apex.db
+Apex Language Server client: couldn't create connection to server.
+```
+
+The fix if it happens is to close the editor and delete `.sfdx/tools/<version>`, which
+is a cache and is rebuilt on the next start.
+
+Making this safe to turn on means running ApexX's server against an isolated shadow
+project with its own `apex.db`, which is not built yet. Until then, everything above is
+served by the built-in symbol model, which needs no JDK. `npm run apex-smoke` opts in
+explicitly and reports which of the two paths it verified.
 
 `npm run apex-smoke` exercises the Apex-backed path and reports a skip rather than a
 failure when no JDK or jar is present. `npm run test:all` runs it after the rest.

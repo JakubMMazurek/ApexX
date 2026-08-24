@@ -87,8 +87,8 @@
         },
         "apexx.useApexLanguageServer": {
           "type": "boolean",
-          "default": true,
-          "description": "Resolve symbols through the Salesforce Apex language server for overload-aware and org-aware results. Turn off to use only ApexX's built-in symbol model, which needs no JDK."
+          "default": false,
+          "description": "Resolve symbols through the Salesforce Apex language server for overload-aware and org-aware results. Off by default: it would be a second Apex server on this workspace, and two servers share one .sfdx/tools/apex.db index, which corrupts it and breaks the Salesforce Apex extension. ApexX's own symbol model needs no JDK and covers hover, definition, references, rename, outline and completion."
         },
         "apexx.apexDiagnostics": {
           "type": "boolean",

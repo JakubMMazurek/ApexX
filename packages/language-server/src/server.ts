@@ -65,8 +65,17 @@ let apexJavaHome: string | undefined;
  * Set APEXX_DISABLE_APEX_SERVER=1 to run on the built-in symbol model alone, with
  * no JVM. Everything still works; overloads and org types stop being resolved.
  */
-let apexServerEnabled = !/^(1|true|yes)$/i.test(
-  process.env.APEXX_DISABLE_APEX_SERVER ?? "",
+/**
+ * Off by default.
+ *
+ * The Apex language server keeps a persistent index at `.sfdx/tools/<version>/apex.db`
+ * for the workspace it is started in. The Salesforce Apex extension already runs one
+ * per open workspace, so starting a second against the same project means two writers
+ * on one database, which corrupts it -- taking the Apex extension down with it. Until
+ * ApexX runs its server against an isolated shadow project, this is opt-in.
+ */
+let apexServerEnabled = /^(1|true|yes)$/i.test(
+  process.env.APEXX_APEX_SERVER ?? "",
 );
 /**
  * Apex semantic errors from the Apex language server, off by default.
@@ -90,8 +99,8 @@ connection.onInitialize(params => {
     | undefined;
   apexJavaHome = initializationOptions?.javaHome ?? process.env.APEXX_JAVA_HOME;
 
-  if (initializationOptions?.useApexLanguageServer === false) {
-    apexServerEnabled = false;
+  if (initializationOptions?.useApexLanguageServer !== undefined) {
+    apexServerEnabled = initializationOptions.useApexLanguageServer;
   }
 
   if (initializationOptions?.apexDiagnostics !== undefined) {

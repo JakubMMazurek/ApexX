@@ -51,7 +51,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         undefined,
       useApexLanguageServer: vscode.workspace
         .getConfiguration("apexx")
-        .get<boolean>("useApexLanguageServer", true),
+        .get<boolean>("useApexLanguageServer", false),
       apexDiagnostics: vscode.workspace
         .getConfiguration("apexx")
         .get<boolean>("apexDiagnostics", false),
