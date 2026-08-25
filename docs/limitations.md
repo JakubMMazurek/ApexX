@@ -65,6 +65,33 @@ and use it wherever the statement form cannot be placed. The cost is an allocati
 lambda and a virtual `invoke()` per element, which is why the loop form is the default;
 the two would need to coexist rather than one replacing the other.
 
+### A Func cannot return or accept a tuple
+
+```apex
+Func<Integer, (Integer, Integer)> doubleAndTriple = n => (n * 2, n * 3);
+(Integer doubled, Integer tripled) = doubleAndTriple(10);
+```
+
+The two structural-type systems compose in one direction only. A tuple can hold a `Func`
+-- `(Func<Account, Boolean>, String, Decimal)` is what `PortfolioRuleProvider.resolve`
+returns -- but a `Func` type argument that is a tuple is not resolved to the tuple's
+generated carrier, so lowering emits an interface whose `invoke` returns
+`(Integer, Integer)`, and the Apex parser rejects it.
+
+Two separate defects sat on top of that. The parser's type-argument split counted only
+`<` and `>`, so it read the return type as two arguments and reported
+`Func expects 2 lambda parameter(s), but got 1` -- sending the author to fix a lambda
+that was correct. That is fixed; parentheses now nest. What is left is refused with a
+diagnostic naming the tuple, rather than an `Unexpected '('` from the Apex parser
+positioned at the start of the file.
+
+**To fix:** resolve a tuple in a `Func` type argument through the same registry lookup
+that a top-level tuple type already uses, so the interface is emitted with the carrier
+name; lower a lambda body that is a tuple literal to `new ApexXTuples.ApexXTuple_x(...)`,
+which the tuple lowering already emits elsewhere; and let a destructuring binding take a
+`Func` invocation as its right-hand side, which today only accepts a method call. The
+same three pieces would allow `List<Func<...>>` of tuple-returning Funcs.
+
 ### A lambda cannot appear directly in a `return`
 
 ```apex

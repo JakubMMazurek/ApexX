@@ -202,6 +202,37 @@ export function parseApexX(source: string, fileName?: string): ApexXParseResult 
       }
     }
 
+    // A tuple inside a Func type argument is reasonable to write and is not
+    // supported: the Func interface would need the tuple's generated carrier as
+    // its return or parameter type, and nothing resolves it there, so lowering
+    // emits `invoke` returning `(Integer, Integer)` and the Apex parser rejects
+    // it with a message pointing at the wrong place. Say so here instead.
+    const tupleTypeArgument = [
+      ...assignment.parameterTypes,
+      assignment.returnType,
+    ].find(type => type.trim().startsWith("("));
+
+    if (tupleTypeArgument !== undefined) {
+      const offset = assignment.originalText.indexOf(tupleTypeArgument);
+
+      diagnostics.push({
+        severity: "error",
+        source: "apexx-parser",
+        message:
+          `A Func type argument cannot be a tuple type yet: '${tupleTypeArgument}'. `
+          + "A tuple can hold a Func, but a Func cannot yet return or accept one. "
+          + "Return a wrapper class, or use one Func per value.",
+        range: offset < 0
+          ? assignment.range
+          : createRange(
+            source,
+            assignment.range.start.offset + offset,
+            assignment.range.start.offset + offset + tupleTypeArgument.length,
+          ),
+      });
+      continue;
+    }
+
     const expectedParameterCount = assignment.parameterTypes.length;
     const actualParameterCount = assignment.lambda.parameters.length;
 
@@ -1439,10 +1470,19 @@ function previousNonWhitespace(
  * A comma inside `<...>` belongs to a nested generic, not to this list -- without that,
  * `Func<Map<Id, String>, Boolean>` reads as three arguments instead of two.
  */
+/**
+ * Splits a comma list of *types*, so `<` and `(` both nest.
+ *
+ * Angles are needed for `Map<Id, Account>`, and parentheses for a tuple type: the
+ * return type of `Func<Integer, (Integer, Integer)>` is one type argument, not two.
+ * Counting only angles reads that as a two-parameter Func and rejects the one
+ * lambda parameter the author wrote.
+ */
 function splitCommaList(source: string): string[] {
   const parts: string[] = [];
   let start = 0;
   let angleDepth = 0;
+  let parenDepth = 0;
 
   for (let cursor = 0; cursor < source.length; cursor += 1) {
     const current = source[cursor];
@@ -1451,7 +1491,11 @@ function splitCommaList(source: string): string[] {
       angleDepth += 1;
     } else if (current === ">" && angleDepth > 0) {
       angleDepth -= 1;
-    } else if (current === "," && angleDepth === 0) {
+    } else if (current === "(") {
+      parenDepth += 1;
+    } else if (current === ")" && parenDepth > 0) {
+      parenDepth -= 1;
+    } else if (current === "," && angleDepth === 0 && parenDepth === 0) {
       parts.push(source.slice(start, cursor).trim());
       start = cursor + 1;
     }
