@@ -38,18 +38,12 @@ export const STRATEGY_APEXX = `public static StrategyResult evaluateMode(
     String reason;
 
     if (mode == 'Revenue Exposure') {
-        rule = (account) => {
-            Decimal revenue = account.AnnualRevenue == null
-                ? 0
-                : account.AnnualRevenue;
-            return revenue >= exposureThreshold;
-        };
+        rule = (account) => account.AnnualRevenue != null
+            && account.AnnualRevenue >= exposureThreshold;
         reason = 'Revenue exposure';
     } else if (mode == 'Sales Ready') {
-        rule = (account) => {
-            Boolean hasNumber = account.AccountNumber != null;
-            return account.Rating == 'Hot' && hasNumber;
-        };
+        rule = (account) => account.Rating == 'Hot'
+            && account.AccountNumber != null;
         reason = 'Sales ready';
     } else {
         rule = (account) => account.AccountNumber == null;
@@ -228,18 +222,12 @@ public static (Func<Account, Boolean>, String, Decimal) resolve(
     String reason;
 
     if (mode == 'Revenue Exposure') {
-        rule = (account) => {
-            Decimal revenue = account.AnnualRevenue == null
-                ? 0
-                : account.AnnualRevenue;
-            return revenue >= exposureThreshold;
-        };
+        rule = (account) => account.AnnualRevenue != null
+            && account.AnnualRevenue >= exposureThreshold;
         reason = 'Revenue exposure';
     } else if (mode == 'Sales Ready') {
-        rule = (account) => {
-            Boolean hasNumber = account.AccountNumber != null;
-            return account.Rating == 'Hot' && hasNumber;
-        };
+        rule = (account) => account.Rating == 'Hot'
+            && account.AccountNumber != null;
         reason = 'Sales ready';
     } else {
         rule = (account) => account.AccountNumber == null;

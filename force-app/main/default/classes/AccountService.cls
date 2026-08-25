@@ -17,17 +17,15 @@ public with sharing class AccountService {
         }
 
         public Boolean invoke(Account account) {
-            Decimal revenue = account.AnnualRevenue == null
-                ? 0
-                : account.AnnualRevenue;
-            return revenue >= exposureThreshold;
+            return account.AnnualRevenue != null
+                && account.AnnualRevenue >= exposureThreshold;
         }
     }
 
     private class ApexXLambda2 implements ApexXFuncs.ApexXFunc_8420216b86a6 {
         public Boolean invoke(Account account) {
-            Boolean hasNumber = account.AccountNumber != null;
-            return account.Rating == 'Hot' && hasNumber;
+            return account.Rating == 'Hot'
+                && account.AccountNumber != null;
         }
     }
 
