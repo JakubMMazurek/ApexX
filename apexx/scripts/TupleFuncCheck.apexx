@@ -1,0 +1,31 @@
+// A Func that returns a tuple: the two structural-type systems composing.
+Func<Integer, (Integer, Integer)> doubleAndTriple = n => (n * 2, n * 3);
+
+(Integer doubled, Integer tripled) = doubleAndTriple(10);
+System.debug('doubled=' + doubled + ' tripled=' + tripled);
+
+// A block body reaching the same tuple through a return statement.
+Func<Integer, (Integer, String)> describe = (n) => {
+    Integer squared = n * n;
+    return (squared, squared > 50 ? 'large' : 'small');
+};
+
+(Integer squared, String label) = describe(9);
+System.debug('squared=' + squared + ' label=' + label);
+
+// Composing with the rest of it: a captured Func, and an sObject tuple.
+Decimal minimumRevenue = 200000;
+Func<Account, (String, Boolean)> summarise = (account) => (
+    account.Name,
+    account.AnnualRevenue != null && account.AnnualRevenue >= minimumRevenue
+);
+
+for (Account account : [
+    SELECT Id, Name, AnnualRevenue
+    FROM Account
+    WHERE Name LIKE 'ApexX Demo%'
+    ORDER BY Name
+]) {
+    (String name, Boolean isLarge) = summarise(account);
+    System.debug(name + ' large=' + isLarge);
+}

@@ -184,6 +184,19 @@ export function lowerApexXTuples(
     variables,
   );
 
+  // Before destructuring, so a Func that returns a tuple is registered as a
+  // tuple-returning callable and `(A a, B b) = f(x)` resolves through it.
+  collectFuncTupleTypes(
+    source,
+    transformations,
+    diagnostics,
+    carriers,
+    usedNames,
+    naming,
+    tupleReturningMethods,
+    variables,
+  );
+
   collectTupleDestructuring(
     source,
     transformations,
@@ -220,6 +233,159 @@ export function lowerApexXTuples(
       : [],
     map,
   };
+}
+
+/**
+ * A tuple used as a `Func` type argument, in either position.
+ *
+ * The structural-type systems used to compose one way only: a tuple could hold a
+ * `Func`, but a `Func` could not carry a tuple, because nothing resolved the tuple
+ * to its generated carrier inside a type argument. Lowering then emitted an
+ * interface whose `invoke` returned `(Integer, Integer)`, which is not an Apex
+ * type. Rewriting the argument to the carrier here means the Func machinery that
+ * runs later needs no knowledge of tuples at all.
+ */
+function collectFuncTupleTypes(
+  source: string,
+  transformations: Transformation[],
+  diagnostics: ApexXDiagnostic[],
+  carriers: Map<string, TupleCarrier>,
+  usedNames: Set<string>,
+  naming: SharedTypeNaming,
+  tupleReturningMethods: TupleReturningMethod[],
+  variables: Map<string, string>,
+): void {
+  const masked = maskCommentsAndStrings(source);
+
+  for (const match of masked.matchAll(/\bFunc\s*</g)) {
+    const openAngle = (match.index ?? 0) + match[0].length - 1;
+    const closeAngle = findMatchingDelimiter(masked, openAngle, "<", ">");
+
+    if (closeAngle === undefined) {
+      continue;
+    }
+
+    const argumentRanges = splitCommaRanges(masked, openAngle + 1, closeAngle);
+    let returnTypes: string[] | undefined;
+    let returnCarrier: TupleCarrier | undefined;
+
+    for (const [index, range] of argumentRanges.entries()) {
+      const text = source.slice(range.start, range.end);
+      const trimmed = text.trim();
+
+      if (!trimmed.startsWith("(") || !trimmed.endsWith(")")) {
+        continue;
+      }
+
+      const tupleStart = range.start + text.indexOf("(");
+      const tupleEnd = tupleStart + trimmed.length;
+      const types = parseTupleReturnTypes(trimmed.slice(1, -1));
+
+      if (types.length < 2 || types.some(type => !isSupportedTupleType(type))) {
+        diagnostics.push(tupleDiagnostic(
+          source,
+          tupleStart,
+          tupleEnd,
+          "APXX2411",
+          "A tuple in a Func type argument must contain at least two valid Apex types.",
+        ));
+        continue;
+      }
+
+      const carrier = getOrCreateCarrier(types, carriers, usedNames, naming);
+      transformations.push({
+        start: tupleStart,
+        end: tupleEnd,
+        replacement: carrier.name,
+      });
+
+      if (index === argumentRanges.length - 1) {
+        returnTypes = types;
+        returnCarrier = carrier;
+      }
+    }
+
+    if (returnCarrier === undefined || returnTypes === undefined) {
+      continue;
+    }
+
+    // `Func<..., (A, B)> name = ...` -- the variable becomes a tuple-returning
+    // callable, and its lambda body has to build the carrier rather than a tuple.
+    const declaration = /^\s+([A-Za-z][A-Za-z0-9_]*)\s*=\s*/.exec(
+      masked.slice(closeAngle + 1),
+    );
+
+    if (!declaration) {
+      continue;
+    }
+
+    tupleReturningMethods.push({
+      name: declaration[1],
+      types: returnTypes,
+    });
+
+    const arrowSearchFrom = closeAngle + 1 + declaration[0].length;
+    const arrow = masked.indexOf("=>", arrowSearchFrom);
+    const statementEnd = findStatementSemicolon(source, arrowSearchFrom);
+
+    if (arrow === -1 || statementEnd === undefined || arrow > statementEnd) {
+      continue;
+    }
+
+    const bodyStart = skipWhitespace(source, arrow + 2);
+
+    if (source[bodyStart] === "{") {
+      // A block body: `return (a, b);` is the shape collectTupleReturns handles.
+      const bodyEnd = findMatchingDelimiter(source, bodyStart, "{", "}");
+
+      if (bodyEnd !== undefined) {
+        collectTupleReturns(
+          source,
+          { bodyStart, bodyEnd, carrier: returnCarrier },
+          transformations,
+          diagnostics,
+          variables,
+        );
+      }
+      continue;
+    }
+
+    if (source[bodyStart] !== "(") {
+      continue;
+    }
+
+    // An expression body. A single parenthesised expression is not a tuple, so the
+    // element count is what separates `(a, b)` from `(a * b)`.
+    const bodyEnd = findMatchingDelimiter(source, bodyStart, "(", ")");
+
+    if (bodyEnd === undefined) {
+      continue;
+    }
+
+    const elements = splitCommaRanges(masked, bodyStart + 1, bodyEnd);
+
+    if (elements.length !== returnTypes.length) {
+      if (elements.length > 1) {
+        diagnostics.push(tupleDiagnostic(
+          source,
+          bodyStart,
+          bodyEnd + 1,
+          "APXX2412",
+          `This lambda returns ${elements.length} value(s), but its Func declares a tuple of ${returnTypes.length}.`,
+        ));
+      }
+      continue;
+    }
+
+    const values = elements
+      .map(element => source.slice(element.start, element.end).trim())
+      .join(", ");
+    transformations.push({
+      start: bodyStart,
+      end: bodyEnd + 1,
+      replacement: `new ${returnCarrier.name}(${values})`,
+    });
+  }
 }
 
 function collectMapTupleTypes(

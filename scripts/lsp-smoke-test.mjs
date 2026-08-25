@@ -595,6 +595,30 @@ try {
     "the squiggle should sit on the returned expression",
   );
 
+  // A Func carrying a tuple is valid and must not be squiggled. This reported
+  // "Func expects 2 lambda parameter(s), but got 1" in the editor, because the
+  // type-argument split counted only angle brackets and read the tuple return as
+  // two arguments.
+  const tupleFuncUri = pathToFileURL(
+    path.join(root, "apexx", "scripts", "TupleFuncProbe.apexx"),
+  ).href;
+  notify("textDocument/didOpen", {
+    textDocument: {
+      uri: tupleFuncUri,
+      languageId: "apexx",
+      version: 1,
+      text: `Func<Integer, (Integer, Integer)> doubleAndTriple = n => (n * 2, n * 3);
+(Integer doubled, Integer tripled) = doubleAndTriple(10);
+System.debug(doubled + tripled);
+`,
+    },
+  });
+  assert.deepEqual(
+    await waitForDiagnostics(tupleFuncUri, () => true),
+    [],
+    "a Func returning a tuple should publish no diagnostics",
+  );
+
   // An .apexx script is checked as an anonymous block. The compilation-unit rule
   // would reject every statement in it, so a clean script must publish nothing.
   const scriptUri = pathToFileURL(

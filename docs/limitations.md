@@ -65,33 +65,6 @@ and use it wherever the statement form cannot be placed. The cost is an allocati
 lambda and a virtual `invoke()` per element, which is why the loop form is the default;
 the two would need to coexist rather than one replacing the other.
 
-### A Func cannot return or accept a tuple
-
-```apex
-Func<Integer, (Integer, Integer)> doubleAndTriple = n => (n * 2, n * 3);
-(Integer doubled, Integer tripled) = doubleAndTriple(10);
-```
-
-The two structural-type systems compose in one direction only. A tuple can hold a `Func`
--- `(Func<Account, Boolean>, String, Decimal)` is what `PortfolioRuleProvider.resolve`
-returns -- but a `Func` type argument that is a tuple is not resolved to the tuple's
-generated carrier, so lowering emits an interface whose `invoke` returns
-`(Integer, Integer)`, and the Apex parser rejects it.
-
-Two separate defects sat on top of that. The parser's type-argument split counted only
-`<` and `>`, so it read the return type as two arguments and reported
-`Func expects 2 lambda parameter(s), but got 1` -- sending the author to fix a lambda
-that was correct. That is fixed; parentheses now nest. What is left is refused with a
-diagnostic naming the tuple, rather than an `Unexpected '('` from the Apex parser
-positioned at the start of the file.
-
-**To fix:** resolve a tuple in a `Func` type argument through the same registry lookup
-that a top-level tuple type already uses, so the interface is emitted with the carrier
-name; lower a lambda body that is a tuple literal to `new ApexXTuples.ApexXTuple_x(...)`,
-which the tuple lowering already emits elsewhere; and let a destructuring binding take a
-`Func` invocation as its right-hand side, which today only accepts a method call. The
-same three pieces would allow `List<Func<...>>` of tuple-returning Funcs.
-
 ### A lambda cannot appear directly in a `return`
 
 ```apex
@@ -157,6 +130,22 @@ is a comparison. That needs `splitTypeList` and `splitArgumentList` as separate 
 from a shared package, and each of the ~20 call sites assigned to the right one. Doing it
 with one angle-aware function would break SOQL and argument splitting.
 
+### A tuple in a `Func` parameter position exposes the carrier
+
+```apex
+Func<(Integer, Integer), Integer> total = t => t.item0 + t.item1;
+```
+
+This compiles, but `item0` is a generated field name. The return position does not have
+the problem -- there the author writes a tuple literal and reads it back through a
+destructuring binding with names they chose -- so the two positions are not equally
+finished, and only the return position is worth demonstrating.
+
+**To fix:** allow a destructuring binding in a lambda parameter list, `((Integer a,
+Integer b)) => a + b`, lowered by reading the carrier's fields into the named locals at
+the top of `invoke`. The tuple destructuring pass already emits exactly that shape for a
+statement.
+
 ### A hoisted loop after an inline `{` is indented oddly
 
 ```apex
@@ -208,6 +197,16 @@ These were limitations and are not any more. Each has a test named in
   are now found by matching braces.
 - **Nested generics in a `Func` type.** `Func<List<Account>, Integer>` was read as
   `Func<List<Account` and generated a corrupt class declaration.
+- **A tuple as a `Func` type argument.** `Func<Integer, (Integer, Integer)>` failed three
+  ways at once. The parser's type-argument split counted only angle brackets, so it read
+  the tuple return as two arguments and reported `Func expects 2 lambda parameter(s), but
+  got 1` -- sending the author to fix a lambda that was correct. Nothing resolved a tuple
+  inside a type argument to its generated carrier, so lowering emitted an interface whose
+  `invoke` returned `(Integer, Integer)`. And the alias scan covers the authored source as
+  well as the lowered one, so the pre-lowering form was registered too. The structural
+  types now compose both ways: a tuple could always hold a `Func`, and a `Func` can now
+  return or accept one, with the lambda body building the carrier and a destructuring
+  binding resolving through the call.
 - **A nested chain broken across lines.** The embedded pass matched the receiver only
   where its identifier ended exactly at the dot, so `numbers` on its own line followed by
   `.filter(...)` was read as an unresolvable receiver -- and reported as one, which was

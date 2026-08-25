@@ -220,6 +220,52 @@ assert.match(funcTupleSupport.source, /public ApexXFuncs\.ApexXFunc_[0-9a-f]{12}
 assert.match(funcTupleResult.output, /ApexXFuncs\.ApexXFunc_[0-9a-f]{12} rule = apexxTuple0\.item0;/);
 assert.match(funcTupleResult.output, /rule\.invoke\(account\)/);
 
+// The structural-type systems have to compose both ways. A tuple could always
+// hold a Func; a Func carrying a tuple used to emit an interface whose `invoke`
+// returned `(Integer, Integer)`, which is not an Apex type.
+const tupleFuncSource = `public class TupleFuncProbe {
+    public static Integer sum() {
+        Func<Integer, (Integer, Integer)> doubleAndTriple = n => (n * 2, n * 3);
+        (Integer doubled, Integer tripled) = doubleAndTriple(10);
+        return doubled + tripled;
+    }
+
+    public static String label(Integer value) {
+        Func<Integer, (Integer, String)> describe = (n) => {
+            Integer squared = n * n;
+            return (squared, 'squared');
+        };
+        (Integer squared, String text) = describe(value);
+        return text + squared;
+    }
+}`;
+const tupleFuncResult = transpileApexX(tupleFuncSource, {
+  sourceFileName: "TupleFuncProbe.clsx",
+});
+assert.deepEqual(
+  tupleFuncResult.diagnostics.filter(diagnostic => diagnostic.severity === "error"),
+  [],
+);
+// No tuple literal type and no `Func` may survive into the generated Apex.
+assert.doesNotMatch(tupleFuncResult.output, /\bFunc\s*</);
+assert.doesNotMatch(tupleFuncResult.output, /invoke\(Integer [A-Za-z]+\)\s*\{[^}]*return \(/);
+for (const supportClass of tupleFuncResult.supportClasses) {
+  assert.doesNotMatch(supportClass.source, /\bFunc\s*</);
+  assert.doesNotMatch(supportClass.source, /\(\s*Integer\s*,\s*Integer\s*\)/);
+  assert.equal(parseApex(supportClass.source).ok, true);
+}
+assert.equal(parseApex(tupleFuncResult.output).ok, true);
+// The lambda builds the carrier, and the call site destructures it.
+assert.match(
+  tupleFuncResult.output,
+  /return new ApexXTuples\.ApexXTuple_[0-9a-f]{12}\(n \* 2, n \* 3\);/,
+);
+assert.match(
+  tupleFuncResult.output,
+  /ApexXTuples\.ApexXTuple_[0-9a-f]{12} apexxTuple\d+ = doubleAndTriple\.invoke\(10\);/,
+);
+assert.match(tupleFuncResult.output, /Integer doubled = apexxTuple\d+\.item0;/);
+
 // A lambda that captures another Func -- a parameter, a loop variable, or a copy
 // -- used to declare the generated field with the authored `Func<...>` type. That
 // parsed here and then failed in the org with "Invalid type: Func", which is the

@@ -202,37 +202,6 @@ export function parseApexX(source: string, fileName?: string): ApexXParseResult 
       }
     }
 
-    // A tuple inside a Func type argument is reasonable to write and is not
-    // supported: the Func interface would need the tuple's generated carrier as
-    // its return or parameter type, and nothing resolves it there, so lowering
-    // emits `invoke` returning `(Integer, Integer)` and the Apex parser rejects
-    // it with a message pointing at the wrong place. Say so here instead.
-    const tupleTypeArgument = [
-      ...assignment.parameterTypes,
-      assignment.returnType,
-    ].find(type => type.trim().startsWith("("));
-
-    if (tupleTypeArgument !== undefined) {
-      const offset = assignment.originalText.indexOf(tupleTypeArgument);
-
-      diagnostics.push({
-        severity: "error",
-        source: "apexx-parser",
-        message:
-          `A Func type argument cannot be a tuple type yet: '${tupleTypeArgument}'. `
-          + "A tuple can hold a Func, but a Func cannot yet return or accept one. "
-          + "Return a wrapper class, or use one Func per value.",
-        range: offset < 0
-          ? assignment.range
-          : createRange(
-            source,
-            assignment.range.start.offset + offset,
-            assignment.range.start.offset + offset + tupleTypeArgument.length,
-          ),
-      });
-      continue;
-    }
-
     const expectedParameterCount = assignment.parameterTypes.length;
     const actualParameterCount = assignment.lambda.parameters.length;
 

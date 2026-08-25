@@ -1801,6 +1801,16 @@ function collectFuncTypeAliases(
 
     const parameterTypes = typeArguments.slice(0, -1).map(toApexType);
     const returnType = toApexType(typeArguments.at(-1) ?? "Object");
+
+    // The scan covers the authored source as well as the lowered one, so a Func
+    // carrying a tuple is seen twice: once as `(Integer, Integer)` and once as the
+    // carrier the tuple pass rewrote it to. Only the lowered form is a real Apex
+    // type, and registering the other would emit an interface returning a tuple
+    // literal type.
+    if ([...parameterTypes, returnType].some(type => type.startsWith("("))) {
+      continue;
+    }
+
     const signature = funcSignatureKey(parameterTypes, returnType);
 
     if (!aliases.has(signature)) {
