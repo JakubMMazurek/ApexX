@@ -1,0 +1,37 @@
+// Predicates as values: what a String mode flag cannot do.
+//
+// A rule closes over the scope it was written in, is handed to a method that
+// does not know which rule it received, and composes with other rules into a
+// single value built at run time. The loop is the interesting case -- each pass
+// captures the predicate from the pass before it.
+List<Account> accounts = [
+    SELECT Id, Name, AccountNumber, AnnualRevenue
+    FROM Account
+    WHERE Name LIKE 'ApexX Demo%'
+    ORDER BY Name
+];
+
+Decimal threshold = 250000;
+
+Func<Account, Boolean> hasRevenue = (account) => account.AnnualRevenue != null;
+Func<Account, Boolean> isLarge = (account) => hasRevenue(account)
+    && account.AnnualRevenue >= threshold;
+Func<Account, Boolean> hasNumber = (account) => account.AccountNumber != null;
+
+System.debug('hasRevenue: ' + accounts.count(account => hasRevenue(account)));
+System.debug('isLarge (composed on hasRevenue): ' + accounts.count(account => isLarge(account)));
+
+List<Func<Account, Boolean>> rules = new List<Func<Account, Boolean>>{
+    isLarge,
+    hasNumber
+};
+
+Func<Account, Boolean> combined = (account) => true;
+for (Func<Account, Boolean> rule : rules) {
+    Func<Account, Boolean> previous = combined;
+    Func<Account, Boolean> next = (account) => previous(account) && rule(account);
+    combined = next;
+}
+
+System.debug('accumulated in a loop (expect 2: large AND numbered): '
+    + accounts.count(account => combined(account)));

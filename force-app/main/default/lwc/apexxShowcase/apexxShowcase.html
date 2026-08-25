@@ -167,7 +167,7 @@
                                     <div>
                                         <h3>Resolve a portfolio rule once, then pass behavior—not a mode flag</h3>
                                         <p>Three runtime modes select a typed closure. The evaluator stays independent of mode branching and reuses the rule across count, find, and a block map.</p>
-                                        <p class="dailyWin"><strong>A <code>String</code> mode is re-interpreted by every branch that receives it</strong>, and a typo in <code>'Sales Ready'</code> is a silent no-op at runtime. A <code>Func&lt;Account, Boolean&gt;</code> is the decision itself: checked when it compiles, testable on its own, impossible to misspell. A fourth mode lands in one place instead of two helpers whose branches have to correspond exactly.</p>
+                                        <p class="dailyWin"><strong>Apex can pass data; it cannot pass behaviour.</strong> A <code>String</code> mode with constants is perfectly good Apex&mdash;right up to the point where you want to hand the decision to something else. Then Apex needs an interface and a named class per rule, with the captured values threaded through a constructor by hand, which is exactly the class ApexX generates for you. That is why <code>evaluateRenewalStrategy</code> is written once and applies whatever rule it is handed to <code>count</code>, <code>find</code> and <code>map</code>, without knowing which mode produced it. Predicates compose as well: a lambda can capture another <code>Func</code>, so several criteria combine into one value at runtime instead of a branch per combination.</p>
                                     </div>
                                 </div>
 

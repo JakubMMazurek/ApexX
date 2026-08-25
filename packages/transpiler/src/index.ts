@@ -174,6 +174,7 @@ export function transpileApexX(
       assignment,
       declaredVariables,
       funcLambdaAssignments,
+      funcTypeAliases,
     );
 
     if (assignment.parameterTypes.length === assignment.lambda.parameters.length) {
@@ -1814,6 +1815,35 @@ function collectFuncTypeAliases(
   return aliases;
 }
 
+// The text-level pass below rewrites every `Func<...>` the source contains.
+// Generated capture fields never go through it, so they need the same lookup.
+function lowerFuncTypeReference(
+  type: string | undefined,
+  aliases: Map<string, FuncTypeAlias>,
+): string | undefined {
+  if (type === undefined) {
+    return undefined;
+  }
+
+  const match = /^Func\s*<\s*([^>\r\n]+?)\s*>$/.exec(type.trim());
+
+  if (!match) {
+    return type;
+  }
+
+  const typeArguments = splitCommaList(match[1] ?? "");
+
+  if (typeArguments.length < 1) {
+    return type;
+  }
+
+  const parameterTypes = typeArguments.slice(0, -1).map(toApexType);
+  const returnType = toApexType(typeArguments.at(-1) ?? "Object");
+
+  return aliases.get(funcSignatureKey(parameterTypes, returnType))?.interfaceName
+    ?? type;
+}
+
 function replaceFuncTypeReferences(
   source: string,
   aliases: Map<string, FuncTypeAlias>,
@@ -1885,6 +1915,7 @@ function inferCapturedVariables(
   assignment: FuncLambdaAssignment,
   declaredVariables: Map<string, string>,
   funcLambdaAssignments: FuncLambdaAssignment[],
+  funcTypeAliases: Map<string, FuncTypeAlias>,
 ): CapturedVariable[] {
   const captures: CapturedVariable[] = [];
   const capturedNames = new Set<string>();
@@ -1916,7 +1947,13 @@ function inferCapturedVariables(
     }
 
     const capturedFunc = funcAssignmentsByName.get(normalized);
-    const capturedType = capturedFunc?.interfaceName ?? declaredVariables.get(normalized);
+    // A captured variable that is itself a Func -- a parameter, a loop variable,
+    // or a copy of another Func -- is not a lambda assignment, so its declared
+    // type is the authored `Func<...>`. The generated inner class has to declare
+    // the field with the lowered interface name: `Func` is not an Apex type, and
+    // emitting it produces a class that only fails when the org compiles it.
+    const capturedType = capturedFunc?.interfaceName
+      ?? lowerFuncTypeReference(declaredVariables.get(normalized), funcTypeAliases);
 
     if (!capturedType) {
       continue;

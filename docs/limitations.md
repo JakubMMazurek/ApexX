@@ -65,6 +65,33 @@ and use it wherever the statement form cannot be placed. The cost is an allocati
 lambda and a virtual `invoke()` per element, which is why the loop form is the default;
 the two would need to coexist rather than one replacing the other.
 
+### A lambda cannot appear directly in a `return`
+
+```apex
+public static Func<Account, Boolean> both(
+    Func<Account, Boolean> left,
+    Func<Account, Boolean> right
+) {
+    return (account) => left(account) && right(account);   // refused
+}
+```
+
+```apex
+    Func<Account, Boolean> combined = (account) => left(account) && right(account);
+    return combined;                                       // works
+```
+
+Lambdas are recognised in a `Func` assignment and as an argument to an ApexX `List<T>`
+method, and nowhere else, so a lambda in a `return` is reported as an unsupported lambda
+form. The restriction is syntactic rather than semantic: assigning it to a local first
+compiles, so higher-order methods, closures over runtime values and predicate
+composition all work today -- they just cost one named local each.
+
+**To fix:** treat a `return` whose expression is a lambda as an assignment to a
+synthesised local followed by `return <local>`, which is the shape the lowering already
+emits. The same argument applies to a lambda passed as an argument to an ordinary
+method.
+
 ### The receiver must be a simple local
 
 ```apex

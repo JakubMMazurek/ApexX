@@ -220,6 +220,57 @@ assert.match(funcTupleSupport.source, /public ApexXFuncs\.ApexXFunc_[0-9a-f]{12}
 assert.match(funcTupleResult.output, /ApexXFuncs\.ApexXFunc_[0-9a-f]{12} rule = apexxTuple0\.item0;/);
 assert.match(funcTupleResult.output, /rule\.invoke\(account\)/);
 
+// A lambda that captures another Func -- a parameter, a loop variable, or a copy
+// -- used to declare the generated field with the authored `Func<...>` type. That
+// parsed here and then failed in the org with "Invalid type: Func", which is the
+// worst kind of bug: composition type-checked locally and could not be deployed.
+const capturedFuncSource = `public class CapturedFuncProbe {
+    public static Func<Account, Boolean> both(
+        Func<Account, Boolean> left,
+        Func<Account, Boolean> right
+    ) {
+        Func<Account, Boolean> combined = (account) => left(account) && right(account);
+        return combined;
+    }
+
+    public static Integer accumulate(
+        List<Account> accounts,
+        List<Func<Account, Boolean>> rules
+    ) {
+        Func<Account, Boolean> combined = (account) => true;
+
+        for (Func<Account, Boolean> rule : rules) {
+            Func<Account, Boolean> previous = combined;
+            Func<Account, Boolean> next = (account) => previous(account) && rule(account);
+            combined = next;
+        }
+
+        return accounts.count(account => combined(account));
+    }
+}`;
+const capturedFuncResult = transpileApexX(capturedFuncSource, {
+  sourceFileName: "CapturedFuncProbe.clsx",
+});
+assert.deepEqual(
+  capturedFuncResult.diagnostics.filter(diagnostic => diagnostic.severity === "error"),
+  [],
+);
+// The generated Apex must not mention `Func` anywhere: it is not an Apex type.
+assert.doesNotMatch(capturedFuncResult.output, /\bFunc\s*</);
+for (const supportClass of capturedFuncResult.supportClasses) {
+  assert.doesNotMatch(supportClass.source, /\bFunc\s*</);
+  assert.equal(parseApex(supportClass.source).ok, true);
+}
+assert.equal(parseApex(capturedFuncResult.output).ok, true);
+assert.match(
+  capturedFuncResult.output,
+  /private ApexXFuncs\.ApexXFunc_[0-9a-f]{12} previous;\s*private ApexXFuncs\.ApexXFunc_[0-9a-f]{12} rule;/,
+);
+assert.match(
+  capturedFuncResult.output,
+  /return previous\.invoke\(account\) && rule\.invoke\(account\);/,
+);
+
 const blockLambdaSource = `public class BlockLambdaProbe {
     public static List<String> select(List<Account> accounts, Decimal threshold) {
         Func<Account, Boolean> isEligible = (account) => {
