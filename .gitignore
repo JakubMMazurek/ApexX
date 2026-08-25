@@ -15,3 +15,6 @@ coverage/
 
 # Authored scripts belong in apexx/scripts; scripts/apex holds generated blocks.
 scripts/apex/*.apexx
+# Scratch. A generated block is only worth tracking when apexx/scripts has
+# the .apexx it came from, and there is no test.apexx there.
+scripts/apex/test.apex
