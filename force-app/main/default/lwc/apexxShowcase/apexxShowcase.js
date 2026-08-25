@@ -231,7 +231,33 @@ public static void triggerUserFriendlyError() {
     }
 }`;
 
-const WORKFLOW_APEX = `@AuraEnabled
+const WORKFLOW_APEX = `// PortfolioRuleProvider.cls
+public static final Decimal EXPOSURE_THRESHOLD = 250000;
+
+public static Boolean matchesMode(Account account, String mode) {
+    if (mode == 'Revenue Exposure') {
+        return account.AnnualRevenue != null
+            && account.AnnualRevenue >= EXPOSURE_THRESHOLD;
+    }
+    if (mode == 'Sales Ready') {
+        return account.Rating == 'Hot'
+            && account.AccountNumber != null;
+    }
+    return account.AccountNumber == null;
+}
+
+public static String reasonFor(String mode) {
+    if (mode == 'Revenue Exposure') {
+        return 'Revenue exposure';
+    }
+    if (mode == 'Sales Ready') {
+        return 'Sales ready';
+    }
+    return 'Missing account number';
+}
+
+// AccountService.cls · four of the class's thirteen decorated endpoints
+@AuraEnabled
 public static PortfolioBriefing runPortfolioBriefing(
     String mode,
     Decimal minimumRevenue
@@ -250,6 +276,53 @@ public static PortfolioBriefing runPortfolioBriefing(
     }
 }
 
+@AuraEnabled
+public static EmailPipelineResult runEmailPipeline() {
+    try {
+        return inspectPortfolio(demoAccountsWithContacts());
+    } catch (Exception ex) {
+        throw new LwcUtil()
+            .getUserFriendlyException(ex, new List<Type>(), null);
+    }
+}
+
+@AuraEnabled
+public static StrategyResult runRenewalStrategy(String mode) {
+    try {
+        return evaluateMode(demoAccounts(), mode);
+    } catch (Exception ex) {
+        throw new LwcUtil()
+            .getUserFriendlyException(ex, new List<Type>(), null);
+    }
+}
+
+@AuraEnabled
+public static TupleDemoResult runTupleDemo() {
+    try {
+        return AccountSignalConsumer.buildResult(demoAccounts());
+    } catch (Exception ex) {
+        throw new LwcUtil()
+            .getUserFriendlyException(ex, new List<Type>(), null);
+    }
+}
+
+public static List<AccountWorkItem> buildSelectedWork(
+    List<Account> accounts,
+    String reason
+) {
+    List<AccountWorkItem> work = new List<AccountWorkItem>();
+    for (Account account : accounts) {
+        work.add(new AccountWorkItem(
+            account.Id,
+            account.Name,
+            account.OwnerId,
+            'High',
+            reason
+        ));
+    }
+    return work;
+}
+
 public static PortfolioBriefing buildPortfolioBriefing(List<Account> accounts) {
     return buildPortfolioBriefing(accounts, 'Revenue Exposure', 100000);
 }
@@ -261,76 +334,52 @@ public static PortfolioBriefing buildPortfolioBriefing(
     return buildPortfolioBriefing(accounts, mode, 100000);
 }
 
-private static Boolean matchesMode(
-    Account account,
-    String mode,
-    Decimal exposureThreshold
-) {
-    if (mode == 'Revenue Exposure') {
-        return account.AnnualRevenue != null
-            && account.AnnualRevenue >= exposureThreshold;
-    }
-    if (mode == 'Sales Ready') {
-        return account.Rating == 'Hot'
-            && account.AccountNumber != null;
-    }
-    return account.AccountNumber == null;
-}
-
-private static String reasonFor(String mode) {
-    if (mode == 'Revenue Exposure') {
-        return 'Revenue exposure';
-    }
-    if (mode == 'Sales Ready') {
-        return 'Sales ready';
-    }
-    return 'Missing account number';
-}
-
 public static PortfolioBriefing buildPortfolioBriefing(
     List<Account> accounts,
     String mode,
     Decimal minimumRevenue
 ) {
-    Decimal exposureThreshold = 250000;
+    String escalationReason = PortfolioRuleProvider.reasonFor(mode);
     List<Account> selected = new List<Account>();
-    List<AccountWorkItem> work = new List<AccountWorkItem>();
-    List<String> emails = new List<String>();
-    String reason = reasonFor(mode);
+    List<String> stakeholderEmails = new List<String>();
 
+    // One fused pass: conventional Apex at its most efficient.
     for (Account account : accounts) {
         if (account.AnnualRevenue == null
             || account.AnnualRevenue < minimumRevenue
-            || !matchesMode(account, mode, exposureThreshold)) {
+            || !PortfolioRuleProvider.matchesMode(account, mode)) {
             continue;
         }
 
         selected.add(account);
-        work.add(new AccountWorkItem(
-            account.Id,
-            account.Name,
-            account.OwnerId,
-            'High',
-            reason
-        ));
 
         for (Contact contact : account.Contacts) {
             if (contact.Email != null) {
-                emails.add(contact.Email.trim().toLowerCase());
+                stakeholderEmails.add(contact.Email.trim().toLowerCase());
             }
         }
     }
 
+    List<AccountWorkItem> workItems = buildSelectedWork(
+        selected,
+        escalationReason
+    );
+
     return new PortfolioBriefing(
         mode,
         minimumRevenue,
-        exposureThreshold,
+        PortfolioRuleProvider.EXPOSURE_THRESHOLD,
         accounts.size(),
         selected.size(),
-        work,
-        emails
+        workItems,
+        stakeholderEmails
     );
 }`;
+
+// Reductions are measured off the panels themselves, so a number on screen can
+// never disagree with the code beside it.
+const reduction = (apex, apexx) =>
+    Math.round((1 - apexx.split('\n').length / apex.split('\n').length) * 100);
 
 // A panel renders one <li> per line so CSS can number the gutter. The number is
 // generated content, so selecting the panel still copies just the code.
@@ -389,9 +438,11 @@ export default class ApexxShowcase extends LightningElement {
     workflowApexXRows = toLines(WORKFLOW_APEXX);
     workflowApexLines = WORKFLOW_APEX.split('\n').length;
     workflowApexXLines = WORKFLOW_APEXX.split('\n').length;
-    workflowReduction = Math.round(
-        (1 - WORKFLOW_APEXX.split('\n').length / WORKFLOW_APEX.split('\n').length) * 100
-    );
+    workflowReduction = reduction(WORKFLOW_APEX, WORKFLOW_APEXX);
+    emailReduction = reduction(EMAIL_APEX, EMAIL_APEXX);
+    tupleReduction = reduction(TUPLE_APEX, TUPLE_APEXX);
+    defaultReduction = reduction(DEFAULT_APEX, DEFAULT_APEXX);
+    decoratorReduction = reduction(DECORATOR_APEX, DECORATOR_APEXX);
 
     connectedCallback() {
         this.loadOverview();

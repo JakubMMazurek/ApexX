@@ -545,6 +545,19 @@ h3 {
     color: #ffffff;
 }
 
+.dailyWin {
+    border-left: 2px solid var(--apexx-purple);
+    color: var(--apexx-ink);
+    font-size: 0.83rem;
+    line-height: 1.55;
+    margin: 0.75rem 0 0;
+    padding-left: 0.75rem;
+}
+
+.dailyWin strong {
+    color: var(--apexx-purple);
+}
+
 .codeGrid {
     display: grid;
     gap: 0.85rem;

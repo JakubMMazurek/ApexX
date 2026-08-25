@@ -566,8 +566,8 @@ try {
   // expression, in the authored file.
   const lambdaPath = path.join(root, "apexx", "classes", "AccountService.clsx");
   const lambdaText = readFileSync(lambdaPath, "utf8").replace(
-    "return account.Rating == 'Hot' && hasNumber;",
-    "return 10;",
+    "rule = (account) => account.AccountNumber == null;",
+    "rule = (account) => {\n                return 10;\n            };",
   );
   assert.notEqual(lambdaText, readFileSync(lambdaPath, "utf8"), "lambda probe did not apply");
   const lambdaUri = pathToFileURL(lambdaPath).href;

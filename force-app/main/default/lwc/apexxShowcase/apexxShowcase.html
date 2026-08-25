@@ -80,6 +80,7 @@
                                     <div>
                                         <h3>Turn a queried object graph into typed portfolio signals</h3>
                                         <p>Flatten and normalize child records, then terminate the same typed collection with count, any, all, and find.</p>
+                                        <p class="dailyWin"><strong>{emailReduction}% less code</strong>, and the intent is legible in one place. The Apex version keeps six accumulators alive by hand across a nested loop—six more things to initialise correctly, update in the right branch, and read back at the end.</p>
                                     </div>
                                     <div class="typeTrail" aria-label="Inferred type flow">
                                         <span>Account</span><b>→</b><span>Contact</span><b>→</b><span>String</span>
@@ -166,6 +167,7 @@
                                     <div>
                                         <h3>Resolve a portfolio rule once, then pass behavior—not a mode flag</h3>
                                         <p>Three runtime modes select a typed closure. The evaluator stays independent of mode branching and reuses the rule across count, find, and a block map.</p>
+                                        <p class="dailyWin"><strong>Roughly the same line count, and that is the point.</strong> The rule stops being a String re-interpreted in every branch and becomes a value you can pass, store, and test on its own. A fourth mode is one more lambda, not one more branch in two helpers that have to agree with each other.</p>
                                     </div>
                                 </div>
 
@@ -273,6 +275,7 @@
                                     <div>
                                         <h3>Key two calculated values by record Id—without a wrapper or parallel maps</h3>
                                         <p>Each Account produces revenue per employee and a review flag. Conventional Apex needs a tiny value class (or two maps that must stay synchronized); ApexX makes the pair the strongly typed map value.</p>
+                                        <p class="dailyWin"><strong>{tupleReduction}% less code</strong>, and no wrapper class to name, document, and keep in step with its own two fields. The alternative—two parallel maps—is a bug waiting for the day one of them is updated and the other is not.</p>
                                     </div>
                                     <div class="typeTrail" aria-label="Cross-class type path">
                                         <span>Account Id</span><b>→</b><span>(Decimal, Boolean)</span><b>→</b><span>Consumer.clsx</span>
@@ -364,6 +367,7 @@
                                     <div>
                                         <h3>Two optional parameters, three clean call shapes</h3>
                                         <p>Use both defaults, override the first, or override both—without maintaining a ladder of forwarding overloads.</p>
+                                        <p class="dailyWin"><strong>{defaultReduction}% less code</strong>, and one signature to read. An overload ladder is three bodies that must stay consistent; a default is a value written exactly where the parameter is declared, so it cannot drift.</p>
                                     </div>
                                 </div>
 
@@ -483,6 +487,7 @@
                                     <div>
                                         <h3>Make cross-cutting error policy declarative</h3>
                                         <p>Run the same failure without protection and through a custom ApexX decorator, then compare what reaches the LWC.</p>
+                                        <p class="dailyWin"><strong>{decoratorReduction}% less code</strong> on a single endpoint—and this class decorates thirteen. The policy lives in one class instead of being pasted into every method that faces a client, so changing how failures are reported is one edit.</p>
                                     </div>
                                     <span class="boundaryBadge">Exception → Decorator → Safe LWC error</span>
                                 </div>
@@ -773,14 +778,14 @@
                                     <div class="exampleLead workflowLead">
                                         <div>
                                             <p class="sectionEyebrow">Everything working together</p>
-                                            <h3>Build a portfolio briefing from live account and contact data</h3>
-                                            <p>An error boundary, two defaulted parameters, a cross-class tuple of strategy metadata, a captured typed Func, three runtime modes, collection terminals, block mapping, contact flattening, and normalization—composed as ordinary application code.</p>
+                                            <h3>A realistic controller slice, with every feature carrying load at once</h3>
+                                            <p>Four decorated <code>@AuraEnabled</code> endpoints, two defaulted parameters, a cross-class tuple carrying a captured typed <code>Func</code> and its metadata, three runtime modes, and the collection pipeline that flattens contacts and normalizes their emails—composed as ordinary application code, not as a demonstration.</p>
                                         </div>
                                     </div>
 
                                     <div class="sourceScore">
                                         <div><span>Conventional Apex</span><strong>{workflowApexLines} lines</strong></div>
-                                        <div class="sourceScore_delta"><strong>{workflowReduction}% less authored code</strong><span>Both sides complete and unabridged; the ApexX panel is sliced from the file that compiles</span></div>
+                                        <div class="sourceScore_delta"><strong>{workflowReduction}% less authored code</strong><span>Four of the class's thirteen decorated endpoints, complete and unabridged on both sides</span></div>
                                         <div><span>ApexX</span><strong>{workflowApexXLines} lines</strong></div>
                                     </div>
 
@@ -812,8 +817,13 @@
                                     </div>
 
                                     <aside class="techCallout">
-                                        <strong>The line count is the least interesting number here</strong>
-                                        <span>Both panels are the whole behaviour, formatted the same way, so the delta is modest and honest. What actually changed is structural: the mode ladder became a value that crosses a class boundary, the three-deep overload ladder became two defaulted parameters, the error wrapper became one annotation, and the two-value return needed no wrapper class. None of those show up as lines removed, and all of them are why the next change is cheaper.</span>
+                                        <strong>Why this is a fair comparison</strong>
+                                        <span>The Apex side is conventional Apex at its best, not a straw man: one fused pass rather than two, a shared rule helper rather than duplicated conditions, and the minimal try/catch the decorator itself lowers to. The saving is not cleverness on either side. It is that error policy and optional parameters cost lines <em>per endpoint</em>, and a real controller has thirteen of them—four are shown here. Scale the four to thirteen and the ceremony, not the logic, is what grows.</span>
+                                    </aside>
+
+                                    <aside class="techCallout">
+                                        <strong>What no line count can show</strong>
+                                        <span>The mode ladder became a value that crosses a class boundary, so a new mode is a new lambda rather than another branch in two helpers that must agree. That is worth more than the percentage, and it is why the next change is cheaper.</span>
                                     </aside>
 
                                     <div class="runBar">

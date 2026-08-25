@@ -237,7 +237,7 @@ public static (Func<Account, Boolean>, String, Decimal) resolve(
     return (rule, reason, exposureThreshold);
 }
 
-// AccountService.clsx
+// AccountService.clsx · four of the class's thirteen decorated endpoints
 @AuraEnabled
 @UserFriendlyError(message = 'Unable to build the portfolio briefing.')
 public static PortfolioBriefing runPortfolioBriefing(String mode, Decimal minimumRevenue) {
@@ -245,6 +245,24 @@ public static PortfolioBriefing runPortfolioBriefing(String mode, Decimal minimu
     return minimumRevenue == null
         ? buildPortfolioBriefing(accounts, mode)
         : buildPortfolioBriefing(accounts, mode, minimumRevenue);
+}
+
+@AuraEnabled
+@UserFriendlyError
+public static EmailPipelineResult runEmailPipeline() {
+    return inspectPortfolio(demoAccountsWithContacts());
+}
+
+@AuraEnabled
+@UserFriendlyError
+public static StrategyResult runRenewalStrategy(String mode) {
+    return evaluateMode(demoAccounts(), mode);
+}
+
+@AuraEnabled
+@UserFriendlyError
+public static TupleDemoResult runTupleDemo() {
+    return AccountSignalConsumer.buildResult(demoAccounts());
 }
 
 public static List<AccountWorkItem> buildSelectedWork(
