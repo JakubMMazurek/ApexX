@@ -80,7 +80,7 @@
                                     <div>
                                         <h3>Turn a queried object graph into typed portfolio signals</h3>
                                         <p>Flatten and normalize child records, then terminate the same typed collection with count, any, all, and find.</p>
-                                        <p class="dailyWin"><strong>{emailReduction}% less code</strong>, and the intent is legible in one place. The Apex version keeps six accumulators alive by hand across a nested loop—six more things to initialise correctly, update in the right branch, and read back at the end.</p>
+                                        <p class="dailyWin"><strong>It reads in the order the work happens:</strong> flatten the contacts, keep the valid emails, normalise them. The Apex version says the same thing with six accumulators you have to initialise correctly, update in the right branch, and read back at the end, so the intent is only recoverable by running the loop in your head.</p>
                                     </div>
                                     <div class="typeTrail" aria-label="Inferred type flow">
                                         <span>Account</span><b>→</b><span>Contact</span><b>→</b><span>String</span>
@@ -167,7 +167,7 @@
                                     <div>
                                         <h3>Resolve a portfolio rule once, then pass behavior—not a mode flag</h3>
                                         <p>Three runtime modes select a typed closure. The evaluator stays independent of mode branching and reuses the rule across count, find, and a block map.</p>
-                                        <p class="dailyWin"><strong>Roughly the same line count, and that is the point.</strong> The rule stops being a String re-interpreted in every branch and becomes a value you can pass, store, and test on its own. A fourth mode is one more lambda, not one more branch in two helpers that have to agree with each other.</p>
+                                        <p class="dailyWin"><strong>A <code>String</code> mode is re-interpreted by every branch that receives it</strong>, and a typo in <code>'Sales Ready'</code> is a silent no-op at runtime. A <code>Func&lt;Account, Boolean&gt;</code> is the decision itself: checked when it compiles, testable on its own, impossible to misspell. A fourth mode lands in one place instead of two helpers whose branches have to correspond exactly.</p>
                                     </div>
                                 </div>
 
@@ -275,7 +275,7 @@
                                     <div>
                                         <h3>Key two calculated values by record Id—without a wrapper or parallel maps</h3>
                                         <p>Each Account produces revenue per employee and a review flag. Conventional Apex needs a tiny value class (or two maps that must stay synchronized); ApexX makes the pair the strongly typed map value.</p>
-                                        <p class="dailyWin"><strong>{tupleReduction}% less code</strong>, and no wrapper class to name, document, and keep in step with its own two fields. The alternative—two parallel maps—is a bug waiting for the day one of them is updated and the other is not.</p>
+                                        <p class="dailyWin"><strong>The signature answers the question.</strong> <code>Map&lt;Id, (Decimal, Boolean)&gt;</code> tells you what comes back without opening another file. The alternatives are a wrapper class to name, document and keep in step with its own two fields, or two parallel maps, which is a bug waiting for the day one is updated and the other is not.</p>
                                     </div>
                                     <div class="typeTrail" aria-label="Cross-class type path">
                                         <span>Account Id</span><b>→</b><span>(Decimal, Boolean)</span><b>→</b><span>Consumer.clsx</span>
@@ -367,7 +367,7 @@
                                     <div>
                                         <h3>Two optional parameters, three clean call shapes</h3>
                                         <p>Use both defaults, override the first, or override both—without maintaining a ladder of forwarding overloads.</p>
-                                        <p class="dailyWin"><strong>{defaultReduction}% less code</strong>, and one signature to read. An overload ladder is three bodies that must stay consistent; a default is a value written exactly where the parameter is declared, so it cannot drift.</p>
+                                        <p class="dailyWin"><strong>The default is written where the parameter is declared</strong>, so “what happens if I omit it” is answered on screen. An overload ladder puts that answer in three separate bodies that have to agree, and changing it means finding all of them.</p>
                                     </div>
                                 </div>
 
@@ -487,7 +487,7 @@
                                     <div>
                                         <h3>Make cross-cutting error policy declarative</h3>
                                         <p>Run the same failure without protection and through a custom ApexX decorator, then compare what reaches the LWC.</p>
-                                        <p class="dailyWin"><strong>{decoratorReduction}% less code</strong> on a single endpoint—and this class decorates thirteen. The policy lives in one class instead of being pasted into every method that faces a client, so changing how failures are reported is one edit.</p>
+                                        <p class="dailyWin"><strong>How failures reach the client is stated once, as policy</strong>, on the method it applies to. The Apex version repeats the same block in all thirteen endpoints: thirteen chances to catch the wrong type, omit the wrapper or leak an internal message, and thirteen edits the day the policy changes.</p>
                                     </div>
                                     <span class="boundaryBadge">Exception → Decorator → Safe LWC error</span>
                                 </div>
@@ -717,7 +717,7 @@
                 <section class="chapter revealChapter" aria-labelledby="reveal-heading">
                     <div class="chapterIntro revealIntro">
                         <p class="sectionEyebrow">04 · The payoff</p>
-                        <h2 id="reveal-heading">Read the source. Run the behavior. Then count what disappeared.</h2>
+                        <h2 id="reveal-heading">Read the source. Run the behavior. Then ask what you would have to change.</h2>
                         <p>The comparison is realistic authored Apex versus complete authored ApexX for the same application behavior. Shared DTOs, queries, and error utilities are excluded from both sides; the ApexX rule provider and mapping helper are included. Generated Apex is not part of the source comparison for the same reason a TypeScript demo does not judge emitted JavaScript as hand-written source.</p>
                     </div>
                     <section class="dataset" aria-labelledby="dataset-heading">
@@ -785,7 +785,7 @@
 
                                     <div class="sourceScore">
                                         <div><span>Conventional Apex</span><strong>{workflowApexLines} lines</strong></div>
-                                        <div class="sourceScore_delta"><strong>{workflowReduction}% less authored code</strong><span>Four of the class's thirteen decorated endpoints, complete and unabridged on both sides</span></div>
+                                        <div class="sourceScore_delta"><strong>One place to change, not thirteen</strong><span>{workflowReduction}% fewer lines is a side effect</span></div>
                                         <div><span>ApexX</span><strong>{workflowApexXLines} lines</strong></div>
                                     </div>
 
@@ -817,13 +817,13 @@
                                     </div>
 
                                     <aside class="techCallout">
-                                        <strong>Why this is a fair comparison</strong>
-                                        <span>The Apex side is conventional Apex at its best, not a straw man: one fused pass rather than two, a shared rule helper rather than duplicated conditions, and the minimal try/catch the decorator itself lowers to. The saving is not cleverness on either side. It is that error policy and optional parameters cost lines <em>per endpoint</em>, and a real controller has thirteen of them—four are shown here. Scale the four to thirteen and the ceremony, not the logic, is what grows.</span>
+                                        <strong>Three changes this workflow will actually get</strong>
+                                        <span><em>A fourth strategy mode.</em> In Apex it lands in two helpers whose branches have to correspond exactly, and nothing catches you if you edit one and forget the other; in ApexX it is one lambda and one reason, side by side. <em>A different error message for the client.</em> In Apex it lands in all thirteen endpoints; in ApexX it lands in the decorator. <em>A different default threshold.</em> In Apex you have to find every forwarding overload; in ApexX it is the value beside the parameter. None of that is visible in a line count, and all of it is the reason to adopt this.</span>
                                     </aside>
 
                                     <aside class="techCallout">
-                                        <strong>What no line count can show</strong>
-                                        <span>The mode ladder became a value that crosses a class boundary, so a new mode is a new lambda rather than another branch in two helpers that must agree. That is worth more than the percentage, and it is why the next change is cheaper.</span>
+                                        <strong>The line counts are honest, and they are the least of it</strong>
+                                        <span>The Apex side is conventional Apex at its best, not a straw man: one fused pass rather than two, a shared rule helper rather than duplicated conditions, the constant rather than a pointless accessor, and the minimal try/catch the decorator itself lowers to. It is shorter in ApexX because ceremony costs lines <em>per endpoint</em> and a real controller has thirteen. But shorter was never the argument—if the ApexX version were the same length and still put each decision in one place, it would win anyway.</span>
                                     </aside>
 
                                     <div class="runBar">

@@ -376,8 +376,9 @@ public static PortfolioBriefing buildPortfolioBriefing(
     );
 }`;
 
-// Reductions are measured off the panels themselves, so a number on screen can
-// never disagree with the code beside it.
+// Measured off the panels themselves, so the figure on screen can never
+// disagree with the code beside it. Brevity is a side effect the deck reports,
+// not the case it makes -- the per-feature panels argue from maintenance cost.
 const reduction = (apex, apexx) =>
     Math.round((1 - apexx.split('\n').length / apex.split('\n').length) * 100);
 
@@ -439,10 +440,6 @@ export default class ApexxShowcase extends LightningElement {
     workflowApexLines = WORKFLOW_APEX.split('\n').length;
     workflowApexXLines = WORKFLOW_APEXX.split('\n').length;
     workflowReduction = reduction(WORKFLOW_APEX, WORKFLOW_APEXX);
-    emailReduction = reduction(EMAIL_APEX, EMAIL_APEXX);
-    tupleReduction = reduction(TUPLE_APEX, TUPLE_APEXX);
-    defaultReduction = reduction(DEFAULT_APEX, DEFAULT_APEXX);
-    decoratorReduction = reduction(DECORATOR_APEX, DECORATOR_APEXX);
 
     connectedCallback() {
         this.loadOverview();
