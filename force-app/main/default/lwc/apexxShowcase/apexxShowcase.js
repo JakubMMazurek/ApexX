@@ -332,6 +332,11 @@ public static PortfolioBriefing buildPortfolioBriefing(
     );
 }`;
 
+// A panel renders one <li> per line so CSS can number the gutter. The number is
+// generated content, so selecting the panel still copies just the code.
+const toLines = source =>
+    source.split('\n').map((text, index) => ({ key: `line-${index}`, text }));
+
 export default class ApexxShowcase extends LightningElement {
     accounts = [];
     overviewLoading = true;
@@ -366,22 +371,22 @@ export default class ApexxShowcase extends LightningElement {
     rawErrorResult;
     rawErrorLoading = false;
 
-    emailApex = EMAIL_APEX;
-    emailApexX = EMAIL_APEXX;
-    strategyApex = STRATEGY_APEX;
-    strategyApexX = STRATEGY_APEXX;
-    tupleApex = TUPLE_APEX;
-    tupleApexX = TUPLE_APEXX;
-    defaultApex = DEFAULT_APEX;
-    defaultApexX = DEFAULT_APEXX;
-    decoratorApex = DECORATOR_APEX;
-    decoratorApexX = DECORATOR_APEXX;
-    decoratorImplementation = DECORATOR_IMPLEMENTATION;
-    decoratorContract = DECORATOR_CONTRACT;
-    scriptApexX = SCRIPT_APEXX;
-    scriptGenerated = SCRIPT_GENERATED;
-    workflowApex = WORKFLOW_APEX;
-    workflowApexX = WORKFLOW_APEXX;
+    emailApexRows = toLines(EMAIL_APEX);
+    emailApexXRows = toLines(EMAIL_APEXX);
+    strategyApexRows = toLines(STRATEGY_APEX);
+    strategyApexXRows = toLines(STRATEGY_APEXX);
+    tupleApexRows = toLines(TUPLE_APEX);
+    tupleApexXRows = toLines(TUPLE_APEXX);
+    defaultApexRows = toLines(DEFAULT_APEX);
+    defaultApexXRows = toLines(DEFAULT_APEXX);
+    decoratorApexRows = toLines(DECORATOR_APEX);
+    decoratorApexXRows = toLines(DECORATOR_APEXX);
+    decoratorImplementationRows = toLines(DECORATOR_IMPLEMENTATION);
+    decoratorContractRows = toLines(DECORATOR_CONTRACT);
+    scriptApexXRows = toLines(SCRIPT_APEXX);
+    scriptGeneratedRows = toLines(SCRIPT_GENERATED);
+    workflowApexRows = toLines(WORKFLOW_APEX);
+    workflowApexXRows = toLines(WORKFLOW_APEXX);
     workflowApexLines = WORKFLOW_APEX.split('\n').length;
     workflowApexXLines = WORKFLOW_APEXX.split('\n').length;
     workflowReduction = Math.round(

@@ -92,14 +92,14 @@
                                             <span>Conventional Apex</span>
                                             <strong>one fused loop</strong>
                                         </div>
-                                        <pre>{emailApex}</pre>
+                                        <pre><ol class="codeLines"><template for:each={emailApexRows} for:item="line"><li key={line.key}>{line.text}</li></template></ol></pre>
                                     </article>
                                     <article class="codePanel codePanel_apexx">
                                         <div class="codeHeader">
                                             <span>ApexX</span>
                                             <strong>composable typed operations</strong>
                                         </div>
-                                        <pre>{emailApexX}</pre>
+                                        <pre><ol class="codeLines"><template for:each={emailApexXRows} for:item="line"><li key={line.key}>{line.text}</li></template></ol></pre>
                                     </article>
                                 </div>
 
@@ -175,14 +175,14 @@
                                             <span>Conventional Apex</span>
                                             <strong>mode helper + one-pass loop</strong>
                                         </div>
-                                        <pre>{strategyApex}</pre>
+                                        <pre><ol class="codeLines"><template for:each={strategyApexRows} for:item="line"><li key={line.key}>{line.text}</li></template></ol></pre>
                                     </article>
                                     <article class="codePanel codePanel_apexx">
                                         <div class="codeHeader">
                                             <span>ApexX</span>
                                             <strong>typed closure + block map</strong>
                                         </div>
-                                        <pre>{strategyApexX}</pre>
+                                        <pre><ol class="codeLines"><template for:each={strategyApexXRows} for:item="line"><li key={line.key}>{line.text}</li></template></ol></pre>
                                     </article>
                                 </div>
 
@@ -285,14 +285,14 @@
                                             <span>Conventional Apex</span>
                                             <strong>one-use map value class</strong>
                                         </div>
-                                        <pre>{tupleApex}</pre>
+                                        <pre><ol class="codeLines"><template for:each={tupleApexRows} for:item="line"><li key={line.key}>{line.text}</li></template></ol></pre>
                                     </article>
                                     <article class="codePanel codePanel_apexx">
                                         <div class="codeHeader">
                                             <span>ApexX</span>
                                             <strong>tuple-valued map + destructuring</strong>
                                         </div>
-                                        <pre>{tupleApexX}</pre>
+                                        <pre><ol class="codeLines"><template for:each={tupleApexXRows} for:item="line"><li key={line.key}>{line.text}</li></template></ol></pre>
                                     </article>
                                 </div>
 
@@ -373,14 +373,14 @@
                                             <span>Conventional Apex</span>
                                             <strong>same calls + manual overload</strong>
                                         </div>
-                                        <pre>{defaultApex}</pre>
+                                        <pre><ol class="codeLines"><template for:each={defaultApexRows} for:item="line"><li key={line.key}>{line.text}</li></template></ol></pre>
                                     </article>
                                     <article class="codePanel codePanel_apexx">
                                         <div class="codeHeader">
                                             <span>ApexX</span>
                                             <strong>same calls + one definition</strong>
                                         </div>
-                                        <pre>{defaultApexX}</pre>
+                                        <pre><ol class="codeLines"><template for:each={defaultApexXRows} for:item="line"><li key={line.key}>{line.text}</li></template></ol></pre>
                                     </article>
                                 </div>
 
@@ -493,14 +493,14 @@
                                             <span>Conventional Apex</span>
                                             <strong>try / catch wrapper</strong>
                                         </div>
-                                        <pre>{decoratorApex}</pre>
+                                        <pre><ol class="codeLines"><template for:each={decoratorApexRows} for:item="line"><li key={line.key}>{line.text}</li></template></ol></pre>
                                     </article>
                                     <article class="codePanel codePanel_apexx">
                                         <div class="codeHeader">
                                             <span>ApexX</span>
                                             <strong>policy annotation</strong>
                                         </div>
-                                        <pre>{decoratorApexX}</pre>
+                                        <pre><ol class="codeLines"><template for:each={decoratorApexXRows} for:item="line"><li key={line.key}>{line.text}</li></template></ol></pre>
                                     </article>
                                 </div>
 
@@ -521,14 +521,14 @@
                                                 <span>UserFriendlyError.clsx</span>
                                                 <strong>custom policy</strong>
                                             </div>
-                                            <pre>{decoratorImplementation}</pre>
+                                            <pre><ol class="codeLines"><template for:each={decoratorImplementationRows} for:item="line"><li key={line.key}>{line.text}</li></template></ol></pre>
                                         </article>
                                         <article class="codePanel codePanel_contract">
                                             <div class="codeHeader">
                                                 <span>ApexX decorator contract</span>
                                                 <strong>shared support types</strong>
                                             </div>
-                                            <pre>{decoratorContract}</pre>
+                                            <pre><ol class="codeLines"><template for:each={decoratorContractRows} for:item="line"><li key={line.key}>{line.text}</li></template></ol></pre>
                                         </article>
                                     </div>
                                     <ol class="callFlow">
@@ -662,14 +662,14 @@
                                     <span>Authored</span>
                                     <strong>apexx/scripts/AccountAudit.apexx</strong>
                                 </div>
-                                <pre>{scriptApexX}</pre>
+                                <pre><ol class="codeLines"><template for:each={scriptApexXRows} for:item="line"><li key={line.key}>{line.text}</li></template></ol></pre>
                             </article>
                             <article class="codePanel codePanel_contract">
                                 <div class="codeHeader">
                                     <span>Generated</span>
                                     <strong>scripts/apex/AccountAudit.apex</strong>
                                 </div>
-                                <pre>{scriptGenerated}</pre>
+                                <pre><ol class="codeLines"><template for:each={scriptGeneratedRows} for:item="line"><li key={line.key}>{line.text}</li></template></ol></pre>
                             </article>
                         </div>
                         <aside class="techCallout">
@@ -790,14 +790,14 @@
                                                 <span>Conventional Apex</span>
                                                 <strong>idiomatic helpers + overloads + loops</strong>
                                             </div>
-                                            <pre>{workflowApex}</pre>
+                                            <pre><ol class="codeLines"><template for:each={workflowApexRows} for:item="line"><li key={line.key}>{line.text}</li></template></ol></pre>
                                         </article>
                                         <article class="codePanel codePanel_apexx">
                                             <div class="codeHeader">
                                                 <span>ApexX</span>
                                                 <strong>composed compile-time features</strong>
                                             </div>
-                                            <pre>{workflowApexX}</pre>
+                                            <pre><ol class="codeLines"><template for:each={workflowApexXRows} for:item="line"><li key={line.key}>{line.text}</li></template></ol></pre>
                                         </article>
                                     </div>
 

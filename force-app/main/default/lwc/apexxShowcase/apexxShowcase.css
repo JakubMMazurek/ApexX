@@ -608,6 +608,36 @@ pre {
     white-space: pre;
 }
 
+.codeLines {
+    counter-reset: codeLine;
+    list-style: none;
+    margin: 0;
+    min-width: 100%;
+    padding: 0;
+    white-space: normal;
+    width: max-content;
+}
+
+.codeLines li {
+    counter-increment: codeLine;
+    display: block;
+    min-height: 1.55em;
+    padding-left: 3.2em;
+    position: relative;
+    white-space: pre;
+}
+
+.codeLines li::before {
+    color: #64748b;
+    content: counter(codeLine);
+    left: 0;
+    position: absolute;
+    text-align: right;
+    -webkit-user-select: none;
+    user-select: none;
+    width: 2.2em;
+}
+
 .runBar {
     align-items: center;
     background: #f7f9fc;
