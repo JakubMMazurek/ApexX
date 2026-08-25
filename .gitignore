@@ -12,3 +12,6 @@ coverage/
 *.vsix
 *.tsbuildinfo
 .DS_Store
+
+# Authored scripts belong in apexx/scripts; scripts/apex holds generated blocks.
+scripts/apex/*.apexx
