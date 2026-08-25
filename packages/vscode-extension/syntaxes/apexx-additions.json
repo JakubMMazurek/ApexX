@@ -1,0 +1,125 @@
+{
+  "//": "The ApexX-only half of the grammar. `scripts/build-grammar.mjs` merges these rules into the vendored Apex grammar and splices the includes below into the Apex rules named by `inject`, so everything Apex already colours keeps its own scopes.",
+
+  "repository": {
+    "//0": "A lambda, signature and body together. The body has to be inside the rule rather than left to the surrounding expression: a `{` reached from an expression is an array initialiser in Apex, so a block body's `return` would not be a keyword. Ending on `(?<=\\})` closes a block body and `(?=[;,)])` an expression body, and because the block is consumed whole by `#block`, punctuation inside it never ends the lambda early.",
+    "apexx-lambda": {
+      "begin": "(?=(?:@?[_[:alpha:]][_[:alnum:]]*|\\(\\s*(?:@?[_[:alpha:]][_[:alnum:]]*\\s*(?:,\\s*@?[_[:alpha:]][_[:alnum:]]*\\s*)*)?\\))\\s*=>)",
+      "end": "(?<=\\})|(?=[;,)\\]])",
+      "patterns": [
+        { "include": "#apexx-lambda-signature" },
+        { "include": "#block" },
+        { "include": "#expression" }
+      ]
+    },
+
+    "apexx-lambda-signature": {
+      "patterns": [
+        { "include": "#apexx-lambda-parenthesized" },
+        { "include": "#apexx-lambda-single" }
+      ]
+    },
+
+    "//1": "`(account, other) =>`. The lookahead keeps this off an ordinary parenthesised expression, which is the rule that would otherwise claim the same open paren.",
+    "apexx-lambda-parenthesized": {
+      "begin": "(\\()(?=\\s*(?:@?[_[:alpha:]][_[:alnum:]]*\\s*(?:,\\s*@?[_[:alpha:]][_[:alnum:]]*\\s*)*)?\\)\\s*=>)",
+      "beginCaptures": {
+        "1": { "name": "punctuation.parenthesis.open.apex" }
+      },
+      "end": "(\\))\\s*(=>)",
+      "endCaptures": {
+        "1": { "name": "punctuation.parenthesis.close.apex" },
+        "2": { "name": "keyword.operator.arrow.apexx" }
+      },
+      "patterns": [
+        { "include": "#comment" },
+        {
+          "name": "variable.parameter.apexx",
+          "match": "@?[_[:alpha:]][_[:alnum:]]*"
+        },
+        { "include": "#punctuation-comma" }
+      ]
+    },
+
+    "//2": "`account => account.Name`, the form the collection helpers take.",
+    "apexx-lambda-single": {
+      "match": "(@?[_[:alpha:]][_[:alnum:]]*)\\s*(=>)",
+      "captures": {
+        "1": { "name": "variable.parameter.apexx" },
+        "2": { "name": "keyword.operator.arrow.apexx" }
+      }
+    },
+
+    "//3": "`Func<Account, Boolean>`. Func is an ApexX built-in, so it is scoped like one; its arguments are ordinary types.",
+    "apexx-func-type": {
+      "begin": "\\b(Func)\\s*(?=<)",
+      "beginCaptures": {
+        "1": { "name": "keyword.type.apexx" }
+      },
+      "end": "(?<=>)",
+      "patterns": [
+        { "include": "#type-arguments" }
+      ]
+    },
+
+    "//4": "A tuple type, `(String, Decimal)`, wherever a type is expected -- including nested in `Map<Id, (String, Decimal)>`.",
+    "apexx-tuple-type": {
+      "begin": "(\\()(?=[^()]*\\)(?:\\s*[>,\\]]|\\s+@?[_[:alpha:]]))",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.tuple.begin.apexx" }
+      },
+      "end": "(\\))",
+      "endCaptures": {
+        "1": { "name": "punctuation.definition.tuple.end.apexx" }
+      },
+      "patterns": [
+        { "include": "#comment" },
+        { "include": "#support-type" },
+        { "include": "#type" },
+        { "include": "#punctuation-comma" }
+      ]
+    },
+
+    "//5": "The ApexX List methods. Apex would colour these as any other call; scoping them as built-ins is what marks them as part of the language rather than the class.",
+    "apexx-collection-helper": {
+      "begin": "(?:(\\??\\.)\\s*)(filter|map|flatMap|find|any|all|count)\\s*(?=\\()",
+      "beginCaptures": {
+        "1": {
+          "patterns": [
+            { "include": "#punctuation-accessor" },
+            { "include": "#operator-safe-navigation" }
+          ]
+        },
+        "2": { "name": "support.function.collection.apexx" }
+      },
+      "end": "(?<=\\))",
+      "patterns": [
+        { "include": "#argument-list" }
+      ]
+    }
+  },
+
+  "//6": "Where the rules above are spliced into the Apex grammar. `before` names the first existing include to sit in front of; the ApexX rule has to win the race for a token that both grammars could claim.",
+  "inject": [
+    {
+      "rule": "expression",
+      "before": "#object-creation-expression",
+      "includes": ["#apexx-lambda", "#apexx-collection-helper"]
+    },
+    {
+      "rule": "type",
+      "before": "#type-builtin",
+      "includes": ["#apexx-func-type", "#apexx-tuple-type"]
+    },
+    {
+      "rule": "type-arguments",
+      "before": "#support-type",
+      "includes": ["#apexx-tuple-type"]
+    },
+    {
+      "rule": "argument-list",
+      "before": "#expression",
+      "includes": ["#apexx-lambda"]
+    }
+  ]
+}

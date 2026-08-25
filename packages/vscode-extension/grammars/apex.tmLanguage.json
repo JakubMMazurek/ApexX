@@ -1,5 +1,5 @@
 {
-  "scopeName": "source.apexx",
+  "scopeName": "source.apex",
   "uuid": "F5FC6824-F257-43B1-B53A-14E1CCD18631",
   "patterns": [
     {
@@ -539,9 +539,6 @@
           "include": "#named-argument"
         },
         {
-          "include": "#apexx-lambda"
-        },
-        {
           "include": "#expression"
         },
         {
@@ -820,12 +817,6 @@
       "patterns": [
         {
           "include": "#comment"
-        },
-        {
-          "include": "#apexx-func-type"
-        },
-        {
-          "include": "#apexx-tuple-type"
         },
         {
           "include": "#type-builtin"
@@ -2184,9 +2175,6 @@
           "include": "#comment"
         },
         {
-          "include": "#apexx-tuple-type"
-        },
-        {
           "include": "#support-type"
         },
         {
@@ -3044,12 +3032,6 @@
           "include": "#soql-query-expression"
         },
         {
-          "include": "#apexx-lambda"
-        },
-        {
-          "include": "#apexx-collection-helper"
-        },
-        {
           "include": "#object-creation-expression"
         },
         {
@@ -3341,142 +3323,12 @@
           "name": "punctuation.accessor.apex"
         }
       }
-    },
-    "apexx-lambda": {
-      "begin": "(?=(?:@?[_[:alpha:]][_[:alnum:]]*|\\(\\s*(?:@?[_[:alpha:]][_[:alnum:]]*\\s*(?:,\\s*@?[_[:alpha:]][_[:alnum:]]*\\s*)*)?\\))\\s*=>)",
-      "end": "(?<=\\})|(?=[;,)\\]])",
-      "patterns": [
-        {
-          "include": "#apexx-lambda-signature"
-        },
-        {
-          "include": "#block"
-        },
-        {
-          "include": "#expression"
-        }
-      ]
-    },
-    "apexx-lambda-signature": {
-      "patterns": [
-        {
-          "include": "#apexx-lambda-parenthesized"
-        },
-        {
-          "include": "#apexx-lambda-single"
-        }
-      ]
-    },
-    "apexx-lambda-parenthesized": {
-      "begin": "(\\()(?=\\s*(?:@?[_[:alpha:]][_[:alnum:]]*\\s*(?:,\\s*@?[_[:alpha:]][_[:alnum:]]*\\s*)*)?\\)\\s*=>)",
-      "beginCaptures": {
-        "1": {
-          "name": "punctuation.parenthesis.open.apex"
-        }
-      },
-      "end": "(\\))\\s*(=>)",
-      "endCaptures": {
-        "1": {
-          "name": "punctuation.parenthesis.close.apex"
-        },
-        "2": {
-          "name": "keyword.operator.arrow.apexx"
-        }
-      },
-      "patterns": [
-        {
-          "include": "#comment"
-        },
-        {
-          "name": "variable.parameter.apexx",
-          "match": "@?[_[:alpha:]][_[:alnum:]]*"
-        },
-        {
-          "include": "#punctuation-comma"
-        }
-      ]
-    },
-    "apexx-lambda-single": {
-      "match": "(@?[_[:alpha:]][_[:alnum:]]*)\\s*(=>)",
-      "captures": {
-        "1": {
-          "name": "variable.parameter.apexx"
-        },
-        "2": {
-          "name": "keyword.operator.arrow.apexx"
-        }
-      }
-    },
-    "apexx-func-type": {
-      "begin": "\\b(Func)\\s*(?=<)",
-      "beginCaptures": {
-        "1": {
-          "name": "keyword.type.apexx"
-        }
-      },
-      "end": "(?<=>)",
-      "patterns": [
-        {
-          "include": "#type-arguments"
-        }
-      ]
-    },
-    "apexx-tuple-type": {
-      "begin": "(\\()(?=[^()]*\\)(?:\\s*[>,\\]]|\\s+@?[_[:alpha:]]))",
-      "beginCaptures": {
-        "1": {
-          "name": "punctuation.definition.tuple.begin.apexx"
-        }
-      },
-      "end": "(\\))",
-      "endCaptures": {
-        "1": {
-          "name": "punctuation.definition.tuple.end.apexx"
-        }
-      },
-      "patterns": [
-        {
-          "include": "#comment"
-        },
-        {
-          "include": "#support-type"
-        },
-        {
-          "include": "#type"
-        },
-        {
-          "include": "#punctuation-comma"
-        }
-      ]
-    },
-    "apexx-collection-helper": {
-      "begin": "(?:(\\??\\.)\\s*)(filter|map|flatMap|find|any|all|count)\\s*(?=\\()",
-      "beginCaptures": {
-        "1": {
-          "patterns": [
-            {
-              "include": "#punctuation-accessor"
-            },
-            {
-              "include": "#operator-safe-navigation"
-            }
-          ]
-        },
-        "2": {
-          "name": "support.function.collection.apexx"
-        }
-      },
-      "end": "(?<=\\))",
-      "patterns": [
-        {
-          "include": "#argument-list"
-        }
-      ]
     }
   },
-  "name": "ApexX",
+  "name": "Apex",
   "fileTypes": [
-    "clsx",
-    "apexx"
+    "apex",
+    "cls",
+    "trigger"
   ]
 }

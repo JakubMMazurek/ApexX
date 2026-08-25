@@ -5,15 +5,19 @@ import {
 } from "./sourceMap.js";
 import type { ApexXDiagnostic, GeneratedApexSupportClass } from "@apexx/ast";
 import {
+  collectDeclaredVariables,
   collectIdentifiers,
   createRange,
   findAvailableName,
+  inferExpressionType,
   isApexIdentifier,
+  isCompatibleApexType,
 } from "@apexx/semantics";
 import {
   normalizeSharedType,
   sharedTypeMemberName,
   sharedTupleTypeName,
+  type SharedTypeNaming,
   TUPLE_REGISTRY_CLASS,
   toSharedApexType,
 } from "./sharedTypes.js";
@@ -36,6 +40,12 @@ interface TupleMethod {
   carrier: TupleCarrier;
 }
 
+/** A tuple-returning method in this file, keyed by name for destructuring checks. */
+interface TupleReturningMethod {
+  name: string;
+  types: string[];
+}
+
 interface TupleElementDeclaration {
   type: string;
   name: string;
@@ -51,16 +61,27 @@ export interface TupleLoweringResult {
   diagnostics: ApexXDiagnostic[];
   tupleCount: number;
   supportClasses: GeneratedApexSupportClass[];
+  /**
+   * Carrier declarations to place in the unit itself, for `flat` naming. Class
+   * mode leaves this empty and deploys `supportClasses` instead.
+   */
+  inlineDeclarations: string[];
   /** Maps offsets in `output` back to the source this stage received. */
   map: PositionMap;
 }
 
-export function lowerApexXTuples(source: string): TupleLoweringResult {
+export function lowerApexXTuples(
+  source: string,
+  options: { naming?: SharedTypeNaming } = {},
+): TupleLoweringResult {
+  const naming: SharedTypeNaming = options.naming ?? "registry";
   const diagnostics: ApexXDiagnostic[] = [];
   const transformations: Transformation[] = [];
   const carriers = new Map<string, TupleCarrier>();
   const usedNames = collectIdentifiers(source);
   const methods: TupleMethod[] = [];
+  const tupleReturningMethods: TupleReturningMethod[] = [];
+  const variables = collectDeclaredVariables(source);
   const methodPattern =
     /^([ \t]*)((?:(?:public|private|protected|global|static|final|virtual|abstract|override|webservice|testmethod)\s+)+)(\([^()\r\n]+\))\s+([A-Za-z][A-Za-z0-9_]*)\s*\(/gim;
   let methodMatch: RegExpExecArray | null;
@@ -75,7 +96,8 @@ export function lowerApexXTuples(source: string): TupleLoweringResult {
         source,
         tupleStart,
         tupleStart + tupleText.length,
-        "APXX2401: A tuple must contain at least two elements.",
+        "APXX2401",
+        "A tuple must contain at least two elements.",
       ));
       continue;
     }
@@ -85,7 +107,8 @@ export function lowerApexXTuples(source: string): TupleLoweringResult {
         source,
         tupleStart,
         tupleStart + tupleText.length,
-        "APXX2402: Every tuple element must declare a valid Apex type.",
+        "APXX2402",
+        "Every tuple element must declare a valid Apex type.",
       ));
       continue;
     }
@@ -95,7 +118,8 @@ export function lowerApexXTuples(source: string): TupleLoweringResult {
         source,
         tupleStart,
         tupleStart + tupleText.length,
-        "APXX2403: Tuple return types cannot currently cross an @AuraEnabled boundary. Destructure the tuple inside Apex and return a Salesforce DTO or Map.",
+        "APXX2403",
+        "Tuple return types cannot currently cross an @AuraEnabled boundary. Destructure the tuple inside Apex and return a Salesforce DTO or Map.",
       ));
       continue;
     }
@@ -104,7 +128,8 @@ export function lowerApexXTuples(source: string): TupleLoweringResult {
       diagnostics.push({
         severity: "warning",
         source: "apexx-semantics",
-        message: `APXX2404: This tuple contains ${parsedTypes.length} elements. Consider a named domain type if the values represent a durable concept.`,
+        code: "APXX2404",
+        message: `This tuple contains ${parsedTypes.length} elements. Consider a named domain type if the values represent a durable concept.`,
         range: createRange(source, tupleStart, tupleStart + tupleText.length),
       });
     }
@@ -123,13 +148,15 @@ export function lowerApexXTuples(source: string): TupleLoweringResult {
         source,
         tupleStart,
         tupleStart + tupleText.length,
-        "APXX2405: Unable to locate the body of this tuple-returning method.",
+        "APXX2405",
+        "Unable to locate the body of this tuple-returning method.",
       ));
       continue;
     }
 
-    const carrier = getOrCreateCarrier(parsedTypes, carriers, usedNames);
+    const carrier = getOrCreateCarrier(parsedTypes, carriers, usedNames, naming);
     methods.push({ bodyStart, bodyEnd, carrier });
+    tupleReturningMethods.push({ name: methodMatch[4], types: parsedTypes });
     transformations.push({
       start: tupleStart,
       end: tupleStart + tupleText.length,
@@ -138,7 +165,7 @@ export function lowerApexXTuples(source: string): TupleLoweringResult {
   }
 
   for (const method of methods) {
-    collectTupleReturns(source, method, transformations, diagnostics);
+    collectTupleReturns(source, method, transformations, diagnostics, variables);
   }
 
   const mapTupleVariables = collectMapTupleTypes(
@@ -147,12 +174,14 @@ export function lowerApexXTuples(source: string): TupleLoweringResult {
     diagnostics,
     carriers,
     usedNames,
+    naming,
   );
   collectMapTupleValues(
     source,
     mapTupleVariables,
     transformations,
     diagnostics,
+    variables,
   );
 
   collectTupleDestructuring(
@@ -161,6 +190,8 @@ export function lowerApexXTuples(source: string): TupleLoweringResult {
     diagnostics,
     carriers,
     usedNames,
+    naming,
+    tupleReturningMethods,
   );
 
   if (carriers.size === 0) {
@@ -169,17 +200,24 @@ export function lowerApexXTuples(source: string): TupleLoweringResult {
       diagnostics,
       tupleCount: 0,
       supportClasses: [],
+      inlineDeclarations: [],
       map: identityMap(source.length),
     };
   }
 
   const { output, map } = applyTransformations(source, transformations);
+  const carrierList = [...carriers.values()];
 
   return {
     output,
     diagnostics,
     tupleCount: carriers.size,
-    supportClasses: [renderTupleSupportRegistry([...carriers.values()])],
+    supportClasses: naming === "flat"
+      ? []
+      : [renderTupleSupportRegistry(carrierList)],
+    inlineDeclarations: naming === "flat"
+      ? carrierList.map(carrier => renderTupleMember(carrier, "", naming))
+      : [],
     map,
   };
 }
@@ -190,6 +228,7 @@ function collectMapTupleTypes(
   diagnostics: ApexXDiagnostic[],
   carriers: Map<string, TupleCarrier>,
   usedNames: Set<string>,
+  naming: SharedTypeNaming,
 ): MapTupleVariable[] {
   const variables: MapTupleVariable[] = [];
   const masked = maskCommentsAndStrings(source);
@@ -208,12 +247,13 @@ function collectMapTupleTypes(
         source,
         tupleStart,
         tupleStart + tupleText.length,
-        "APXX2410: A Map tuple value must contain at least two valid Apex types.",
+        "APXX2410",
+        "A Map tuple value must contain at least two valid Apex types.",
       ));
       continue;
     }
 
-    const carrier = getOrCreateCarrier(types, carriers, usedNames);
+    const carrier = getOrCreateCarrier(types, carriers, usedNames, naming);
     if (!transformations.some(item =>
       item.start === tupleStart && item.end === tupleStart + tupleText.length
     )) {
@@ -239,6 +279,7 @@ function collectMapTupleValues(
   variables: MapTupleVariable[],
   transformations: Transformation[],
   diagnostics: ApexXDiagnostic[],
+  declaredVariables: Map<string, string>,
 ): void {
   const masked = maskCommentsAndStrings(source);
   const uniqueVariables = new Map(variables.map(variable => [variable.name, variable]));
@@ -268,10 +309,26 @@ function collectMapTupleValues(
           source,
           arguments_[1].start,
           arguments_[1].end,
-          `APXX2411: Map tuple value expects ${variable.carrier.types.length} values, but received ${values.length}.`,
+          "APXX2411",
+        `Map tuple value expects ${variable.carrier.types.length} values, but received ${values.length}.`,
         ));
         continue;
       }
+
+      const valueOpen = source.indexOf("(", arguments_[1].start);
+      checkTupleElementTypes(
+        source,
+        variable.carrier.types,
+        splitCommaRanges(
+          source,
+          valueOpen + 1,
+          arguments_[1].start + source
+            .slice(arguments_[1].start, arguments_[1].end)
+            .lastIndexOf(")"),
+        ),
+        declaredVariables,
+        diagnostics,
+      );
 
       const leadingWhitespace = source
         .slice(arguments_[1].start, arguments_[1].end)
@@ -285,11 +342,50 @@ function collectMapTupleValues(
   }
 }
 
+/**
+ * Checks the values of a tuple literal against the types the tuple contract declares.
+ *
+ * A mismatch would otherwise reach the platform compiler as a complaint about the
+ * generated carrier class, which names none of the types the author wrote. Values whose
+ * type cannot be inferred are skipped rather than guessed at.
+ */
+function checkTupleElementTypes(
+  source: string,
+  expectedTypes: string[],
+  valueRanges: Array<{ start: number; end: number }>,
+  variables: Map<string, string>,
+  diagnostics: ApexXDiagnostic[],
+): void {
+  valueRanges.forEach((range, index) => {
+    const expected = expectedTypes[index];
+
+    if (!expected) {
+      return;
+    }
+
+    const value = source.slice(range.start, range.end).trim();
+    const actual = inferExpressionType(value, { variables });
+
+    if (!actual || isCompatibleApexType(expected, actual)) {
+      return;
+    }
+
+    diagnostics.push(tupleDiagnostic(
+      source,
+      range.start,
+      range.end,
+      "APXX2412",
+        `Tuple element ${index + 1} expects ${toApexType(expected)}, but received ${actual}.`,
+    ));
+  });
+}
+
 function collectTupleReturns(
   source: string,
   method: TupleMethod,
   transformations: Transformation[],
   diagnostics: ApexXDiagnostic[],
+  variables: Map<string, string>,
 ): void {
   const body = source.slice(method.bodyStart + 1, method.bodyEnd);
   const maskedBody = maskCommentsAndStrings(body);
@@ -315,10 +411,19 @@ function collectTupleReturns(
         source,
         returnStart,
         semicolon + 1,
-        `APXX2406: Tuple return expects ${method.carrier.types.length} values, but received ${values.length}.`,
+        "APXX2406",
+        `Tuple return expects ${method.carrier.types.length} values, but received ${values.length}.`,
       ));
       continue;
     }
+
+    checkTupleElementTypes(
+      source,
+      method.carrier.types,
+      splitCommaRanges(source, openParen + 1, closeParen),
+      variables,
+      diagnostics,
+    );
 
     transformations.push({
       start: returnStart,
@@ -334,6 +439,8 @@ function collectTupleDestructuring(
   diagnostics: ApexXDiagnostic[],
   carriers: Map<string, TupleCarrier>,
   usedNames: Set<string>,
+  naming: SharedTypeNaming,
+  tupleReturningMethods: TupleReturningMethod[],
 ): void {
   const masked = maskCommentsAndStrings(source);
   const pattern = /^([ \t]*)\(([^()]+?)\)\s*=(?!>)\s*/gm;
@@ -353,7 +460,8 @@ function collectTupleDestructuring(
         source,
         start,
         start + match[0].length,
-        "APXX2407: Tuple destructuring requires at least two typed variable declarations.",
+        "APXX2407",
+        "Tuple destructuring requires at least two typed variable declarations.",
       ));
       continue;
     }
@@ -367,7 +475,8 @@ function collectTupleDestructuring(
         source,
         start,
         start + match[0].length,
-        "APXX2408: Tuple destructuring variable names must be unique.",
+        "APXX2408",
+        "Tuple destructuring variable names must be unique.",
       ));
       continue;
     }
@@ -379,15 +488,63 @@ function collectTupleDestructuring(
         source,
         start,
         start + match[0].length,
-        "APXX2409: Tuple destructuring must end with a semicolon.",
+        "APXX2409",
+        "Tuple destructuring must end with a semicolon.",
       ));
       continue;
     }
 
     const types = elements.map(element => element.type);
-    const carrier = getOrCreateCarrier(types, carriers, usedNames);
-    const temporaryName = findAvailableName("apexxTuple", usedNames);
     const expression = source.slice(expressionStart, semicolon).trim();
+    const returned = resolveTupleReturningCall(expression, tupleReturningMethods);
+
+    // The bindings define the carrier the lowering assigns into, so a shape that does
+    // not match the callee's tuple produces two unrelated generated classes and an
+    // Apex error naming neither of the types written here.
+    if (returned && returned.types.length !== types.length) {
+      diagnostics.push(tupleDiagnostic(
+        source,
+        start + match[0].indexOf("("),
+        start + match[0].lastIndexOf(")") + 1,
+        "APXX2413",
+        `${returned.name}(...) returns ${returned.types.length} values, but this destructuring declares ${types.length}.`,
+      ));
+      continue;
+    }
+
+    if (returned) {
+      const declarationRanges = splitCommaRanges(
+        source,
+        start + match[0].indexOf("(") + 1,
+        start + match[0].lastIndexOf(")"),
+      );
+
+      let mismatched = false;
+      declarationRanges.forEach((range, index) => {
+        const expected = returned.types[index];
+        const actual = types[index];
+
+        if (!expected || !actual || isCompatibleApexType(actual, expected)) {
+          return;
+        }
+
+        mismatched = true;
+        diagnostics.push(tupleDiagnostic(
+          source,
+          range.start,
+          range.end,
+          "APXX2414",
+        `${returned.name}(...) returns ${toApexType(expected)} here, which does not fit ${toApexType(actual)}.`,
+        ));
+      });
+
+      if (mismatched) {
+        continue;
+      }
+    }
+
+    const carrier = getOrCreateCarrier(types, carriers, usedNames, naming);
+    const temporaryName = findAvailableName("apexxTuple", usedNames);
     const replacement = [
       `${match[1]}${carrier.name} ${temporaryName} = ${expression};`,
       ...elements.flatMap((element, index) =>
@@ -403,6 +560,31 @@ function collectTupleDestructuring(
       replacement,
     });
   }
+}
+
+/**
+ * Resolves the right-hand side of a destructuring to a tuple-returning method in this
+ * file, by bare name or through a type qualifier. Ambiguous or unresolvable
+ * expressions return undefined, which leaves the destructuring unchecked: a
+ * cross-file call cannot be verified from here.
+ */
+function resolveTupleReturningCall(
+  expression: string,
+  tupleReturningMethods: TupleReturningMethod[],
+): TupleReturningMethod | undefined {
+  const call = /^(?:[A-Za-z][A-Za-z0-9_.]*\s*\.\s*)?([A-Za-z][A-Za-z0-9_]*)\s*\(/.exec(
+    expression,
+  );
+
+  if (!call) {
+    return undefined;
+  }
+
+  const matches = tupleReturningMethods.filter(
+    method => method.name.toLowerCase() === call[1].toLowerCase(),
+  );
+
+  return matches.length === 1 ? matches[0] : undefined;
 }
 
 function parseTupleReturnTypes(source: string): string[] {
@@ -426,6 +608,7 @@ function getOrCreateCarrier(
   types: string[],
   carriers: Map<string, TupleCarrier>,
   usedNames: Set<string>,
+  naming: SharedTypeNaming,
 ): TupleCarrier {
   const normalizedTypes = types.map(normalizeSharedType);
   const signature = normalizedTypes.join("|").toLowerCase();
@@ -435,7 +618,7 @@ function getOrCreateCarrier(
   }
 
   const carrier = {
-    name: sharedTupleTypeName(normalizedTypes),
+    name: sharedTupleTypeName(normalizedTypes, naming),
     types: normalizedTypes,
   };
   carriers.set(signature, carrier);
@@ -449,31 +632,39 @@ function renderTupleSupportRegistry(
     TUPLE_REGISTRY_CLASS,
     carriers.map(carrier => ({
       name: sharedTypeMemberName(carrier.name),
-      source: renderTupleMember(carrier),
+      source: renderTupleMember(carrier, "    ", "registry"),
     })),
   );
 }
 
-function renderTupleMember(carrier: TupleCarrier): string {
+/** `indent` is the declaration's own indent: a registry member is nested, an
+ * inline declaration in an anonymous block sits at the top level. */
+function renderTupleMember(
+  carrier: TupleCarrier,
+  indent: string,
+  naming: SharedTypeNaming,
+): string {
   const memberName = sharedTypeMemberName(carrier.name);
+  const inner = `${indent}    `;
+  const body = `${indent}        `;
   const fields = carrier.types.map(
-    (type, index) => `        public ${toSharedApexType(type)} item${index};`,
+    (type, index) => `${inner}public ${toSharedApexType(type, naming)} item${index};`,
   );
   const parameters = carrier.types.map(
-    (type, index) => `${toSharedApexType(type)} item${index}`,
+    (type, index) => `${toSharedApexType(type, naming)} item${index}`,
   ).join(", ");
   const assignments = carrier.types.map(
-    (_type, index) => `            this.item${index} = item${index};`,
+    (_type, index) => `${body}this.item${index} = item${index};`,
   );
 
   return [
-    `    public class ${memberName} {`,
+    `${indent}public class ${memberName} {`,
     ...fields,
     "",
-    `        public ${memberName}(${parameters}) {`,
+    `${inner}public ${memberName}(${parameters}) {`,
     ...assignments,
-    "        }",
-    "    }",
+    `${inner}}`,
+    `${indent}}`,
   ].join("\n");
 }
 
@@ -818,11 +1009,13 @@ function tupleDiagnostic(
   source: string,
   start: number,
   end: number,
+  code: string,
   message: string,
 ): ApexXDiagnostic {
   return {
     severity: "error",
     source: "apexx-semantics",
+    code,
     message,
     range: createRange(source, start, end),
   };

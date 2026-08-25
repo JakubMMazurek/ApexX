@@ -11,11 +11,12 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "tsc -b packages/ast packages/semantics packages/parser packages/transpiler packages/sfdx packages/cli packages/language-server packages/vscode-extension",
+    "grammar:build": "node scripts/build-grammar.mjs",
+    "build": "npm run grammar:build && tsc -b packages/ast packages/semantics packages/parser packages/transpiler packages/sfdx packages/cli packages/language-server packages/vscode-extension",
     "clean": "node scripts/clean.mjs",
     "smoke": "node scripts/smoke-test.mjs",
     "lsp-smoke": "node scripts/lsp-smoke-test.mjs",
-    "test": "npm run build && npm run smoke && npm run lsp-smoke",
+    "test": "npm run build && npm run smoke && npm run lsp-smoke && npm run grammar && npm run showcase:check",
     "demo:check": "npm test && node scripts/demo-check.mjs",
     "apexx": "node packages/cli/dist/index.js",
     "schema:refresh": "node scripts/refresh-sobject-schema.mjs",
@@ -25,7 +26,10 @@
     "sf:open:showcase": "sf org open --path lightning/n/ApexX_Showcase",
     "vscode:install": "node scripts/install-vscode-extension.mjs",
     "apex-smoke": "node scripts/apex-smoke-test.mjs",
-    "test:all": "npm run test && npm run apex-smoke"
+    "test:all": "npm run test && npm run apex-smoke",
+    "grammar": "node scripts/grammar-test.mjs",
+    "showcase:snippets": "node scripts/build-showcase-snippets.mjs",
+    "showcase:check": "node scripts/build-showcase-snippets.mjs --check"
   },
   "dependencies": {
     "@apexdevtools/apex-parser": "5.1.0",
@@ -37,6 +41,8 @@
     "@types/vscode": "^1.90.0",
     "tsx": "^4.23.11",
     "typescript": "^5.8.2",
-    "vscode-languageclient": "^9.0.1"
+    "vscode-languageclient": "^9.0.1",
+    "vscode-oniguruma": "^2.0.1",
+    "vscode-textmate": "^9.3.2"
   }
 }

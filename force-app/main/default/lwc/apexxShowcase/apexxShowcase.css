@@ -1014,6 +1014,11 @@ pre {
     min-height: 22rem;
 }
 
+.codeGrid_scripts pre {
+    height: 26rem;
+    min-height: 26rem;
+}
+
 .codePanel_contract {
     border-color: rgba(91, 63, 214, 0.72);
 }

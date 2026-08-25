@@ -40,7 +40,7 @@ for (const directory of ["dist", "syntaxes", "snippets"]) {
 linkNodeModules();
 
 console.log(`Installed ApexX VS Code extension to ${targetExtension}`);
-console.log("Reload VS Code for .clsx syntax highlighting and compile-on-save.");
+console.log("Reload VS Code for .clsx and .apexx syntax highlighting, compile-on-save, and Execute on scripts.");
 
 // The extension loads the language server and compiler from the workspace packages,
 // so the install is a link back to this repo rather than a copy. Windows junctions

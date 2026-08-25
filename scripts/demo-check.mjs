@@ -4,11 +4,16 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const targetOrg = argumentValue("--target-org") ?? "apexx";
+// No default alias: without --target-org the Salesforce CLI resolves its own
+// configured default org, so the check works on a machine that never created
+// the alias the README suggests.
+const targetOrg = argumentValue("--target-org");
 
-if (!/^[A-Za-z0-9_.@-]+$/.test(targetOrg)) {
+if (targetOrg !== undefined && !/^[A-Za-z0-9_.@-]+$/.test(targetOrg)) {
   fail(`Invalid target-org value: ${targetOrg}`);
 }
+
+const orgFlag = targetOrg === undefined ? [] : ["--target-org", targetOrg];
 
 const requiredGeneratedFiles = [
   "AccountService.cls",
@@ -51,8 +56,33 @@ if (legacyStructuralFiles.length > 0) {
   );
 }
 
-const org = sfJson(["org", "display", "--target-org", targetOrg, "--json"]);
+// Every authored script must have a generated block to Execute.
+const authoredScriptsDirectory = path.join(root, "apexx", "scripts");
+
+if (fs.existsSync(authoredScriptsDirectory)) {
+  for (const fileName of fs.readdirSync(authoredScriptsDirectory)) {
+    if (!fileName.toLowerCase().endsWith(".apexx")) {
+      continue;
+    }
+
+    const generatedScript = path.join(
+      root,
+      "scripts",
+      "apex",
+      `${fileName.replace(/\.apexx$/i, "")}.apex`,
+    );
+
+    if (!fs.existsSync(generatedScript)) {
+      fail(
+        `Generated script is missing for ${fileName}. Run npm run apexx -- build.`,
+      );
+    }
+  }
+}
+
+const org = sfJson(["org", "display", ...orgFlag, "--json"]);
 const username = org.result?.username ?? "authenticated user";
+const orgLabel = org.result?.alias ?? targetOrg ?? "default org";
 
 const accountCount = queryCount(
   "SELECT count() FROM Account WHERE Name LIKE 'ApexX Demo%'",
@@ -63,26 +93,20 @@ const contactCount = queryCount(
 
 if (accountCount !== 4 || contactCount !== 4) {
   fail(
-    `Demo data is not deterministic (found ${accountCount} accounts and ${contactCount} contacts). Run npm run sf:seed -- --target-org ${targetOrg}.`,
+    `Demo data is not deterministic (found ${accountCount} accounts and ${contactCount} contacts). Run npm run sf:seed${
+      targetOrg === undefined ? "" : ` -- --target-org ${targetOrg}`
+    }.`,
   );
 }
 
 console.log("ApexX demo readiness check passed.");
-console.log(`  Org: ${targetOrg} (${username})`);
+console.log(`  Org: ${orgLabel} (${username})`);
 console.log("  Generated contracts: ApexXFuncs + ApexXTuples registries present");
 console.log(`  Demo data: ${accountCount} accounts, ${contactCount} contacts`);
 console.log("  Local compiler, smoke, and editor checks passed before this org check");
 
 function queryCount(query) {
-  const response = sfJson([
-    "data",
-    "query",
-    "--query",
-    query,
-    "--target-org",
-    targetOrg,
-    "--json",
-  ]);
+  const response = sfJson(["data", "query", "--query", query, ...orgFlag, "--json"]);
   return Number(response.result?.totalSize ?? response.result?.records?.[0]?.expr0 ?? -1);
 }
 

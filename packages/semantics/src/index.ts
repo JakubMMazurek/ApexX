@@ -2,6 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import type {
   ApexXDiagnostic,
+  FuncLambdaAssignment,
+  LambdaExpression,
   ListMethodCallExpression,
   ListMethodResultKind,
   ListTypeInfo,
@@ -290,6 +292,14 @@ export function inferExpressionType(
     return "Decimal";
   }
 
+  const conditional = findTopLevelConditional(trimmed);
+  if (conditional) {
+    return mergeBranchTypes(
+      inferExpressionType(conditional.whenTrue, scope),
+      inferExpressionType(conditional.whenFalse, scope),
+    );
+  }
+
   if (findTopLevelOperator(trimmed, ["||", "&&"])) {
     return "Boolean";
   }
@@ -346,6 +356,142 @@ export function inferExpressionType(
   }
 
   return inferChainExpressionType(trimmed, scope);
+}
+
+export interface FuncLambdaReturnCheckOptions {
+  source: string;
+  assignment: FuncLambdaAssignment;
+  variables?: Map<string, string>;
+  typeProvider?: ApexXTypeProvider;
+}
+
+/**
+ * Checks a Func lambda against the return type its `Func<...>` declaration promises.
+ *
+ * The lowering drops the lambda body into `invoke()` on a generated class, so a body
+ * that returns the wrong type produces Apex that only the platform compiler rejects,
+ * naming a class the user never wrote. Each `return` is checked separately, because a
+ * block lambda may legitimately have several.
+ */
+export function checkFuncLambdaReturnTypes(
+  options: FuncLambdaReturnCheckOptions,
+): ApexXDiagnostic[] {
+  const { assignment } = options;
+  const expectedType = toApexType(assignment.returnType ?? "");
+
+  // Nothing was promised: an untyped reassignment, or a Func whose declaration this
+  // file cannot see.
+  if (!expectedType || expectedType === "Object" || /^void$/i.test(expectedType)) {
+    return [];
+  }
+
+  const variables = new Map(
+    options.variables ?? collectDeclaredVariables(options.source),
+  );
+
+  assignment.lambda.parameters.forEach((parameter, index) => {
+    const parameterType = assignment.parameterTypes[index];
+
+    if (parameterType) {
+      variables.set(parameter.name.toLowerCase(), toApexType(parameterType));
+    }
+  });
+
+  const scope = { variables, typeProvider: options.typeProvider };
+  // Rendered from the parts rather than echoed from the source, so a declaration and
+  // a later reassignment of the same variable read identically.
+  const declaredType = `Func<${[...assignment.parameterTypes, assignment.returnType]
+    .map(toApexType)
+    .join(", ")}>`;
+  const diagnostics: ApexXDiagnostic[] = [];
+
+  for (const returned of lambdaReturnExpressions(assignment.lambda)) {
+    const actualType = inferExpressionType(returned.expression, scope);
+
+    if (!actualType || isCompatibleApexType(expectedType, actualType)) {
+      continue;
+    }
+
+    diagnostics.push({
+      severity: "error",
+      source: "apexx-semantics",
+      message: `${declaredType} must return ${expectedType}, but this returns ${actualType}.`,
+      range: createRange(
+        options.source,
+        returned.start,
+        returned.end,
+      ),
+    });
+  }
+
+  return diagnostics;
+}
+
+interface ReturnedExpression {
+  expression: string;
+  start: number;
+  end: number;
+}
+
+/**
+ * The expressions a lambda hands back: the body itself for an expression lambda, or
+ * every top-level `return` for a block lambda. Offsets are absolute, so a diagnostic
+ * lands on the `return` at fault rather than on the whole lambda.
+ */
+function lambdaReturnExpressions(lambda: LambdaExpression): ReturnedExpression[] {
+  const bodyStart = lambda.bodyRange.start.offset;
+
+  if (!isBlockLambdaBody(lambda.body)) {
+    return [
+      { expression: lambda.body, start: bodyStart, end: lambda.bodyRange.end.offset },
+    ];
+  }
+
+  const masked = maskCommentsAndStrings(lambda.body);
+  const returned: ReturnedExpression[] = [];
+
+  for (const match of masked.matchAll(/\breturn\b/g)) {
+    const start = (match.index ?? 0) + match[0].length;
+    const semicolon = topLevelSemicolon(masked, start);
+
+    if (semicolon === undefined) {
+      continue;
+    }
+
+    const expression = lambda.body.slice(start, semicolon).trim();
+
+    if (expression.length === 0) {
+      continue;
+    }
+
+    const leading = lambda.body.slice(start, semicolon).length
+      - lambda.body.slice(start, semicolon).trimStart().length;
+    returned.push({
+      expression,
+      start: bodyStart + start + leading,
+      end: bodyStart + start + leading + expression.length,
+    });
+  }
+
+  return returned;
+}
+
+function topLevelSemicolon(masked: string, start: number): number | undefined {
+  let depth = 0;
+
+  for (let index = start; index < masked.length; index += 1) {
+    const current = masked[index];
+
+    if (current === "(" || current === "[" || current === "{") {
+      depth += 1;
+    } else if (current === ")" || current === "]" || current === "}") {
+      depth -= 1;
+    } else if (current === ";" && depth <= 0) {
+      return index;
+    }
+  }
+
+  return undefined;
 }
 
 export function inferListMethodChainTypes(
@@ -998,8 +1144,172 @@ function isAssignableType(expectedType: string, actualType: string): boolean {
   );
 }
 
+/** Apex widens along this chain implicitly, so a narrower value fits a wider slot. */
+const numericWideningOrder = ["Integer", "Long", "Double", "Decimal"];
+
+/**
+ * Assignability as the Apex compiler applies it, for checks that run against code
+ * the user wrote rather than against a type this compiler inferred.
+ *
+ * `isAssignableType` demands an exact match, which is the right rule when the
+ * expected type was itself derived from a list chain. Here the expected type is
+ * declared in the source, so rejecting the conversions Apex performs silently —
+ * numeric widening, and `Id` where a `String` is wanted — would report working code
+ * as broken. An unknown type on either side is treated as compatible: staying quiet
+ * beats guessing.
+ */
+export function isCompatibleApexType(
+  expectedType: string | undefined,
+  actualType: string | undefined,
+): boolean {
+  if (!expectedType || !actualType) {
+    return true;
+  }
+
+  const expected = toApexType(expectedType);
+  const actual = toApexType(actualType);
+
+  if (isAssignableType(expected, actual)) {
+    return true;
+  }
+
+  const expectedRank = numericWideningOrder.indexOf(expected);
+  const actualRank = numericWideningOrder.indexOf(actual);
+
+  if (expectedRank >= 0 && actualRank >= 0) {
+    return actualRank <= expectedRank;
+  }
+
+  const idAndString = new Set(["Id", "String"]);
+  if (idAndString.has(expected) && idAndString.has(actual)) {
+    return true;
+  }
+
+  // A declared SObject or interface type cannot be resolved here, so any type this
+  // module does not model is left alone.
+  return !isKnownApexType(expected) || !isKnownApexType(actual);
+}
+
+
 function isType(typeName: string | undefined, expectedType: string): boolean {
   return typeName ? toApexType(typeName) === expectedType : false;
+}
+
+/**
+ * Splits `condition ? whenTrue : whenFalse` at its top level.
+ *
+ * The conditional operator binds loosest of all, so it has to be recognised before
+ * any other operator: the condition itself almost always contains a comparison, and
+ * reading that comparison as the whole expression types a ternary as `Boolean`.
+ * Safe navigation (`?.`) and null coalescing (`??`) are not conditionals, and a
+ * nested conditional in the true branch takes its own `:` with it.
+ */
+function findTopLevelConditional(
+  expression: string,
+): { whenTrue: string; whenFalse: string } | undefined {
+  let depth = 0;
+  let inString = false;
+  let questionIndex = -1;
+  let pending = 0;
+
+  for (let index = 0; index < expression.length; index += 1) {
+    const current = expression[index];
+    const next = expression[index + 1];
+
+    if (inString) {
+      if (current === "'" && expression[index - 1] !== "\\") {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (current === "'") {
+      inString = true;
+      continue;
+    }
+
+    if (current === "(" || current === "[" || current === "{") {
+      depth += 1;
+      continue;
+    }
+
+    if (current === ")" || current === "]" || current === "}") {
+      depth -= 1;
+      continue;
+    }
+
+    if (depth !== 0) {
+      continue;
+    }
+
+    if (current === "?") {
+      if (next === "." || next === "?") {
+        index += 1;
+        continue;
+      }
+
+      if (questionIndex < 0) {
+        questionIndex = index;
+      } else {
+        pending += 1;
+      }
+
+      continue;
+    }
+
+    if (current === ":" && questionIndex >= 0) {
+      if (pending > 0) {
+        pending -= 1;
+        continue;
+      }
+
+      return {
+        whenTrue: expression.slice(questionIndex + 1, index),
+        whenFalse: expression.slice(index + 1),
+      };
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * The type of a conditional expression, from its two branches.
+ *
+ * Branches that disagree on anything but numeric width leave the type unknown, so a
+ * caller stays quiet rather than reporting against a guess.
+ */
+function mergeBranchTypes(
+  leftType: string | undefined,
+  rightType: string | undefined,
+): string | undefined {
+  if (!leftType || !rightType) {
+    return undefined;
+  }
+
+  if (isType(leftType, "Null")) {
+    return toApexType(rightType);
+  }
+
+  if (isType(rightType, "Null")) {
+    return toApexType(leftType);
+  }
+
+  const left = toApexType(leftType);
+  const right = toApexType(rightType);
+
+  if (left === right) {
+    return left;
+  }
+
+  const leftRank = numericWideningOrder.indexOf(left);
+  const rightRank = numericWideningOrder.indexOf(right);
+
+  if (leftRank >= 0 && rightRank >= 0) {
+    return leftRank >= rightRank ? left : right;
+  }
+
+  return undefined;
 }
 
 function findTopLevelOperator(

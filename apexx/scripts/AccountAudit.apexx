@@ -1,0 +1,51 @@
+// An ApexX script: authored ApexX, compiled to a self-contained anonymous block
+// in scripts/apex, which the Salesforce Apex extension can Execute or Debug.
+//
+// A script needs nothing deployed. The structural types its lambdas and tuples
+// rely on are declared in the generated block itself.
+
+List<Account> accounts = [
+    SELECT Id, Name, AccountNumber, AnnualRevenue, NumberOfEmployees
+    FROM Account
+    WHERE Name LIKE 'ApexX Demo%'
+    ORDER BY Name
+];
+
+Decimal exposureThreshold = 250000;
+List<String> highExposure = accounts
+    .filter(account => account.AnnualRevenue != null)
+    .filter(account => account.AnnualRevenue >= exposureThreshold)
+    .map(account => account.Name);
+
+Decimal minimumPerEmployee = 10000;
+Func<Account, Boolean> isEfficient = (account) => {
+    if (account.AnnualRevenue == null
+        || account.NumberOfEmployees == null
+        || account.NumberOfEmployees <= 0) {
+        return false;
+    }
+
+    return account.AnnualRevenue / account.NumberOfEmployees >= minimumPerEmployee;
+};
+
+Map<Id, (String, Decimal)> perEmployeeByAccountId = new Map<Id, (String, Decimal)>();
+Integer efficient = 0;
+
+for (Account account : accounts) {
+    Decimal perEmployee = account.AnnualRevenue == null
+        || account.NumberOfEmployees == null
+        || account.NumberOfEmployees <= 0
+            ? null
+            : account.AnnualRevenue / account.NumberOfEmployees;
+
+    perEmployeeByAccountId.put(account.Id, (account.Name, perEmployee));
+
+    if (isEfficient(account)) {
+        efficient++;
+    }
+}
+
+System.debug('Accounts audited: ' + accounts.size());
+System.debug('At or above ' + exposureThreshold + ' revenue: ' + highExposure);
+System.debug('Efficient at ' + minimumPerEmployee + ' per employee: ' + efficient + ' of ' + accounts.size());
+System.debug('Revenue per employee carried as a tuple: ' + perEmployeeByAccountId.size());

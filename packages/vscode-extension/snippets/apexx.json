@@ -71,5 +71,737 @@
       "    ${0}",
       "}"
     ]
+  },
+  "Apex class": {
+    "prefix": "class",
+    "description": "Declare a class",
+    "body": [
+      "${1|public,global,private|} ${2|with sharing,without sharing,inherited sharing|} class ${3:Name} {",
+      "    $0",
+      "}"
+    ]
+  },
+  "Apex interface": {
+    "prefix": "interface",
+    "description": "Declare an interface",
+    "body": [
+      "${1|public,global|} interface ${2:Name} {",
+      "    ${3:void} ${4:method}();",
+      "}"
+    ]
+  },
+  "Apex enum": {
+    "prefix": "enum",
+    "description": "Declare an enum",
+    "body": [
+      "${1|public,global|} enum ${2:Name} {",
+      "    ${3:FIRST},",
+      "    ${4:SECOND}",
+      "}"
+    ]
+  },
+  "Apex constructor": {
+    "prefix": "constructor",
+    "description": "Declare a constructor",
+    "body": [
+      "${1|public,global,private,protected|} ${2:Name}(${3}) {",
+      "    $0",
+      "}"
+    ]
+  },
+  "Apex method": {
+    "prefix": "method",
+    "description": "Declare an instance method",
+    "body": [
+      "${1|public,private,global,protected|} ${2:void} ${3:name}(${4}) {",
+      "    $0",
+      "}"
+    ]
+  },
+  "Apex static method": {
+    "prefix": "staticmethod",
+    "description": "Declare a static method",
+    "body": [
+      "${1|public,private,global,protected|} static ${2:void} ${3:name}(${4}) {",
+      "    $0",
+      "}"
+    ]
+  },
+  "Apex field": {
+    "prefix": "field",
+    "description": "Declare a field",
+    "body": [
+      "${1|private,public,global,protected|} ${2:String} ${3:name};"
+    ]
+  },
+  "Apex variable": {
+    "prefix": "variable",
+    "description": "Declare a field with an initial value",
+    "body": [
+      "${1|private,public,global,protected|} ${2:String} ${3:name} = ${4:value};"
+    ]
+  },
+  "Apex static variable": {
+    "prefix": "staticVariable",
+    "description": "Declare a static field",
+    "body": [
+      "${1|private,public,global|} static ${2:String} ${3:name} = ${4:value};"
+    ]
+  },
+  "Apex static final variable": {
+    "prefix": "staticFinalVariable",
+    "description": "Declare a constant",
+    "body": [
+      "${1|private,public,global|} static final ${2:String} ${3:NAME} = ${4:value};"
+    ]
+  },
+  "Apex local variable": {
+    "prefix": "localVariable",
+    "description": "Declare a local",
+    "body": [
+      "${1:String} ${2:name} = ${3:value};"
+    ]
+  },
+  "Apex property": {
+    "prefix": "getset",
+    "description": "Declare an automatic property",
+    "body": [
+      "${1|public,global,private|} ${2:String} ${3:Name} { get; set; }"
+    ]
+  },
+  "Apex List": {
+    "prefix": "List",
+    "description": "Declare a List",
+    "body": [
+      "List<${1:Account}> ${2:records} = new List<${1:Account}>();"
+    ]
+  },
+  "Apex Set": {
+    "prefix": "Set",
+    "description": "Declare a Set",
+    "body": [
+      "Set<${1:Id}> ${2:ids} = new Set<${1:Id}>();"
+    ]
+  },
+  "Apex Map": {
+    "prefix": "Map",
+    "description": "Declare a Map",
+    "body": [
+      "Map<${1:Id}, ${2:Account}> ${3:byId} = new Map<${1:Id}, ${2:Account}>();"
+    ]
+  },
+  "Apex Map from records": {
+    "prefix": "mapfromrecordlist",
+    "description": "Map a list of records by Id",
+    "body": [
+      "Map<Id, ${1:Account}> ${2:byId} = new Map<Id, ${1:Account}>(${3:records});"
+    ]
+  },
+  "Apex Set of Ids from records": {
+    "prefix": "setidsfromrecordlist",
+    "description": "Collect the Ids of a list of records",
+    "body": [
+      "Set<Id> ${1:ids} = new Map<Id, ${2:Account}>(${3:records}).keySet();"
+    ]
+  },
+  "Apex new object": {
+    "prefix": "newobj",
+    "description": "Construct an instance",
+    "body": [
+      "${1:Account} ${2:record} = new ${1:Account}(${3});"
+    ]
+  },
+  "Apex for-each loop": {
+    "prefix": "for",
+    "description": "Iterate a collection",
+    "body": [
+      "for (${1:Account} ${2:record} : ${3:records}) {",
+      "    $0",
+      "}"
+    ]
+  },
+  "Apex counted loop": {
+    "prefix": "fori",
+    "description": "Counted loop",
+    "body": [
+      "for (Integer ${1:i} = 0; ${1:i} < ${2:length}; ${1:i}++) {",
+      "    $0",
+      "}"
+    ]
+  },
+  "Apex reverse loop": {
+    "prefix": "forr",
+    "description": "Counted loop, downwards",
+    "body": [
+      "for (Integer ${1:i} = ${2:records}.size() - 1; ${1:i} >= 0; ${1:i}--) {",
+      "    $0",
+      "}"
+    ]
+  },
+  "Apex for over a query": {
+    "prefix": "fors",
+    "description": "Iterate a query directly",
+    "body": [
+      "for (${1:Account} ${2:record} : [SELECT ${3:Id, Name} FROM ${1:Account}]) {",
+      "    $0",
+      "}"
+    ]
+  },
+  "Apex for over a map": {
+    "prefix": "formap",
+    "description": "Iterate a map's keys",
+    "body": [
+      "for (${1:Id} ${2:key} : ${3:byId}.keySet()) {",
+      "    $0",
+      "}"
+    ]
+  },
+  "Apex while loop": {
+    "prefix": "while",
+    "description": "Loop while a condition holds",
+    "body": [
+      "while (${1:condition}) {",
+      "    $0",
+      "}"
+    ]
+  },
+  "Apex do-while loop": {
+    "prefix": "do",
+    "description": "Loop at least once",
+    "body": [
+      "do {",
+      "    $0",
+      "} while (${1:condition});"
+    ]
+  },
+  "Apex if": {
+    "prefix": "if",
+    "description": "Conditional",
+    "body": [
+      "if (${1:condition}) {",
+      "    $0",
+      "}"
+    ]
+  },
+  "Apex if-else": {
+    "prefix": "ifelse",
+    "description": "Conditional with an else branch",
+    "body": [
+      "if (${1:condition}) {",
+      "    $2",
+      "} else {",
+      "    $0",
+      "}"
+    ]
+  },
+  "Apex else": {
+    "prefix": "else",
+    "description": "Else branch",
+    "body": [
+      "else {",
+      "    $0",
+      "}"
+    ]
+  },
+  "Apex if null": {
+    "prefix": "ifnull",
+    "description": "Guard against null",
+    "body": [
+      "if (${1:value} == null) {",
+      "    $0",
+      "}"
+    ]
+  },
+  "Apex if not null": {
+    "prefix": "ifnotnull",
+    "description": "Act only when a value is present",
+    "body": [
+      "if (${1:value} != null) {",
+      "    $0",
+      "}"
+    ]
+  },
+  "Apex ternary": {
+    "prefix": "ter",
+    "description": "Conditional expression",
+    "body": [
+      "${1:condition} ? ${2:whenTrue} : ${3:whenFalse}"
+    ]
+  },
+  "Apex switch": {
+    "prefix": "switch",
+    "description": "Switch on a value",
+    "body": [
+      "switch on ${1:value} {",
+      "    when ${2:'A'} {",
+      "        $3",
+      "    }",
+      "    when else {",
+      "        $0",
+      "    }",
+      "}"
+    ]
+  },
+  "Apex try-catch": {
+    "prefix": "try",
+    "description": "Guard a block and report the failure",
+    "body": [
+      "try {",
+      "    $1",
+      "} catch (${2:Exception} ${3:error}) {",
+      "    System.debug(${3:error}.getMessage());",
+      "    $0",
+      "}"
+    ]
+  },
+  "Apex try-finally": {
+    "prefix": "tryf",
+    "description": "Guard a block with cleanup",
+    "body": [
+      "try {",
+      "    $1",
+      "} finally {",
+      "    $0",
+      "}"
+    ]
+  },
+  "Apex try-catch-finally": {
+    "prefix": "trycf",
+    "description": "Guard a block with a handler and cleanup",
+    "body": [
+      "try {",
+      "    $1",
+      "} catch (${2:Exception} ${3:error}) {",
+      "    System.debug(${3:error}.getMessage());",
+      "    $4",
+      "} finally {",
+      "    $0",
+      "}"
+    ]
+  },
+  "Apex throw": {
+    "prefix": "throw",
+    "description": "Throw an exception",
+    "body": [
+      "throw new ${1:IllegalArgumentException}('${2:message}');"
+    ]
+  },
+  "Apex custom exception": {
+    "prefix": "customException",
+    "description": "Declare a custom exception",
+    "body": [
+      "${1|public,global,private|} class ${2:Name}Exception extends Exception {}"
+    ]
+  },
+  "Apex AuraHandledException": {
+    "prefix": "auraHandledException",
+    "description": "Report a friendly error to Lightning",
+    "body": [
+      "throw new AuraHandledException('${1:message}');"
+    ]
+  },
+  "Apex System.debug": {
+    "prefix": "debug",
+    "description": "Debug a value",
+    "body": [
+      "System.debug($0);"
+    ]
+  },
+  "Apex System.debug with label": {
+    "prefix": "sd",
+    "description": "Debug a value, labelled with its name",
+    "body": [
+      "System.debug('${1:value} >> ' + ${1:value});"
+    ]
+  },
+  "Apex System.assertEquals": {
+    "prefix": "sysasseq",
+    "description": "System Assert Equals",
+    "body": [
+      "System.assertEquals(${1:expected}, ${2:actual}, '${3:message}');"
+    ]
+  },
+  "Apex System.assertNotEquals": {
+    "prefix": "sysassnoteq",
+    "description": "System Assert not Equals",
+    "body": [
+      "System.assertNotEquals(${1:unexpected}, ${2:actual}, '${3:message}');"
+    ]
+  },
+  "Apex System.assert false": {
+    "prefix": "sysassf",
+    "description": "System Assert False",
+    "body": [
+      "System.assertEquals(false, ${1:actual}, '${2:message}');"
+    ]
+  },
+  "Apex System.assert null": {
+    "prefix": "sysassnull",
+    "description": "System Assert null",
+    "body": [
+      "System.assertEquals(null, ${1:actual}, '${2:message}');"
+    ]
+  },
+  "Apex System.assert not null": {
+    "prefix": "sysassnotnull",
+    "description": "System Assert Not Null",
+    "body": [
+      "System.assertNotEquals(null, ${1:actual}, '${2:message}');"
+    ]
+  },
+  "Apex assert fail": {
+    "prefix": "fail",
+    "description": "Fail unconditionally",
+    "body": [
+      "System.assert(false, '${1:message}');"
+    ]
+  },
+  "Apex String.isBlank": {
+    "prefix": "isb",
+    "description": "Is Blank",
+    "body": [
+      "String.isBlank(${1:value})"
+    ]
+  },
+  "Apex String.isNotBlank": {
+    "prefix": "isnb",
+    "description": "Is Not Blank",
+    "body": [
+      "String.isNotBlank(${1:value})"
+    ]
+  },
+  "Apex DescribeSObjectResult": {
+    "prefix": "dsr",
+    "description": "Describe an sObject",
+    "body": [
+      "Schema.DescribeSObjectResult ${1:describe} = ${2:Account}.SObjectType.getDescribe();"
+    ]
+  },
+  "Apex DescribeFieldResult": {
+    "prefix": "dfr",
+    "description": "Describe a field",
+    "body": [
+      "Schema.DescribeFieldResult ${1:describe} = ${2:Account}.${3:Name}.getDescribe();"
+    ]
+  },
+  "Apex SOQL query": {
+    "prefix": "select",
+    "description": "Query records into a typed list",
+    "body": [
+      "List<${1:Account}> ${2:records} = [SELECT ${3:Id, Name} FROM ${1:Account}];"
+    ]
+  },
+  "Apex SOQL query with WHERE": {
+    "prefix": "selectwhere",
+    "description": "Query with a filter",
+    "body": [
+      "List<${1:Account}> ${2:records} = [SELECT ${3:Id, Name} FROM ${1:Account} WHERE ${4:Name} = :${5:value}];"
+    ]
+  },
+  "Apex SOQL query with ORDER BY": {
+    "prefix": "selectorder",
+    "description": "Query in a given order",
+    "body": [
+      "List<${1:Account}> ${2:records} = [SELECT ${3:Id, Name} FROM ${1:Account} ORDER BY ${4:Name} ${5|ASC,DESC|}];"
+    ]
+  },
+  "Apex SOQL query with LIMIT": {
+    "prefix": "selectlimit",
+    "description": "Query a bounded number of records",
+    "body": [
+      "List<${1:Account}> ${2:records} = [SELECT ${3:Id, Name} FROM ${1:Account} LIMIT ${4:100}];"
+    ]
+  },
+  "Apex SOQL query with OFFSET": {
+    "prefix": "selectoffset",
+    "description": "Query a page of records",
+    "body": [
+      "List<${1:Account}> ${2:records} = [SELECT ${3:Id, Name} FROM ${1:Account} LIMIT ${4:100} OFFSET ${5:0}];"
+    ]
+  },
+  "Apex AuraEnabled": {
+    "prefix": "@AuraEnabled",
+    "description": "Expose a method to Lightning",
+    "body": [
+      "@AuraEnabled(cacheable=${1|true,false|})"
+    ]
+  },
+  "Apex TestSetup": {
+    "prefix": "@TestSetup",
+    "description": "Declare shared test data",
+    "body": [
+      "@TestSetup",
+      "static void ${1:setUp}() {",
+      "    $0",
+      "}"
+    ]
+  },
+  "Apex test method": {
+    "prefix": "testMethod",
+    "description": "Declare a test method",
+    "body": [
+      "@IsTest",
+      "static void ${1:describesBehaviour}() {",
+      "    Test.startTest();",
+      "    $2",
+      "    Test.stopTest();",
+      "    System.assertEquals(${3:expected}, ${4:actual}, '${5:message}');",
+      "}"
+    ]
+  },
+  "Apex test class": {
+    "prefix": "testclass",
+    "description": "Declare a test class",
+    "body": [
+      "@IsTest",
+      "private class ${1:NameTest} {",
+      "    @IsTest",
+      "    static void ${2:describesBehaviour}() {",
+      "        $0",
+      "    }",
+      "}"
+    ]
+  },
+  "Apex callout mock": {
+    "prefix": "mockCallout",
+    "description": "Declare an HttpCalloutMock",
+    "body": [
+      "${1|public,global,private|} class ${2:Name}Mock implements HttpCalloutMock {",
+      "    public HttpResponse respond(HttpRequest request) {",
+      "        HttpResponse response = new HttpResponse();",
+      "        response.setStatusCode(${3:200});",
+      "        response.setBody('${4:{}}');",
+      "        return response;",
+      "    }",
+      "}"
+    ]
+  },
+  "Apex HTTP callout": {
+    "prefix": "callout",
+    "description": "Send an HTTP request",
+    "body": [
+      "HttpRequest ${1:request} = new HttpRequest();",
+      "${1:request}.setEndpoint('${2:https://example.com}');",
+      "${1:request}.setMethod('${3|GET,POST,PUT,PATCH,DELETE|}');",
+      "HttpResponse ${4:response} = new Http().send(${1:request});",
+      "$0"
+    ]
+  },
+  "Apex Queueable": {
+    "prefix": "queueable",
+    "description": "Declare a Queueable job",
+    "body": [
+      "${1|public,global|} with sharing class ${2:Name} implements Queueable {",
+      "    public void execute(QueueableContext context) {",
+      "        $0",
+      "    }",
+      "}"
+    ]
+  },
+  "Apex Batchable": {
+    "prefix": "batchable",
+    "description": "Declare a Batchable job",
+    "body": [
+      "${1|public,global|} with sharing class ${2:Name} implements Database.Batchable<SObject> {",
+      "    public Database.QueryLocator start(Database.BatchableContext context) {",
+      "        return Database.getQueryLocator('SELECT Id FROM ${3:Account}');",
+      "    }",
+      "",
+      "    public void execute(Database.BatchableContext context, List<${3:Account}> scope) {",
+      "        $0",
+      "    }",
+      "",
+      "    public void finish(Database.BatchableContext context) {",
+      "    }",
+      "}"
+    ]
+  },
+  "Apex Schedulable": {
+    "prefix": "schedulable",
+    "description": "Declare a Schedulable job",
+    "body": [
+      "${1|public,global|} with sharing class ${2:Name} implements Schedulable {",
+      "    public void execute(SchedulableContext context) {",
+      "        $0",
+      "    }",
+      "}"
+    ]
+  },
+  "Apex SOQL query with GROUP BY": {
+    "prefix": "selectgroup",
+    "description": "Aggregate by a grouping field",
+    "body": [
+      "List<AggregateResult> ${1:results} = [SELECT ${2:Type}, COUNT(Id) ${3:total} FROM ${4:Account} GROUP BY ${2:Type}];"
+    ]
+  },
+  "Apex SOQL query with HAVING": {
+    "prefix": "selecthaving",
+    "description": "Aggregate, then filter the groups",
+    "body": [
+      "List<AggregateResult> ${1:results} = [SELECT ${2:Type}, COUNT(Id) ${3:total} FROM ${4:Account} GROUP BY ${2:Type} HAVING COUNT(Id) > ${5:1}];"
+    ]
+  },
+  "Apex SOQL query with a subquery": {
+    "prefix": "selectsub",
+    "description": "Query a parent and its children together",
+    "body": [
+      "List<${1:Account}> ${2:records} = [SELECT ${3:Id, Name}, (SELECT ${4:Id, LastName} FROM ${5:Contacts}) FROM ${1:Account}];"
+    ]
+  },
+  "Apex SOQL semi-join": {
+    "prefix": "selectinner",
+    "description": "Restrict to records referenced by another query",
+    "body": [
+      "List<${1:Account}> ${2:records} = [SELECT ${3:Id, Name} FROM ${1:Account} WHERE Id IN (SELECT ${4:AccountId} FROM ${5:Contact} WHERE ${6:LastName} = :${7:value})];"
+    ]
+  },
+  "Apex SOQL anti-join": {
+    "prefix": "selectleft",
+    "description": "Restrict to records no other record references",
+    "body": [
+      "List<${1:Account}> ${2:records} = [SELECT ${3:Id, Name} FROM ${1:Account} WHERE Id NOT IN (SELECT ${4:AccountId} FROM ${5:Contact})];"
+    ]
+  },
+  "Apex SOQL query with aggregates": {
+    "prefix": "selectagg",
+    "description": "Aggregate over every matching record",
+    "body": [
+      "List<AggregateResult> ${1:results} = [SELECT COUNT(Id) ${2:total}, SUM(${3:AnnualRevenue}) ${4:revenue}, AVG(${3:AnnualRevenue}) ${5:average} FROM ${6:Account}];"
+    ]
+  },
+  "Apex SOQL query with date functions": {
+    "prefix": "selectdate",
+    "description": "Group or filter by a date part",
+    "body": [
+      "List<AggregateResult> ${1:results} = [SELECT CALENDAR_YEAR(${2:CreatedDate}) ${3:year}, COUNT(Id) ${4:total} FROM ${5:Account} GROUP BY CALENDAR_YEAR(${2:CreatedDate})];"
+    ]
+  },
+  "Apex SOQL query with a date literal": {
+    "prefix": "selectrecent",
+    "description": "Filter by a relative date",
+    "body": [
+      "List<${1:Account}> ${2:records} = [SELECT ${3:Id, Name} FROM ${1:Account} WHERE ${4:CreatedDate} = LAST_N_DAYS:${5:30}];"
+    ]
+  },
+  "Apex SOQL query with text formatting": {
+    "prefix": "selecttext",
+    "description": "Return a field through a formatting function",
+    "body": [
+      "List<${1:Account}> ${2:records} = [SELECT ${3:Id}, toLabel(${4:Type}), FORMAT(${5:AnnualRevenue}) FROM ${1:Account}];"
+    ]
+  },
+  "Apex SOQL query with a converted currency": {
+    "prefix": "selectmath",
+    "description": "Aggregate a numeric field",
+    "body": [
+      "List<AggregateResult> ${1:results} = [SELECT ${2:Type}, MAX(${3:AnnualRevenue}) ${4:highest}, MIN(${3:AnnualRevenue}) ${5:lowest} FROM ${6:Account} GROUP BY ${2:Type}];"
+    ]
+  },
+  "Apex SOQL query with TYPEOF": {
+    "prefix": "selectcase",
+    "description": "Select different fields per polymorphic type",
+    "body": [
+      "List<${1:Task}> ${2:records} = [SELECT ${3:Id}, TYPEOF ${4:What} WHEN ${5:Account} THEN ${6:Name} ELSE ${7:Id} END FROM ${1:Task}];"
+    ]
+  },
+  "Apex SOQL query with FOR UPDATE": {
+    "prefix": "selectforupdate",
+    "description": "Lock the rows the query returns",
+    "body": [
+      "List<${1:Account}> ${2:records} = [SELECT ${3:Id, Name} FROM ${1:Account} WHERE ${4:Id} = :${5:recordId} FOR UPDATE];"
+    ]
+  },
+  "Apex SOQL query with ALL ROWS": {
+    "prefix": "selectallrows",
+    "description": "Include records in the recycle bin",
+    "body": [
+      "List<${1:Account}> ${2:records} = [SELECT ${3:Id, Name} FROM ${1:Account} WHERE ${4:IsDeleted} = true ALL ROWS];"
+    ]
+  },
+  "Apex SOQL query with security enforced": {
+    "prefix": "selectsecure",
+    "description": "Query only what the user may read",
+    "body": [
+      "List<${1:Account}> ${2:records} = [SELECT ${3:Id, Name} FROM ${1:Account} WITH SECURITY_ENFORCED];"
+    ]
+  },
+  "Apex Database.query": {
+    "prefix": "dbquery",
+    "description": "Run a query built at runtime",
+    "body": [
+      "List<${1:SObject}> ${2:records} = Database.query('SELECT ${3:Id, Name} FROM ${4:Account}');"
+    ]
+  },
+  "Apex Database.query with LIMIT": {
+    "prefix": "dbquerylimit",
+    "description": "Run a bounded query built at runtime",
+    "body": [
+      "List<${1:SObject}> ${2:records} = Database.query('SELECT ${3:Id, Name} FROM ${4:Account} LIMIT ${5:100}');"
+    ]
+  },
+  "Apex SOQL string": {
+    "prefix": "soqlstring",
+    "description": "Build a query as a String",
+    "body": [
+      "String ${1:query} = 'SELECT ${2:Id, Name} FROM ${3:Account} WHERE ${4:Name} = :${5:value}';"
+    ]
+  },
+  "Apex dynamic SOQL": {
+    "prefix": "soqldynamic",
+    "description": "Build a query whose filter is decided at runtime",
+    "body": [
+      "String ${1:query} = 'SELECT ${2:Id, Name} FROM ${3:Account}';",
+      "",
+      "if (${4:condition}) {",
+      "    ${1:query} += ' WHERE ${5:Name} = :${6:value}';",
+      "}",
+      "",
+      "List<${3:Account}> ${7:records} = Database.query(${1:query});"
+    ]
+  },
+  "Apex SOQL query with a bind variable": {
+    "prefix": "soqlbind",
+    "description": "Filter on an Apex value",
+    "body": [
+      "List<${1:Account}> ${2:records} = [SELECT ${3:Id, Name} FROM ${1:Account} WHERE ${4:Name} = :${5:value}];"
+    ]
+  },
+  "Apex SOQL query with several bind variables": {
+    "prefix": "soqlmultibind",
+    "description": "Filter on more than one Apex value",
+    "body": [
+      "List<${1:Account}> ${2:records} = [SELECT ${3:Id, Name} FROM ${1:Account} WHERE ${4:Name} = :${5:name} AND ${6:Rating} IN :${7:ratings}];"
+    ]
+  },
+  "Apex SOQL query in a loop": {
+    "prefix": "soqlfor",
+    "description": "Iterate a query without holding it in memory",
+    "body": [
+      "for (${1:Account} ${2:record} : [SELECT ${3:Id, Name} FROM ${1:Account}]) {",
+      "    $0",
+      "}"
+    ]
+  },
+  "Apex SOQL aggregate result": {
+    "prefix": "soqlaggresult",
+    "description": "Read a value back out of an aggregate query",
+    "body": [
+      "List<AggregateResult> ${1:results} = [SELECT COUNT(Id) ${2:total} FROM ${3:Account}];",
+      "Integer ${4:count} = (Integer) ${1:results}[0].get('${2:total}');"
+    ]
+  },
+  "Apex SOQL query for a custom object": {
+    "prefix": "soqlcustom",
+    "description": "Query a custom object",
+    "body": [
+      "List<${1:CustomObject}__c> ${2:records} = [SELECT ${3:Id, Name} FROM ${1:CustomObject}__c WHERE ${4:Status}__c = :${5:value}];"
+    ]
+  },
+  "Apex SOQL query with relationship fields": {
+    "prefix": "soqlrel",
+    "description": "Query fields across a relationship",
+    "body": [
+      "List<${1:Contact}> ${2:records} = [SELECT ${3:Id, LastName}, ${4:Account}.${5:Name} FROM ${1:Contact} WHERE ${4:Account}.${6:Rating} = :${7:value}];"
+    ]
   }
 }

@@ -71,6 +71,48 @@ const fallbackSObjects: Record<string, SObjectFieldInfo[]> = {
   ],
 };
 
+/** Cached so identifier completion does not stat the schema directory per keystroke. */
+let sObjectNameCache: { root: string | undefined; names: string[] } | undefined;
+
+/**
+ * SObjects this workspace knows about: whatever `.apexx/schema/sobjects` has been
+ * refreshed with, plus the ones ApexX falls back to when nothing has been.
+ */
+export function knownSObjectNames(workspaceRoot: string | undefined): string[] {
+  if (sObjectNameCache && sObjectNameCache.root === workspaceRoot) {
+    return sObjectNameCache.names;
+  }
+
+  const names = new Set<string>();
+
+  for (const name of Object.keys(fallbackSObjects)) {
+    names.add(name.charAt(0).toUpperCase() + name.slice(1));
+  }
+
+  if (workspaceRoot) {
+    const schemaDirectory = path.join(
+      workspaceRoot,
+      ".apexx",
+      "schema",
+      "sobjects",
+    );
+
+    try {
+      for (const entry of fs.readdirSync(schemaDirectory)) {
+        if (entry.toLowerCase().endsWith(".json")) {
+          names.add(entry.slice(0, -".json".length));
+        }
+      }
+    } catch {
+      // No refreshed schema: the fallbacks stand on their own.
+    }
+  }
+
+  const sorted = [...names].sort((left, right) => left.localeCompare(right));
+  sObjectNameCache = { root: workspaceRoot, names: sorted };
+  return sorted;
+}
+
 export function getSObjectFields(
   typeName: string,
   workspaceRoot: string | undefined,

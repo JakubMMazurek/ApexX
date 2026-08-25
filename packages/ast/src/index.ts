@@ -16,6 +16,13 @@ export interface ApexXDiagnostic {
   message: string;
   range?: SourceRange;
   source?: string;
+  /**
+   * Stable identifier for diagnostics about constructs whose lowering hides the real
+   * Apex type behind a generated class, so a reader has something to look up that
+   * survives a reworded message. Carried as data rather than as a message prefix, so
+   * an editor can show it, filter on it, and link it to its documentation.
+   */
+  code?: string;
 }
 
 export interface ListTypeInfo {
@@ -24,7 +31,12 @@ export interface ListTypeInfo {
   variableName: string;
 }
 
-export type ListMethodCallStatementKind = "return" | "assignment" | "expression";
+export type ListMethodCallStatementKind =
+  | "return"
+  | "assignment"
+  | "expression"
+  /** Nested inside a larger statement, e.g. `System.debug(list.filter(...))`. */
+  | "embedded";
 export type FilterLambdaStatementKind = ListMethodCallStatementKind;
 
 export type ListMethodName =
@@ -41,6 +53,8 @@ export interface LambdaExpression {
   parameterName: string;
   parameters: LambdaParameter[];
   body: string;
+  /** Covers exactly `body`, so an offset inside it can be reported in the source. */
+  bodyRange: SourceRange;
   range: SourceRange;
 }
 
@@ -81,6 +95,18 @@ export interface ListMethodCallExpression {
   stepResultKinds?: ListMethodResultKind[];
   resultTempName?: string;
   resultTempNames?: string[];
+  /**
+   * Set for an `embedded` call. A chain lowers to a loop, and a loop is a statement, so
+   * the loop is emitted before the statement the chain sits in and the chain itself is
+   * replaced by the name the loop leaves its result in. This records the statement to
+   * rebuild and where within it the chain sits, as offsets into `statementText`.
+   */
+  embedded?: {
+    /** The whole statement, without its leading indentation. */
+    statementText: string;
+    chainStart: number;
+    chainEnd: number;
+  };
 }
 
 export type FilterLambdaExpression = ListMethodCallExpression;
@@ -119,9 +145,37 @@ export interface ApexXParseResult {
   diagnostics: ApexXDiagnostic[];
 }
 
+/**
+ * Which kind of Apex the pipeline is targeting.
+ *
+ * `class` produces a compilation unit: one top-level class per file, with shared
+ * structural types collected into the `ApexXFuncs` and `ApexXTuples` registries.
+ * `anonymous` produces an anonymous block for `sf apex run`, where a class the
+ * block declares is an inner type. Inner types cannot themselves have inner
+ * types, so a script carries flat declarations of the structural types it uses
+ * and needs nothing deployed.
+ */
+export type ApexXUnitMode = "class" | "anonymous";
+
+/**
+ * Where an anonymous block's structural types come from.
+ *
+ * `inline` declares them in the block, so the script needs nothing deployed.
+ * `deployed` names them as members of the `ApexXFuncs` and `ApexXTuples`
+ * registries, which is required when the script passes a `Func` or a tuple to or
+ * from a deployed ApexX class: the same signature has the same name either way,
+ * but a flat name and a registry member are different Apex types. Ignored in
+ * class mode, which always uses the registries.
+ */
+export type ApexXStructuralTypes = "inline" | "deployed";
+
 export interface TranspileOptions {
   sourceFileName?: string;
   workspaceRoot?: string;
+  /** Defaults to `class`. */
+  mode?: ApexXUnitMode;
+  /** Defaults to `inline`. */
+  structuralTypes?: ApexXStructuralTypes;
 }
 
 /**

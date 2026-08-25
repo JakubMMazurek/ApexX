@@ -352,10 +352,17 @@ function splitTopLevel(text: string): { text: string; start: number }[] {
 }
 
 /**
- * Parses a `.clsx` document and returns every declaration it contains, with
+ * Parses an ApexX document and returns every declaration it contains, with
  * offsets that address the original source.
+ *
+ * A script is a sequence of statements and block-level declarations, so it is
+ * parsed with the anonymous-block rule; the compilation-unit rule would fail on
+ * its first statement and collect nothing.
  */
-export function buildDocumentModel(source: string): DocumentModel {
+export function buildDocumentModel(
+  source: string,
+  options: { anonymous?: boolean } = {},
+): DocumentModel {
   const { text: normalizedApex, tupleBindings, lambdaParameters } =
     normalizeToApex(source);
   const errorListener = new CollectingErrorListener();
@@ -366,7 +373,9 @@ export function buildDocumentModel(source: string): DocumentModel {
       normalizedApex,
       errorListener,
     );
-    const tree = parser.compilationUnit();
+    const tree = options.anonymous
+      ? parser.anonymousUnit()
+      : parser.compilationUnit();
     ApexParseTreeWalker.DEFAULT.walk(new DeclarationListener(symbols), tree);
   } catch {
     // A hard parse failure still leaves whatever was collected before it.
@@ -560,6 +569,19 @@ class DeclarationListener extends ApexParserBaseListener {
   exitMethodDeclaration(): void {
     this.methodStack.pop();
     this.scopeStack.pop();
+  }
+
+  /**
+   * An interface's methods are a separate grammar rule from a class's, so they need
+   * their own hook -- without it an interface declares nothing the outline, hover,
+   * rename or completion can see, and a variable of that interface type has no members.
+   */
+  enterInterfaceMethodDeclaration(context: any): void {
+    this.enterMethodDeclaration(context);
+  }
+
+  exitInterfaceMethodDeclaration(): void {
+    this.exitMethodDeclaration();
   }
 
   enterConstructorDeclaration(context: any): void {

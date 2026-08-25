@@ -605,27 +605,79 @@
                     <div class="chapterIntro">
                         <p class="sectionEyebrow">03 · The developer experience</p>
                         <h2 id="toolchain-heading">A language feature only matters when the editor and build feel native.</h2>
-                        <p>The ApexX extension treats <code>.clsx</code> as source—not as plain text. The same compiler powers feedback in the editor and the Apex emitted on save.</p>
+                        <p>The ApexX extension treats <code>.clsx</code> and <code>.apexx</code> as source—not as plain text. One compiler serves the symbol model in the editor and the Apex emitted on save, so editor feedback and the deployed artifact cannot disagree.</p>
                     </div>
 
                     <section class="editorExperience" aria-labelledby="editor-heading">
                         <div class="internalHeading editorHeading">
                             <p class="sectionEyebrow">Live Visual Studio Code demo</p>
                             <h3 id="editor-heading">Show the language tooling before showing the generated artifact</h3>
+                            <p>Everything below is served by ApexX's own symbol model. It needs no JDK, it is on by default, and it behaves identically in a class and in a script.</p>
                         </div>
                         <div class="editorGrid">
-                            <article><span>01</span><strong>Syntax coloring</strong><p>Apex plus dedicated scopes for lambdas, <code>Func</code>, collection helpers, defaults, and decorators.</p></article>
-                            <article><span>02</span><strong>Context IntelliSense</strong><p>Completion follows element types and Salesforce schema across <code>filter</code>, <code>map</code>, and <code>flatMap</code>.</p></article>
-                            <article><span>03</span><strong>Live diagnostics</strong><p>Parser, type, and lowering errors appear in the editor from the same compiler used by the build.</p></article>
-                            <article><span>04</span><strong>Hover + snippets</strong><p>Feature contracts are one hover away, with templates for functions, pipelines, defaults, and decorators.</p></article>
-                            <article><span>05</span><strong>Compile on save</strong><p>Saving a <code>.clsx</code> file writes the deployable class and metadata and reports the result in VS Code.</p></article>
+                            <article><span>01</span><strong>Hover</strong><p>The declaration as Apex would write it, down to <code>private static final</code> and the declaring type.</p></article>
+                            <article><span>02</span><strong>Definition and implementation</strong><p>Locals, parameters, fields, methods and types; across files for <code>Type.member</code>. A <code>@Decorator</code> opens the class implementing it.</p></article>
+                            <article><span>03</span><strong>References, highlight, rename</strong><p>Every occurrence, scoped to the declaration and skipping comments and string literals, so a rename cannot corrupt prose.</p></article>
+                            <article><span>04</span><strong>Completion</strong><p>Scope first, then the workspace, the Apex standard library, the sObjects the schema describes, then keywords. Lambda parameters are typed from the list they iterate, and SOQL completes clause by clause inside a query literal.</p></article>
+                            <article><span>05</span><strong>Signature help</strong><p>The parameter list and active argument while typing a call, every overload listed fewest parameters first, resolved nearest-first: this file, the workspace, then the standard library.</p></article>
+                            <article><span>06</span><strong>Outline and folding</strong><p>Types, methods, fields and properties nested as declared. Folding counts braces over source with comments and strings masked out, rather than guessing from indentation.</p></article>
+                            <article><span>07</span><strong>Live diagnostics</strong><p>Compiler errors on every edit—one readable syntax error rather than a parser recovery cascade.</p></article>
+                            <article><span>08</span><strong>Compile on save</strong><p>Saving writes the deployable class and metadata, or a script's anonymous block, and reports the result in VS Code.</p></article>
                         </div>
+                        <aside class="techCallout">
+                            <strong>How a file that is not Apex still gets Apex answers</strong>
+                            <span>The Apex grammar cannot parse .clsx directly, so the service projects the source onto plain Apex first: every ApexX-only construct is replaced by padding of exactly the same width, and newlines are never touched. Offsets in the resulting parse tree therefore address the original file and can be reported straight back to the editor. Across the checked-in sources that takes the Apex parse from 62 syntax errors to 0, with no offset drift and none of the 359 recovered declarations mispositioned.</span>
+                        </aside>
                         <ol class="ideDemoPlan">
-                            <li><span>1</span><div><strong>Open <code>AccountService.clsx</code></strong><p>Establish the authored source as the object developers own.</p></div></li>
-                            <li><span>2</span><div><strong>Extend a typed chain</strong><p>Type after a dot and let completion prove the inferred element and sObject shape.</p></div></li>
-                            <li><span>3</span><div><strong>Break, inspect, save</strong><p>Trigger a diagnostic, fix it, hover a feature, then compile the native Salesforce artifact.</p></div></li>
+                            <li><span>1</span><div><strong>Open <code>AccountService.clsx</code></strong><p>Establish the authored source as the object developers own, with the outline and breadcrumbs populated.</p></div></li>
+                            <li><span>2</span><div><strong>Extend a typed chain</strong><p>Type after a dot and let completion prove the inferred element and sObject shape, then hover the result to read its declaration.</p></div></li>
+                            <li><span>3</span><div><strong>Break it, navigate, save</strong><p>Trigger a diagnostic, fix it, go to definition across a file boundary, then compile the native Salesforce artifact.</p></div></li>
                         </ol>
                     </section>
+
+                    <section class="shippingModel" aria-labelledby="bridge-heading">
+                        <div class="internalHeading">
+                            <p class="sectionEyebrow">Optional depth</p>
+                            <h3 id="bridge-heading">The lowering pipeline emits an exact position map, so the Apex language server can be asked too</h3>
+                            <p>ApexX can drive the Apex language server that ships with the Salesforce Apex extension. It resolves what the built-in model cannot: an overload chosen from the argument types, and types that live in the org rather than in the workspace or the schema cache.</p>
+                        </div>
+                        <div class="runtimeFacts">
+                            <div><strong>Position map</strong><span>Every generated span is traceable to the authored span it came from, so a question is asked about the generated code and the answer is translated back to the authored line.</span></div>
+                            <div><strong>Names read as written</strong><span>Generated identifiers are rewritten on the way back, so a hover reads Func&lt;Account, Boolean&gt; rather than a signature hash.</span></div>
+                            <div><strong>What enabling it buys</strong><span>Measured: cross-file definition, hover that picks the overload matching the arguments, 576 members after accounts., and Apex semantic errors reported on the authored line.</span></div>
+                            <div><strong>What it no longer buys</strong><span>ApexX reads the same StandardApexLibrary archive the Apex extension ships, so System. offers 189 members without a JVM, against the 190 the Apex server reports.</span></div>
+                            <div><strong>Off by default, deliberately</strong><span>A second Apex server on one project means two processes writing one apex.db index, which corrupts it and stops the Salesforce Apex extension starting. ApexX refuses to start one when it finds an existing index, whatever the setting says.</span></div>
+                        </div>
+                    </section>
+
+                    <section class="editorExperience" aria-labelledby="scripts-heading">
+                        <div class="internalHeading">
+                            <p class="sectionEyebrow">Ad-hoc work</p>
+                            <h3 id="scripts-heading">The same language in an anonymous block, with nothing deployed</h3>
+                            <p>An <code>.apexx</code> file is to <code>.apex</code> what <code>.clsx</code> is to <code>.cls</code>. It compiles to a self-contained anonymous block in <code>scripts/apex</code>, where the Salesforce Apex extension offers Execute and Debug on it like any other script.</p>
+                        </div>
+                        <div class="codeGrid codeGrid_scripts">
+                            <article class="codePanel codePanel_apexx">
+                                <div class="codeHeader">
+                                    <span>Authored</span>
+                                    <strong>apexx/scripts/AccountAudit.apexx</strong>
+                                </div>
+                                <pre>{scriptApexX}</pre>
+                            </article>
+                            <article class="codePanel codePanel_contract">
+                                <div class="codeHeader">
+                                    <span>Generated</span>
+                                    <strong>scripts/apex/AccountAudit.apex</strong>
+                                </div>
+                                <pre>{scriptGenerated}</pre>
+                            </article>
+                        </div>
+                        <aside class="techCallout">
+                            <strong>A script carries its own contracts</strong>
+                            <span>The Func interfaces and tuple carriers its lambdas and tuples rely on are declared inside the block itself, so an audit or a backfill runs against any org without deploying a class first. Switch to the deployed registries only when a script needs to pass a Func or a tuple to a deployed ApexX class.</span>
+                        </aside>
+                    </section>
+
                     <section class="shippingModel" aria-labelledby="shipping-model-heading">
                         <div class="internalHeading">
                             <p class="sectionEyebrow">Compilation model</p>
@@ -646,7 +698,8 @@
                             <div><strong>Collection helpers + defaults</strong><span>Compile away completely; no runtime library.</span></div>
                             <div><strong>Structural types</strong><span>Func interfaces and tuple carriers collect into two deterministic shared registry files.</span></div>
                             <div><strong>Decorators</strong><span>Use the small opt-in Invocation / Next / Decorator support contract.</span></div>
-                            <div><strong>Editor model</strong><span>Completion follows types across filter, map, and flatMap chains.</span></div>
+                            <div><strong>Scripts</strong><span>An .apexx file lowers to one anonymous block that declares its own structural types, so it deploys nothing.</span></div>
+                            <div><strong>Traceability</strong><span>Lowering emits an exact position map beside the .cls, which is what lets an Apex answer be reported on the authored line.</span></div>
                         </div>
                     </section>
                     <aside class="buildArtifactCallout">
@@ -727,7 +780,7 @@
 
                                     <div class="sourceScore">
                                         <div><span>Conventional Apex</span><strong>{workflowApexLines} lines</strong></div>
-                                        <div class="sourceScore_delta"><strong>{workflowReduction}% less authored code</strong><span>Complete behavior shown on both sides</span></div>
+                                        <div class="sourceScore_delta"><strong>{workflowReduction}% less authored code</strong><span>Both sides complete and unabridged; the ApexX panel is sliced from the file that compiles</span></div>
                                         <div><span>ApexX</span><strong>{workflowApexXLines} lines</strong></div>
                                     </div>
 
@@ -757,6 +810,11 @@
                                         <b>+</b><span>filter / map</span>
                                         <b>+</b><span>flatMap</span>
                                     </div>
+
+                                    <aside class="techCallout">
+                                        <strong>The line count is the least interesting number here</strong>
+                                        <span>Both panels are the whole behaviour, formatted the same way, so the delta is modest and honest. What actually changed is structural: the mode ladder became a value that crosses a class boundary, the three-deep overload ladder became two defaulted parameters, the error wrapper became one annotation, and the two-value return needed no wrapper class. None of those show up as lines removed, and all of them are why the next change is cheaper.</span>
+                                    </aside>
 
                                     <div class="runBar">
                                         <div>

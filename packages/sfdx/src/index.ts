@@ -9,6 +9,12 @@ export const DEFAULT_GENERATED_CLASSES_DIR = path.join(
   "default",
   "classes",
 );
+/**
+ * Where generated anonymous blocks land. `scripts/apex` is the conventional
+ * Salesforce DX location, and the Apex extension offers Execute and Debug on
+ * every `.apex` file there.
+ */
+export const DEFAULT_SCRIPTS_DIR = path.join("scripts", "apex");
 
 export interface SalesforceProjectInfo {
   rootDir: string;
@@ -29,6 +35,23 @@ export interface ResolveBuildTargetOptions {
   workspaceRoot?: string;
   explicitClassesDir?: string;
   explicitApiVersion?: string;
+}
+
+export interface ScriptTarget {
+  scriptsDir: string;
+  project?: SalesforceProjectInfo;
+}
+
+export interface ResolveScriptTargetOptions {
+  sourcePath: string;
+  workspaceRoot?: string;
+  explicitScriptsDir?: string;
+}
+
+export interface WriteApexScriptFileOptions {
+  scriptsDir: string;
+  scriptName: string;
+  source: string;
 }
 
 export interface WriteApexClassFilesOptions {
@@ -65,6 +88,24 @@ export async function resolveBuildTarget(
       normalizeApiVersion(options.explicitApiVersion) ??
       project?.sourceApiVersion ??
       FALLBACK_API_VERSION,
+    project,
+  };
+}
+
+export async function resolveScriptTarget(
+  options: ResolveScriptTargetOptions,
+): Promise<ScriptTarget> {
+  const project = await readSalesforceProjectInfo(options.sourcePath);
+  const workspaceRoot =
+    options.workspaceRoot ??
+    project?.rootDir ??
+    path.dirname(path.resolve(options.sourcePath));
+
+  return {
+    scriptsDir: path.resolve(
+      workspaceRoot,
+      options.explicitScriptsDir ?? DEFAULT_SCRIPTS_DIR,
+    ),
     project,
   };
 }
@@ -130,6 +171,22 @@ export function inferApexClassName(
 ): string {
   const match = apexSource.match(/\bclass\s+([A-Za-z][A-Za-z0-9_]*)\b/);
   return match?.[1] ?? fallbackName.replace(/\.clsx$/i, "");
+}
+
+export function inferApexScriptName(fileName: string): string {
+  return path.basename(fileName).replace(/\.(apexx|apex)$/i, "");
+}
+
+/** An anonymous block is not metadata, so it is written without a manifest. */
+export async function writeApexScriptFile(
+  options: WriteApexScriptFileOptions,
+): Promise<{ scriptFile: string }> {
+  await fs.mkdir(options.scriptsDir, { recursive: true });
+
+  const scriptFile = path.join(options.scriptsDir, `${options.scriptName}.apex`);
+  await fs.writeFile(scriptFile, options.source, "utf8");
+
+  return { scriptFile };
 }
 
 export async function writeApexClassFiles(

@@ -121,6 +121,30 @@ export class WorkspaceIndex {
     );
   }
 
+  /** Every type declared in the workspace, for identifier completion. */
+  allTypes(): IndexedSymbol[] {
+    return this.matching(
+      symbol =>
+        symbol.kind === "class" ||
+        symbol.kind === "interface" ||
+        symbol.kind === "enum",
+    );
+  }
+
+  /** Every member declared directly on `typeName`, for member completion. */
+  typeMembers(typeName: string): IndexedSymbol[] {
+    return this.matching(
+      symbol =>
+        equalsIgnoreCase(symbol.container ?? "", typeName) &&
+        (symbol.kind === "method" ||
+          symbol.kind === "field" ||
+          symbol.kind === "property" ||
+          symbol.kind === "enum" ||
+          symbol.kind === "class" ||
+          symbol.kind === "interface"),
+    );
+  }
+
   /** Any declaration with this name, used as a last resort for a bare identifier. */
   findAnywhere(name: string): IndexedSymbol[] {
     return this.matching(

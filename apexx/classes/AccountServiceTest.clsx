@@ -214,6 +214,7 @@ private class AccountServiceTest {
         System.assertEquals(2, AccountService.loadPriorityAccounts().size());
         System.assertEquals(3, AccountService.loadNormalizedContactEmails().size());
         System.assertEquals(4, AccountService.loadRenewalWork().size());
+        System.assertEquals(true, AccountService.loadRevenueComparison());
 
         AccountService.AccountSummary summary = AccountService.loadAccountSummary();
         System.assertEquals(3, summary.hotCount);

@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import type {
+  ApexXStructuralTypes,
+  ApexXUnitMode,
   CapturedVariable,
   ApexXDiagnostic,
   FuncInvocation,
@@ -12,6 +14,7 @@ import type {
 } from "@apexx/ast";
 import { findFuncInvocations, parseApex, parseApexX } from "@apexx/parser";
 import {
+  checkFuncLambdaReturnTypes,
   collectDeclaredVariables,
   collectIdentifiers,
   collectListVariables,
@@ -28,6 +31,7 @@ import {
   chainMaps,
   identityMap,
   splicesFromReplace,
+  spanToSource,
   type PositionMap,
   type Splice,
 } from "./sourceMap.js";
@@ -35,6 +39,7 @@ import {
   FUNC_REGISTRY_CLASS,
   sharedFuncTypeName,
   sharedTypeMemberName,
+  type SharedTypeNaming,
 } from "./sharedTypes.js";
 import {
   renderStructuralRegistry,
@@ -46,13 +51,26 @@ export function transpileApexX(
   source: string,
   options: TranspileOptions = {},
 ): TranspileResult {
-  const tupleLowering = lowerApexXTuples(source);
+  const mode: ApexXUnitMode = options.mode ?? "class";
+  const structuralTypes: ApexXStructuralTypes = options.structuralTypes ?? "inline";
+  // A class-mode build deploys the structural registries alongside the class. A
+  // script declares its own by default, so its structural types are named flat
+  // and carried in the block; asking for the deployed ones puts it back on the
+  // registry names, which is what interop with a deployed class requires.
+  const naming: SharedTypeNaming =
+    mode === "anonymous" && structuralTypes === "inline" ? "flat" : "registry";
+  const tupleLowering = lowerApexXTuples(source, { naming });
   const workingSource = tupleLowering.output;
   const parseResult = parseApexX(workingSource, options.sourceFileName);
-  const diagnostics: ApexXDiagnostic[] = [
+  // Diagnostics carry offsets into whichever pipeline stage produced them, while
+  // every consumer reports them against the authored `.clsx`. Each batch is kept
+  // in its own coordinate space here and remapped to the source once the stage
+  // maps that separate it from the source exist.
+  const sourceDiagnostics: ApexXDiagnostic[] = [
     ...tupleLowering.diagnostics,
-    ...parseResult.diagnostics,
+    ...(naming === "flat" ? checkStructuralTypeBoundaries(source) : []),
   ];
+  const diagnostics: ApexXDiagnostic[] = [...parseResult.diagnostics];
   const listVariables = collectListVariables(workingSource);
   const declaredVariables = collectDeclaredVariables(workingSource);
   const typeProvider = createApexTypeProvider({
@@ -62,6 +80,7 @@ export function transpileApexX(
   const funcTypeAliases = collectFuncTypeAliases(
     `${source}\n${workingSource}`,
     usedNames,
+    naming,
   );
   const listMethodCalls = parseResult.listMethodCalls.map(call => ({ ...call }));
   const funcLambdaAssignments = parseResult.funcLambdaAssignments.map(assignment => ({
@@ -132,9 +151,21 @@ export function transpileApexX(
 
   for (const assignment of funcLambdaAssignments) {
     completeFuncLambdaAssignmentTypes(assignment, declaredVariables);
+    diagnostics.push(
+      ...checkFuncLambdaReturnTypes({
+        source: workingSource,
+        assignment,
+        variables: declaredVariables,
+        typeProvider,
+      }),
+    );
     const signature = funcSignatureKey(assignment.parameterTypes, assignment.returnType);
     assignment.interfaceName = funcTypeAliases.get(signature)?.interfaceName
-      ?? sharedFuncTypeName(assignment.parameterTypes, assignment.returnType);
+      ?? sharedFuncTypeName(
+        assignment.parameterTypes,
+        assignment.returnType,
+        naming,
+      );
     assignment.implementationName = findAvailableName("ApexXLambda", usedNames);
   }
 
@@ -173,15 +204,16 @@ export function transpileApexX(
     funcLambdaAssignments,
     funcVariableNames,
     funcTypeAliases,
+    { mode, naming, inlineDeclarations: tupleLowering.inlineDeclarations },
   );
   output = generatedTypeStage.output;
 
   const methodLowering = lowerApexXMethods(output, {
     workspaceRoot: options.workspaceRoot,
     usedNames,
+    mode,
   });
   output = methodLowering.output;
-  diagnostics.push(...methodLowering.diagnostics);
 
   // Trailing-whitespace trimming and the header both shift offsets, so both are
   // stages like any other.
@@ -190,12 +222,11 @@ export function transpileApexX(
     { start: 0, end: 0, replacement: headerText(options.sourceFileName) },
   ]);
   const generated = headerStage.output;
-  const generatedParse = parseApex(generated);
-  if (!generatedParse.ok) {
-    diagnostics.push(...generatedParse.diagnostics);
-  }
+  const generatedParse = parseApex(generated, {
+    anonymous: mode === "anonymous",
+  });
 
-  const sourceMap = chainMaps([
+  const stageMaps = [
     tupleLowering.map,
     mainStage.map,
     funcTypeStage.map,
@@ -203,7 +234,31 @@ export function transpileApexX(
     methodLowering.map,
     trimStage.map,
     headerStage.map,
-  ]);
+  ];
+  const sourceMap = chainMaps(stageMaps);
+
+  // Stage maps in pipeline order, so a slice of this list is the path from the
+  // authored source to the stage that produced a given batch of diagnostics.
+  const [tupleMap, mainMap, funcTypeMap, generatedTypeMap] = stageMaps;
+  const reportedDiagnostics: ApexXDiagnostic[] = [
+    ...reportAgainstSource(sourceDiagnostics, source, []),
+    ...reportAgainstSource(diagnostics, source, [tupleMap]),
+    ...reportAgainstSource(methodLowering.diagnostics, source, [
+      tupleMap,
+      mainMap,
+      funcTypeMap,
+      generatedTypeMap,
+    ]),
+  ];
+
+  // An error in the ApexX front end leaves that construct un-lowered, so the Apex
+  // parser then fails on syntax the user never wrote. Those cascade errors would
+  // bury the diagnostic that actually explains the problem.
+  if (!generatedParse.ok && !reportedDiagnostics.some(entry => entry.severity === "error")) {
+    reportedDiagnostics.push(
+      ...reportAgainstSource(generatedParse.diagnostics, source, stageMaps),
+    );
+  }
 
   const generatedTypeNames = new Map<string, string>();
   for (const alias of funcTypeAliases.values()) {
@@ -220,10 +275,10 @@ export function transpileApexX(
     generatedTypeNames,
     supportClasses: deduplicateSupportClasses([
       ...tupleLowering.supportClasses,
-      ...createFuncSupportClasses(funcTypeAliases),
+      ...createFuncSupportClasses(funcTypeAliases, naming),
       ...(methodLowering.needsDecoratorSupport ? [createApexXSupportClass()] : []),
     ]),
-    diagnostics,
+    diagnostics: reportedDiagnostics,
     listMethodCalls,
     funcLambdaAssignments,
     funcInvocations,
@@ -235,6 +290,58 @@ interface Transformation {
   start: number;
   end: number;
   replacement: string;
+}
+
+/**
+ * Rewrites diagnostic ranges from a stage's coordinate space into the authored source.
+ *
+ * Pass the stage maps in pipeline order; an empty list means the diagnostics are
+ * already in authored coordinates and only need tightening.
+ */
+function reportAgainstSource(
+  diagnostics: ApexXDiagnostic[],
+  source: string,
+  maps: PositionMap[],
+): ApexXDiagnostic[] {
+  return diagnostics.map(diagnostic => {
+    if (!diagnostic.range) {
+      return diagnostic;
+    }
+
+    const mapped = spanToSource(
+      maps,
+      diagnostic.range.start.offset,
+      diagnostic.range.end.offset,
+    );
+    const span = tightenSpan(source, mapped);
+
+    return { ...diagnostic, range: createRange(source, span.start, span.end) };
+  });
+}
+
+/**
+ * Pulls a span in off surrounding whitespace.
+ *
+ * A statement span starts at column zero because the lowering splices the
+ * indentation along with the statement, which would otherwise draw the squiggle
+ * from the left margin instead of from the offending code.
+ */
+function tightenSpan(
+  source: string,
+  span: { start: number; end: number },
+): { start: number; end: number } {
+  let start = span.start;
+  let end = span.end;
+
+  while (start < end && /\s/.test(source[start] ?? "")) {
+    start += 1;
+  }
+
+  while (end > start && /\s/.test(source[end - 1] ?? "")) {
+    end -= 1;
+  }
+
+  return end > start ? { start, end } : span;
 }
 
 interface FuncTypeAlias {
@@ -253,6 +360,8 @@ interface MethodLoweringResult {
 interface ApexXMethod {
   start: number;
   end: number;
+  /** Start of the declaration, after any annotations above it. */
+  declarationStart: number;
   bodyStart: number;
   bodyEnd: number;
   indent: string;
@@ -261,31 +370,43 @@ interface ApexXMethod {
   returnType: string;
   name: string;
   parameters: ApexXMethodParameter[];
-  className: string;
-  rangeStart: number;
+  /** Undefined for a method declared at the top level of an anonymous block. */
+  className: string | undefined;
 }
 
 interface ApexXAnnotation {
   name: string;
   argumentsText: string;
+  /** The annotation as written, without the indentation before it. */
   originalText: string;
+  offset: number;
 }
 
 interface ApexXMethodParameter {
   type: string;
   name: string;
   defaultValue?: string;
+  /** The parameter as written, without the whitespace around it. */
   originalText: string;
+  offset: number;
 }
 
 function lowerApexXMethods(
   source: string,
-  options: { workspaceRoot?: string; usedNames: Set<string> },
+  options: {
+    workspaceRoot?: string;
+    usedNames: Set<string>;
+    mode: ApexXUnitMode;
+  },
 ): MethodLoweringResult {
   const diagnostics: ApexXDiagnostic[] = [];
   methodBodySource = source;
   const decoratorClassNames = collectDecoratorClassNames(source, options.workspaceRoot);
-  const methods = findApexXMethods(source);
+  // A block-level method has no enclosing class, which is only a legal shape in
+  // an anonymous block.
+  const methods = findApexXMethods(source, {
+    allowTopLevel: options.mode === "anonymous",
+  });
   const transformations: Transformation[] = [];
   let needsDecoratorSupport = false;
 
@@ -314,7 +435,11 @@ function lowerApexXMethods(
         severity: "error",
         source: "apexx-semantics",
         message: `Unknown ApexX annotation @${annotation.name}. Add a class named ${annotation.name} that implements ApexX.Decorator, or use a native Apex annotation.`,
-        range: createRange(source, method.rangeStart, method.rangeStart + annotation.originalText.length),
+        range: createRange(
+          source,
+          annotation.offset,
+          annotation.offset + annotation.originalText.length,
+        ),
       });
     }
 
@@ -327,7 +452,32 @@ function lowerApexXMethods(
         severity: "error",
         source: "apexx-semantics",
         message: "ApexX decorators currently support static methods only.",
-        range: createRange(source, method.start, method.start + method.end - method.start),
+        // The signature, not the whole method: the missing `static` belongs there.
+        range: createRange(source, method.declarationStart, method.bodyStart - 1),
+      });
+      continue;
+    }
+
+    if (options.mode === "anonymous" && decoratorAnnotations.length > 0) {
+      const annotation = decoratorAnnotations[0];
+      const annotationRange = createRange(
+        source,
+        annotation.offset,
+        annotation.offset + annotation.originalText.length,
+      );
+
+      // A decorated method lowers into a wrapper plus a Next class beside it. In
+      // an anonymous block both would sit inside a class the block declares,
+      // which is an inner type, and Apex rejects an inner type that has inner
+      // types. A block-level method has no class to hold the pair at all.
+      diagnostics.push({
+        severity: "error",
+        source: "apexx-semantics",
+        code: method.className === undefined ? "APXX2620" : "APXX2621",
+        message: method.className === undefined
+          ? `@${annotation.name} cannot decorate a method declared at the top level of a script, because the decorator is dispatched through the class that holds the method. Move it to a deployed class and call that class from the script.`
+          : `@${annotation.name} cannot decorate a method of a class declared in a script, because the generated helper class would be an inner type of an inner type. Move it to a deployed class and call that class from the script.`,
+        range: annotationRange,
       });
       continue;
     }
@@ -579,7 +729,11 @@ function validateDefaultParameters(
         severity: "error",
         source: "apexx-semantics",
         message: `Default parameter values must be trailing. Parameter '${parameter.name}' is required after an optional parameter.`,
-        range: createRange(source, method.start, method.start + method.end - method.start),
+        range: createRange(
+          source,
+          parameter.offset,
+          parameter.offset + parameter.originalText.length,
+        ),
       });
     }
   }
@@ -587,7 +741,10 @@ function validateDefaultParameters(
   return diagnostics;
 }
 
-function findApexXMethods(source: string): ApexXMethod[] {
+function findApexXMethods(
+  source: string,
+  options: { allowTopLevel: boolean },
+): ApexXMethod[] {
   const methods: ApexXMethod[] = [];
   const pattern =
     /((?:^[ \t]*@[A-Za-z][A-Za-z0-9_]*(?:\s*\([^\r\n]*\))?[ \t]*(?:\r?\n))*)^([ \t]*)((?:(?:public|private|protected|global|static|final|virtual|abstract|override|webservice|testmethod)\s+)*)((?:List|Set)\s*<\s*[^>\r\n]+>|Map\s*<\s*[^>\r\n]+>|[A-Za-z][A-Za-z0-9_.]*)\s+([A-Za-z][A-Za-z0-9_]*)\s*\(([^)]*)\)\s*\{/gm;
@@ -599,48 +756,63 @@ function findApexXMethods(source: string): ApexXMethod[] {
     const bodyEnd = findMatchingBrace(source, openBrace);
     const className = findEnclosingClassName(source, start);
 
-    if (bodyEnd === undefined || !className) {
+    if (bodyEnd === undefined || (!className && !options.allowTopLevel)) {
       continue;
     }
+
+    // `start` is the top of the annotation block; the declaration itself begins
+    // after it, and the parameter list is the last parenthesised run in the header.
+    const declarationStart = start + match[1].length;
+    const parametersStart = start + match[0].lastIndexOf(")") - match[6].length;
 
     methods.push({
       start,
       end: bodyEnd + 1,
+      declarationStart,
       bodyStart: openBrace + 1,
       bodyEnd,
       indent: match[2],
-      annotations: parseAnnotations(match[1]),
+      annotations: parseAnnotations(match[1], start),
       modifiers: match[3],
       returnType: toApexType(match[4]),
       name: match[5],
-      parameters: parseMethodParameters(match[6]),
+      parameters: parseMethodParameters(match[6], parametersStart),
       className,
-      rangeStart: start,
     });
   }
 
   return methods;
 }
 
-function parseAnnotations(source: string): ApexXAnnotation[] {
+function parseAnnotations(source: string, baseOffset: number): ApexXAnnotation[] {
   const annotations: ApexXAnnotation[] = [];
+  const pattern = /^([ \t]*)@([A-Za-z][A-Za-z0-9_]*)(?:[ \t]*\((.*)\))?[ \t]*$/gm;
+  let match: RegExpExecArray | null;
 
-  for (const line of source.split(/\r?\n/)) {
-    const match = /^\s*@([A-Za-z][A-Za-z0-9_]*)(?:\s*\((.*)\))?\s*$/.exec(line);
-    if (match) {
-      annotations.push({
-        name: match[1],
-        argumentsText: match[2] ?? "",
-        originalText: line,
-      });
-    }
+  while ((match = pattern.exec(source)) !== null) {
+    annotations.push({
+      name: match[2],
+      argumentsText: match[3] ?? "",
+      originalText: match[0].trim(),
+      offset: baseOffset + (match.index ?? 0) + match[1].length,
+    });
   }
 
   return annotations;
 }
 
-function parseMethodParameters(source: string): ApexXMethodParameter[] {
+function parseMethodParameters(
+  source: string,
+  baseOffset: number,
+): ApexXMethodParameter[] {
+  // Split parts come back trimmed, so each offset is recovered by walking the
+  // parameter list in order.
+  let cursor = 0;
+
   return splitCommaList(source).map(parameterText => {
+    const found = source.indexOf(parameterText, cursor);
+    const offset = found >= 0 ? found : cursor;
+    cursor = offset + parameterText.length;
     const equalsIndex = findTopLevelEquals(parameterText);
     const declarationText = equalsIndex >= 0
       ? parameterText.slice(0, equalsIndex).trim()
@@ -654,6 +826,7 @@ function parseMethodParameters(source: string): ApexXMethodParameter[] {
       name: match?.[2] ?? "",
       defaultValue,
       originalText: parameterText,
+      offset: baseOffset + offset,
     };
   }).filter(parameter => parameter.name.length > 0);
 }
@@ -746,6 +919,78 @@ function sourceIndentBody(body: string, indent: string): string {
     .split(/\r?\n/)
     .map(line => `${indent}${line}`)
     .join("\n");
+}
+
+export interface ApexXDecorator {
+  name: string;
+  /** Keys the decorator reads out of `ctx.config`, which are its parameter names. */
+  configKeys: string[];
+  file?: string;
+}
+
+/**
+ * Decorator classes available to a workspace, with the parameters each one accepts.
+ *
+ * A decorator takes its arguments as an untyped `Map<String, Object>`, so there is no
+ * signature to read. What a decorator actually understands is the set of keys it pulls
+ * out of `ctx.config`, which is what this reports -- derived from the decorator's own
+ * source rather than from a list that would drift away from it.
+ */
+export function findApexXDecorators(
+  source: string,
+  workspaceRoot?: string,
+): ApexXDecorator[] {
+  const decorators = new Map<string, ApexXDecorator>();
+  collectDecorators(source, undefined, decorators);
+
+  if (workspaceRoot && fs.existsSync(workspaceRoot)) {
+    for (const file of collectApexSourceFiles(workspaceRoot)) {
+      try {
+        collectDecorators(fs.readFileSync(file, "utf8"), file, decorators);
+      } catch {
+        // Ignore unreadable workspace files.
+      }
+    }
+  }
+
+  return [...decorators.values()].sort((left, right) =>
+    left.name.localeCompare(right.name),
+  );
+}
+
+/** Native Apex annotations, which a decorator name must not be confused with. */
+export function nativeApexAnnotations(): string[] {
+  return [...NATIVE_APEX_ANNOTATIONS];
+}
+
+function collectDecorators(
+  source: string,
+  file: string | undefined,
+  decorators: Map<string, ApexXDecorator>,
+): void {
+  const pattern =
+    /\bclass\s+([A-Za-z][A-Za-z0-9_]*)\b[^{;]*\bimplements\b[^{;]*\bApexX\s*\.\s*Decorator\b/g;
+
+  for (const match of source.matchAll(pattern)) {
+    const name = match[1];
+    const bodyStart = source.indexOf("{", (match.index ?? 0) + match[0].length);
+    const bodyEnd = bodyStart >= 0 ? findMatchingBrace(source, bodyStart) : undefined;
+    const body = bodyEnd === undefined
+      ? source.slice(match.index ?? 0)
+      : source.slice(bodyStart, bodyEnd);
+    const configKeys = new Set<string>();
+
+    for (const key of body.matchAll(/\bconfig\s*\.\s*get\s*\(\s*'([^']+)'/g)) {
+      configKeys.add(key[1]);
+    }
+
+    const existing = decorators.get(name.toLowerCase());
+    decorators.set(name.toLowerCase(), {
+      name,
+      configKeys: [...new Set([...(existing?.configKeys ?? []), ...configKeys])].sort(),
+      file: existing?.file ?? file,
+    });
+  }
 }
 
 function collectDecoratorClassNames(
@@ -954,32 +1199,36 @@ function splitCommaList(source: string): string[] {
   return parts.filter(part => part.length > 0);
 }
 
+/** Matching is case-insensitive, the way the Apex compiler reads an annotation name. */
 function isNativeApexAnnotation(name: string): boolean {
-  return new Set([
-    "AuraEnabled",
-    "Deprecated",
-    "Future",
-    "HttpDelete",
-    "HttpGet",
-    "HttpPatch",
-    "HttpPost",
-    "HttpPut",
-    "InvocableMethod",
-    "InvocableVariable",
-    "IsTest",
-    "JsonAccess",
-    "NamespaceAccessible",
-    "ReadOnly",
-    "RemoteAction",
-    "RestResource",
-    "SuppressWarnings",
-    "TestSetup",
-    "TestVisible",
-    "future",
-    "isTest",
-    "testSetup",
-  ].map(value => value.toLowerCase())).has(name.toLowerCase());
+  const lowered = name.toLowerCase();
+  return NATIVE_APEX_ANNOTATIONS.some(
+    annotation => annotation.toLowerCase() === lowered,
+  );
 }
+
+/** Canonical spellings, which are also what completion offers. */
+const NATIVE_APEX_ANNOTATIONS = [
+  "AuraEnabled",
+  "Deprecated",
+  "Future",
+  "HttpDelete",
+  "HttpGet",
+  "HttpPatch",
+  "HttpPost",
+  "HttpPut",
+  "InvocableMethod",
+  "InvocableVariable",
+  "IsTest",
+  "JsonAccess",
+  "NamespaceAccessible",
+  "ReadOnly",
+  "RemoteAction",
+  "RestResource",
+  "SuppressWarnings",
+  "TestSetup",
+  "TestVisible",
+];
 
 function isVoidType(typeName: string): boolean {
   return /^void$/i.test(typeName.trim());
@@ -1140,9 +1389,37 @@ function lowerListMethodCall(
     lines.push(`${indent}${call.targetType} = ${currentReceiver};`);
   } else if (call.statementKind === "return") {
     lines.push(`${indent}return ${currentReceiver};`);
+  } else if (call.statementKind === "embedded" && call.embedded) {
+    // The loops are above; what is left is the statement the chain was nested in, with
+    // the chain itself replaced by the name the loops left the result in.
+    const { statementText, chainStart, chainEnd } = call.embedded;
+    const before = closeUpTowardsChain(statementText.slice(0, chainStart), "end");
+    const after = closeUpTowardsChain(statementText.slice(chainEnd), "start");
+    lines.push(`${indent}${before}${currentReceiver}${after}`);
   }
 
   return lines.join("\n");
+}
+
+/**
+ * Pulls the rest of a statement back onto one line where the chain used to span several.
+ *
+ * A chain written across lines leaves its line breaks behind once it collapses to a
+ * single name: `System.debug(numbers\n  .filter(...)\n)` would otherwise rebuild as
+ * `System.debug(apexxMap0\n)`. A break next to a bracket or separator closes up
+ * completely; anywhere else it becomes one space, because the tokens either side of it
+ * still need separating.
+ */
+function closeUpTowardsChain(text: string, side: "start" | "end"): string {
+  if (side === "end") {
+    return text.replace(/\s*\n\s*$/, match =>
+      /[([,]\s*$/.test(text.slice(0, text.length - match.length)) ? "" : " ",
+    );
+  }
+
+  return text.replace(/^\s*\n\s*/, match =>
+    /^[)\],;]/.test(text.slice(match.length)) ? "" : " ",
+  );
 }
 
 function isBlockLambdaBody(body: string): boolean {
@@ -1330,6 +1607,12 @@ function addGeneratedFuncTypes(
   assignments: FuncLambdaAssignment[],
   funcVariableNames: Set<string>,
   funcTypeAliases: Map<string, FuncTypeAlias>,
+  options: {
+    mode: ApexXUnitMode;
+    naming: SharedTypeNaming;
+    /** Tuple carriers to declare inline, already rendered. */
+    inlineDeclarations: string[];
+  },
 ): { output: string; map: PositionMap } {
   const supportedAssignments = assignments.filter(
     assignment =>
@@ -1337,6 +1620,33 @@ function addGeneratedFuncTypes(
       assignment.implementationName &&
       assignment.parameterTypes.length === assignment.lambda.parameters.length,
   );
+
+  if (options.mode === "anonymous") {
+    // A block-level declaration is an inner type, so the interfaces and tuple
+    // carriers are declared flat beside the statements rather than nested in a
+    // registry class. Interfaces come first, so each implementation follows the
+    // type it implements. With `deployed` naming the block refers to the registry
+    // members instead, and declares only the lambdas it defines itself.
+    const declarations = [
+      ...(options.naming === "flat"
+        ? [...funcTypeAliases.values()].map(alias =>
+            renderFuncInterfaceDeclaration(alias, ""),
+          )
+        : []),
+      ...options.inlineDeclarations,
+      ...supportedAssignments.map(assignment =>
+        renderFuncImplementationDeclaration(assignment, "", funcVariableNames),
+      ),
+    ];
+
+    if (declarations.length === 0) {
+      return { output: source, map: identityMap(source.length) };
+    }
+
+    return applySplices(source, [
+      { start: 0, end: 0, replacement: `${declarations.join("\n\n")}\n\n` },
+    ]);
+  }
 
   if (supportedAssignments.length === 0) {
     return { output: source, map: identityMap(source.length) };
@@ -1376,8 +1686,10 @@ function renderFuncInterfaceDeclaration(
 
 function createFuncSupportClasses(
   aliases: Map<string, FuncTypeAlias>,
+  naming: SharedTypeNaming,
 ): GeneratedApexSupportClass[] {
-  if (aliases.size === 0) {
+  // Flat naming means the unit declares these interfaces itself.
+  if (aliases.size === 0 || naming === "flat") {
     return [];
   }
 
@@ -1474,6 +1786,7 @@ function renderFuncBlockLambdaBody(
 function collectFuncTypeAliases(
   source: string,
   _usedNames: Set<string>,
+  naming: SharedTypeNaming,
 ): Map<string, FuncTypeAlias> {
   const aliases = new Map<string, FuncTypeAlias>();
   const pattern = /Func\s*<\s*([^>\r\n]+?)\s*>/g;
@@ -1491,7 +1804,7 @@ function collectFuncTypeAliases(
 
     if (!aliases.has(signature)) {
       aliases.set(signature, {
-        interfaceName: sharedFuncTypeName(parameterTypes, returnType),
+        interfaceName: sharedFuncTypeName(parameterTypes, returnType, naming),
         parameterTypes,
         returnType,
       });
@@ -1636,6 +1949,53 @@ function collectIdentifierUsages(
   }
 
   return usages;
+}
+
+/**
+ * Reports a structural value that crosses into a type the script does not declare.
+ *
+ * A `Func` or tuple from a deployed ApexX class is a member of the deployed
+ * registry, and a script that declares its structural types inline names them
+ * flat. The two are different Apex types with the same signature, so the platform
+ * rejects the assignment with a message that names neither the script nor the
+ * fix. Reported here instead.
+ */
+function checkStructuralTypeBoundaries(source: string): ApexXDiagnostic[] {
+  const diagnostics: ApexXDiagnostic[] = [];
+  const declaredTypes = new Set<string>();
+
+  for (const match of source.matchAll(
+    /\b(?:class|interface|enum)\s+([A-Za-z][A-Za-z0-9_]*)/g,
+  )) {
+    declaredTypes.add(match[1].toLowerCase());
+  }
+
+  // A tuple destructuring, and a Func declaration, initialised from `Type.method(`.
+  const patterns = [
+    /^[ \t]*\(([^()\r\n]*(?:Func\s*<[^>\r\n]*>[^()\r\n]*)?[^()\r\n]*)\)\s*=(?!>)\s*([A-Za-z][A-Za-z0-9_]*)\s*\.\s*[A-Za-z][A-Za-z0-9_]*\s*\(/gm,
+    /^[ \t]*Func\s*<[^>\r\n]+>\s+[A-Za-z][A-Za-z0-9_]*\s*=\s*([A-Za-z][A-Za-z0-9_]*)\s*\.\s*[A-Za-z][A-Za-z0-9_]*\s*\(/gm,
+  ];
+
+  for (const [index, pattern] of patterns.entries()) {
+    for (const match of source.matchAll(pattern)) {
+      const owner = index === 0 ? match[2] : match[1];
+
+      if (declaredTypes.has(owner.toLowerCase())) {
+        continue;
+      }
+
+      const start = match.index ?? 0;
+      diagnostics.push({
+        severity: "error",
+        source: "apexx-semantics",
+        code: "APXX2630",
+        message: `this value comes from ${owner}, so its type is a member of the deployed ApexXFuncs or ApexXTuples registry, but this script declares its structural types inline. Build it with --script-types deployed (or set apexx.scriptStructuralTypes to "deployed") and deploy those registries.`,
+        range: createRange(source, start + (match[0].match(/^[ \t]*/)?.[0].length ?? 0), start + match[0].length),
+      });
+    }
+  }
+
+  return diagnostics;
 }
 
 function findClassBodyStart(source: string): number | undefined {

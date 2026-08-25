@@ -7,12 +7,16 @@ import {
 } from "@apexx/transpiler";
 import type {
   ApexXDiagnostic,
+  ApexXStructuralTypes,
   GeneratedApexSupportClass,
 } from "@apexx/ast";
 import {
   inferApexClassName,
+  inferApexScriptName,
   resolveBuildTarget,
+  resolveScriptTarget,
   writeApexClassFiles,
+  writeApexScriptFile,
 } from "@apexx/sfdx";
 
 interface ParsedArgs {
@@ -39,24 +43,44 @@ async function main(argv: string[]): Promise<void> {
 }
 
 async function build(args: ParsedArgs): Promise<void> {
-  const input = path.resolve(
-    process.cwd(),
-    args.positional[0] ?? (await defaultSourcePath(process.cwd())),
-  );
+  const inputs = await resolveBuildInputs(args);
   const explicitOut = args.options.get("out");
+  const explicitScriptsOut = args.options.get("scripts-out");
   const explicitApiVersion = args.options.get("api-version");
+  const scriptTypes = parseScriptTypes(args.options.get("script-types"));
+
+  if (!scriptTypes) {
+    console.error("--script-types accepts inline or deployed.");
+    process.exitCode = 1;
+    return;
+  }
+
   const buildTarget = await resolveBuildTarget({
-    sourcePath: input,
+    sourcePath: inputs[0],
     workspaceRoot: process.cwd(),
     explicitClassesDir:
       typeof explicitOut === "string" ? explicitOut : undefined,
     explicitApiVersion:
       typeof explicitApiVersion === "string" ? explicitApiVersion : undefined,
   });
-  const files = await collectClsxFiles(input);
+  const scriptTarget = await resolveScriptTarget({
+    sourcePath: inputs[0],
+    workspaceRoot: process.cwd(),
+    explicitScriptsDir:
+      typeof explicitScriptsOut === "string" ? explicitScriptsOut : undefined,
+  });
+  const files: string[] = [];
+  for (const input of inputs) {
+    files.push(...(await collectApexXFiles(input)));
+  }
+  const sources = [...new Set(files)].sort();
 
-  if (files.length === 0) {
-    console.error(`No .clsx files found at ${input}`);
+  if (sources.length === 0) {
+    console.error(
+      `No .clsx or .apexx files found at ${inputs
+        .map(input => path.relative(process.cwd(), input) || ".")
+        .join(", ")}`,
+    );
     process.exitCode = 1;
     return;
   }
@@ -64,11 +88,14 @@ async function build(args: ParsedArgs): Promise<void> {
   let hadError = false;
   const generatedSupport: GeneratedApexSupportClass[] = [];
 
-  for (const file of files) {
+  for (const file of sources) {
     const source = await fs.readFile(file, "utf8");
+    const script = isApexXScript(file);
     const result = transpileApexX(source, {
       sourceFileName: path.basename(file),
       workspaceRoot: process.cwd(),
+      mode: script ? "anonymous" : "class",
+      structuralTypes: scriptTypes,
     });
     const errors = result.diagnostics.filter(
       diagnostic => diagnostic.severity === "error",
@@ -78,6 +105,18 @@ async function build(args: ParsedArgs): Promise<void> {
 
     if (errors.length > 0) {
       hadError = true;
+      continue;
+    }
+
+    if (script) {
+      const written = await writeApexScriptFile({
+        scriptsDir: scriptTarget.scriptsDir,
+        scriptName: inferApexScriptName(file),
+        source: result.output,
+      });
+
+      console.log(`Wrote ${path.relative(process.cwd(), written.scriptFile)}`);
+      generatedSupport.push(...result.supportClasses);
       continue;
     }
 
@@ -115,7 +154,7 @@ async function parse(args: ParsedArgs): Promise<void> {
   const input = args.positional[0];
 
   if (!input) {
-    console.error("parse requires a .clsx file.");
+    console.error("parse requires a .clsx or .apexx file.");
     process.exitCode = 1;
     return;
   }
@@ -125,6 +164,8 @@ async function parse(args: ParsedArgs): Promise<void> {
   const result = transpileApexX(source, {
     sourceFileName: path.basename(file),
     workspaceRoot: process.cwd(),
+    mode: isApexXScript(file) ? "anonymous" : "class",
+    structuralTypes: parseScriptTypes(args.options.get("script-types")) ?? "inline",
   });
   printDiagnostics(file, result.diagnostics);
 
@@ -161,13 +202,34 @@ function parseArgs(argv: string[]): ParsedArgs {
   return { command, positional, options };
 }
 
-async function collectClsxFiles(input: string): Promise<string[]> {
+function parseScriptTypes(
+  value: string | true | undefined,
+): ApexXStructuralTypes | undefined {
+  if (value === undefined) {
+    return "inline";
+  }
+
+  return value === "inline" || value === "deployed" ? value : undefined;
+}
+
+/** `.apexx` is to `.apex` what `.clsx` is to `.cls`: authored source for a unit
+ * of that kind, here an anonymous block. */
+function isApexXScript(filePath: string): boolean {
+  return filePath.toLowerCase().endsWith(".apexx");
+}
+
+function isApexXSource(filePath: string): boolean {
+  const lowered = filePath.toLowerCase();
+  return lowered.endsWith(".clsx") || lowered.endsWith(".apexx");
+}
+
+async function collectApexXFiles(input: string): Promise<string[]> {
   if (!(await exists(input))) {
     return [];
   }
 
   if (!(await statIsDirectory(input))) {
-    return input.toLowerCase().endsWith(".clsx") ? [input] : [];
+    return isApexXSource(input) ? [input] : [];
   }
 
   const files: string[] = [];
@@ -177,8 +239,8 @@ async function collectClsxFiles(input: string): Promise<string[]> {
     const fullPath = path.join(input, entry.name);
 
     if (entry.isDirectory()) {
-      files.push(...(await collectClsxFiles(fullPath)));
-    } else if (entry.isFile() && entry.name.toLowerCase().endsWith(".clsx")) {
+      files.push(...(await collectApexXFiles(fullPath)));
+    } else if (entry.isFile() && isApexXSource(entry.name)) {
       files.push(fullPath);
     }
   }
@@ -186,13 +248,30 @@ async function collectClsxFiles(input: string): Promise<string[]> {
   return files.sort();
 }
 
-async function defaultSourcePath(rootDir: string): Promise<string> {
-  const apexXClasses = path.join(rootDir, "apexx", "classes");
-  if (await exists(apexXClasses)) {
-    return apexXClasses;
+/**
+ * An explicit path wins. Otherwise both conventional source roots are built, so
+ * a project holding classes and scripts needs one command.
+ */
+async function resolveBuildInputs(args: ParsedArgs): Promise<string[]> {
+  const explicit = args.positional[0];
+
+  if (explicit) {
+    return [path.resolve(process.cwd(), explicit)];
   }
 
-  return "src";
+  const candidates = [
+    path.join(process.cwd(), "apexx", "classes"),
+    path.join(process.cwd(), "apexx", "scripts"),
+  ];
+  const present: string[] = [];
+
+  for (const candidate of candidates) {
+    if (await exists(candidate)) {
+      present.push(candidate);
+    }
+  }
+
+  return present.length > 0 ? present : [path.resolve(process.cwd(), "src")];
 }
 
 async function exists(filePath: string): Promise<boolean> {
@@ -215,7 +294,9 @@ function printDiagnostics(file: string, diagnostics: ApexXDiagnostic[]): void {
       ? `${diagnostic.range.start.line}:${diagnostic.range.start.column + 1}`
       : "?:?";
     console.error(
-      `${path.relative(process.cwd(), file)}:${position} ${diagnostic.severity}: ${diagnostic.message}`,
+      `${path.relative(process.cwd(), file)}:${position} ${diagnostic.severity}: ${
+        diagnostic.code ? `${diagnostic.code}: ` : ""
+      }${diagnostic.message}`,
     );
   }
 }
@@ -224,10 +305,20 @@ function printHelp(): void {
   console.log(`ApexX
 
 Usage:
-  apexx build [path=apexx/classes]
+  apexx build [path=apexx/classes and apexx/scripts]
   apexx build [path] --out force-app/main/default/classes
+  apexx build [path] --scripts-out scripts/apex
+  apexx build [path] --script-types inline|deployed
   apexx build [path] --api-version 67.0
-  apexx parse <file.clsx>
+  apexx parse <file.clsx|file.apexx>
+
+.clsx compiles to a deployable .cls class.
+.apexx compiles to a self-contained .apex anonymous block in scripts/apex,
+which the Salesforce Apex extension can Execute or Debug directly.
+
+--script-types deployed makes a script use the deployed ApexXFuncs and
+ApexXTuples members instead of declaring its structural types inline. Needed
+when a script passes a Func or a tuple to or from a deployed ApexX class.
 `);
 }
 

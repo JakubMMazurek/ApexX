@@ -277,3 +277,59 @@ function identifierAround(
     ? { name, start: offset - before.length }
     : undefined;
 }
+
+/**
+ * Maps a span from a stage's coordinate space back to the input of the first map.
+ *
+ * `chainMaps().toSource` answers for a single offset, which is not enough for a
+ * range: an offset inside a rewritten span collapses to that span's start, so
+ * mapping the end offset that way would produce an empty range. The start and the
+ * end are therefore resolved against the regions they each land in, which keeps a
+ * span that survived verbatim exact and widens one that was rewritten to cover the
+ * whole authored construct.
+ *
+ * Pass the maps in pipeline order, source first — the same order `chainMaps` takes.
+ */
+export function spanToSource(
+  maps: PositionMap[],
+  start: number,
+  end: number,
+): { start: number; end: number } {
+  let span = { start, end: Math.max(end, start) };
+
+  for (const map of [...maps].reverse()) {
+    span = stageSpanToSource(map, span.start, span.end);
+  }
+
+  return span;
+}
+
+function stageSpanToSource(
+  map: PositionMap,
+  start: number,
+  end: number,
+): { start: number; end: number } {
+  // A zero-length span still has to land somewhere, so it is looked up as if it
+  // covered one character.
+  const lookupEnd = Math.max(end, start + 1);
+  const overlapping = map.regions.filter(
+    region => region.outStart < lookupEnd && region.outEnd > start,
+  );
+
+  if (overlapping.length === 0) {
+    const last = map.regions.at(-1);
+    const fallback = last?.srcEnd ?? start;
+    return { start: fallback, end: fallback };
+  }
+
+  const first = overlapping[0];
+  const last = overlapping.at(-1) as MappedRegion;
+  const mappedStart = first.verbatim
+    ? first.srcStart + Math.max(start - first.outStart, 0)
+    : first.srcStart;
+  const mappedEnd = last.verbatim
+    ? Math.min(last.srcStart + Math.max(end - last.outStart, 0), last.srcEnd)
+    : last.srcEnd;
+
+  return { start: mappedStart, end: Math.max(mappedEnd, mappedStart) };
+}

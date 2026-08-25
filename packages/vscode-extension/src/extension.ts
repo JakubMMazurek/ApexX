@@ -6,13 +6,17 @@ import {
   transpileApexX,
 } from "@apexx/transpiler";
 import type {
+  ApexXStructuralTypes,
   GeneratedApexSupportClass,
   TranspileResult,
 } from "@apexx/ast";
 import {
   inferApexClassName,
+  inferApexScriptName,
   resolveBuildTarget,
+  resolveScriptTarget,
   writeApexClassFiles,
+  writeApexScriptFile,
 } from "@apexx/sfdx";
 import {
   LanguageClient,
@@ -55,6 +59,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       apexDiagnostics: vscode.workspace
         .getConfiguration("apexx")
         .get<boolean>("apexDiagnostics", false),
+      standardApexLibrary: vscode.workspace
+        .getConfiguration("apexx")
+        .get<boolean>("standardApexLibrary", true),
+      // So a script's diagnostics match how it will be built.
+      scriptStructuralTypes: scriptStructuralTypes(
+        vscode.workspace.getConfiguration("apexx"),
+      ),
     },
   };
 
@@ -78,12 +89,55 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const document = vscode.window.activeTextEditor?.document;
 
       if (!document || !isApexXDocument(document)) {
-        await vscode.window.showWarningMessage("Open a .clsx file first.");
+        await vscode.window.showWarningMessage("Open a .clsx or .apexx file first.");
         return;
       }
 
       await buildDocument(document).catch(reportBuildError);
     }),
+  );
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      "apexx.executeCurrentScript",
+      async (target?: vscode.Uri) => {
+        const document = target
+          ? await vscode.workspace.openTextDocument(target)
+          : vscode.window.activeTextEditor?.document;
+
+        if (!document || !isApexXScriptDocument(document)) {
+          await vscode.window.showWarningMessage("Open an .apexx script first.");
+          return;
+        }
+
+        await executeScriptDocument(document).catch(error =>
+          reportExtensionError("ApexX execute failed", error),
+        );
+      },
+    ),
+  );
+  context.subscriptions.push(
+    vscode.commands.registerCommand("apexx.restartLanguageServer", async () => {
+      // A language service that has gone quiet, or one whose settings changed, should
+      // not need the whole window reloaded to come back.
+      if (!client) {
+        return;
+      }
+
+      outputChannel?.appendLine("Restarting the ApexX language server.");
+
+      try {
+        await client.restart();
+        void vscode.window.setStatusBarMessage("ApexX language server restarted.", 3000);
+      } catch (error) {
+        reportExtensionError("ApexX language server restart failed", error);
+      }
+    }),
+  );
+  context.subscriptions.push(
+    vscode.languages.registerCodeLensProvider(
+      { scheme: "file", pattern: "**/*.apexx" },
+      new ApexXScriptCodeLensProvider(),
+    ),
   );
 
   client.onDidChangeState(event => {
@@ -135,23 +189,64 @@ function shouldCompileOnSave(document: vscode.TextDocument): boolean {
 }
 
 function isApexXDocument(document: vscode.TextDocument): boolean {
+  const lowered = document.uri.fsPath.toLowerCase();
+
   return (
     document.uri.scheme === "file" &&
     (document.languageId === "apexx" ||
-      document.uri.fsPath.toLowerCase().endsWith(".clsx"))
+      lowered.endsWith(".clsx") ||
+      lowered.endsWith(".apexx"))
   );
 }
 
-async function buildDocument(document: vscode.TextDocument): Promise<void> {
+/** An `.apexx` script compiles to an anonymous block instead of a class. */
+function isApexXScriptDocument(document: vscode.TextDocument): boolean {
+  return (
+    document.uri.scheme === "file" &&
+    document.uri.fsPath.toLowerCase().endsWith(".apexx")
+  );
+}
+
+/** Puts Execute where the script is authored, next to the Execute the Apex
+ * extension already offers on the generated `.apex` block. */
+class ApexXScriptCodeLensProvider implements vscode.CodeLensProvider {
+  provideCodeLenses(document: vscode.TextDocument): vscode.CodeLens[] {
+    if (!isApexXScriptDocument(document)) {
+      return [];
+    }
+
+    const range = new vscode.Range(0, 0, 0, 0);
+
+    return [
+      new vscode.CodeLens(range, {
+        title: "Execute",
+        command: "apexx.executeCurrentScript",
+        arguments: [document.uri],
+      }),
+      new vscode.CodeLens(range, {
+        title: "Compile",
+        command: "apexx.buildCurrentFile",
+      }),
+    ];
+  }
+}
+
+/** Returns the generated file, or undefined when the source has errors. */
+async function buildDocument(
+  document: vscode.TextDocument,
+): Promise<string | undefined> {
   const filePath = document.uri.fsPath;
   const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
   const workspaceRoot = workspaceFolder?.uri.fsPath ?? path.dirname(filePath);
   const config = vscode.workspace.getConfiguration("apexx", document.uri);
   const outputDirectory = config.get<string>("outputDirectory", "").trim();
   const apiVersion = config.get<string>("apiVersion", "").trim();
+  const script = isApexXScriptDocument(document);
   const result = transpileApexX(document.getText(), {
     sourceFileName: path.basename(filePath),
     workspaceRoot,
+    mode: script ? "anonymous" : "class",
+    structuralTypes: scriptStructuralTypes(config),
   });
   const errors = result.diagnostics.filter(
     diagnostic => diagnostic.severity === "error",
@@ -164,7 +259,37 @@ async function buildDocument(document: vscode.TextDocument): Promise<void> {
       outputChannel?.appendLine(`error: ${error.message}`);
     }
     vscode.window.setStatusBarMessage(message, 5000);
-    return;
+    return undefined;
+  }
+
+  if (script) {
+    const scriptTarget = await resolveScriptTarget({
+      sourcePath: filePath,
+      workspaceRoot,
+      explicitScriptsDir: scriptOutputDirectory(config) ?? undefined,
+    });
+    const written = await writeApexScriptFile({
+      scriptsDir: scriptTarget.scriptsDir,
+      scriptName: inferApexScriptName(filePath),
+      source: result.output,
+    });
+
+    outputChannel?.appendLine(`Built ${written.scriptFile}`);
+
+    // A script declares its own structural types. Anything left here is a class
+    // an anonymous block cannot declare, so it has to be deployed instead.
+    for (const supportClass of result.supportClasses) {
+      outputChannel?.appendLine(
+        `warning: this script depends on ${supportClass.className}, which an anonymous block cannot declare. Deploy ${supportClass.className}.cls before running it.`,
+      );
+    }
+
+    vscode.window.setStatusBarMessage(
+      `ApexX generated ${path.basename(written.scriptFile)}`,
+      3500,
+    );
+
+    return written.scriptFile;
   }
 
   const target = await resolveBuildTarget({
@@ -205,6 +330,60 @@ async function buildDocument(document: vscode.TextDocument): Promise<void> {
     `ApexX generated ${path.basename(written.classFile)}`,
     3500,
   );
+
+  return written.classFile;
+}
+
+function scriptStructuralTypes(
+  config: vscode.WorkspaceConfiguration,
+): ApexXStructuralTypes {
+  return config.get<string>("scriptStructuralTypes", "inline") === "deployed"
+    ? "deployed"
+    : "inline";
+}
+
+function scriptOutputDirectory(
+  config: vscode.WorkspaceConfiguration,
+): string | undefined {
+  const configured = config.get<string>("scriptOutputDirectory", "").trim();
+  return configured.length > 0 ? configured : undefined;
+}
+
+/** The command the Salesforce Apex extension puts behind Execute on a `.apex`
+ * file. It reads the active editor, so the generated block is shown first. */
+const SALESFORCE_EXECUTE_COMMAND = "sf.anon.apex.execute.document";
+
+async function executeScriptDocument(
+  document: vscode.TextDocument,
+): Promise<void> {
+  if (document.isDirty) {
+    await document.save();
+  }
+
+  const scriptFile = await buildDocument(document);
+
+  if (!scriptFile) {
+    return;
+  }
+
+  const generated = await vscode.workspace.openTextDocument(
+    vscode.Uri.file(scriptFile),
+  );
+  await vscode.window.showTextDocument(generated, { preview: true });
+
+  const available = await vscode.commands.getCommands(true);
+
+  if (available.includes(SALESFORCE_EXECUTE_COMMAND)) {
+    await vscode.commands.executeCommand(SALESFORCE_EXECUTE_COMMAND);
+  } else {
+    // Without the Salesforce Apex extension there is no Execute to delegate to,
+    // so the same run goes through the CLI where the user can watch it.
+    const terminal = vscode.window.createTerminal("ApexX");
+    terminal.show(true);
+    terminal.sendText(`sf apex run --file "${scriptFile}"`);
+  }
+
+  await vscode.window.showTextDocument(document, { preview: false });
 }
 
 function collectWorkspaceSupportClasses(

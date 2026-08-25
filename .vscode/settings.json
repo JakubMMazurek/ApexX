@@ -2,6 +2,7 @@
   "salesforcedx-vscode-core.telemetry.enabled": false,
   "salesforcedx-vscode-apex.enable-apex-ls-error-to-telemetry": false,
   "files.associations": {
-    "*.clsx": "apexx"
+    "*.clsx": "apexx",
+    "*.apexx": "apexx"
   }
 }

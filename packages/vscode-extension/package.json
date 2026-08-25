@@ -1,7 +1,7 @@
 {
   "name": "apexx-vscode-extension",
   "displayName": "ApexX",
-  "description": "Language support shell for ApexX .clsx files.",
+  "description": "Language support shell for ApexX .clsx classes and .apexx scripts.",
   "version": "0.1.0",
   "publisher": "apexx",
   "type": "module",
@@ -12,7 +12,9 @@
   "activationEvents": [
     "onStartupFinished",
     "onLanguage:apexx",
-    "onCommand:apexx.buildCurrentFile"
+    "onCommand:apexx.buildCurrentFile",
+    "onCommand:apexx.executeCurrentScript",
+    "onCommand:apexx.restartLanguageServer"
   ],
   "categories": [
     "Programming Languages"
@@ -26,7 +28,8 @@
           "Apex Extended"
         ],
         "extensions": [
-          ".clsx"
+          ".clsx",
+          ".apexx"
         ],
         "configuration": "./language-configuration.json"
       }
@@ -36,13 +39,6 @@
         "language": "apexx",
         "scopeName": "source.apexx",
         "path": "./syntaxes/apexx.tmLanguage.json"
-      },
-      {
-        "scopeName": "source.apex.apexx.injection",
-        "path": "./syntaxes/apexx-injection.tmLanguage.json",
-        "injectTo": [
-          "source.apex"
-        ]
       }
     ],
     "snippets": [
@@ -53,13 +49,22 @@
     ],
     "configurationDefaults": {
       "files.associations": {
-        "*.clsx": "apexx"
+        "*.clsx": "apexx",
+        "*.apexx": "apexx"
       }
     },
     "commands": [
       {
         "command": "apexx.buildCurrentFile",
         "title": "ApexX: Build Current File"
+      },
+      {
+        "command": "apexx.executeCurrentScript",
+        "title": "ApexX: Execute Current Script"
+      },
+      {
+        "command": "apexx.restartLanguageServer",
+        "title": "ApexX: Restart Language Server"
       }
     ],
     "configuration": {
@@ -68,12 +73,30 @@
         "apexx.compileOnSave": {
           "type": "boolean",
           "default": true,
-          "description": "Generate the corresponding Salesforce Apex .cls files whenever a .clsx file is saved."
+          "description": "Compile whenever an ApexX file is saved: a .clsx file to its Salesforce Apex .cls files, an .apexx script to its .apex anonymous block."
         },
         "apexx.outputDirectory": {
           "type": "string",
           "default": "",
           "description": "Output classes directory. Leave empty to use the Salesforce DX default package directory, or generated/force-app/main/default/classes outside a Salesforce DX project."
+        },
+        "apexx.scriptOutputDirectory": {
+          "type": "string",
+          "default": "",
+          "description": "Output directory for anonymous blocks generated from .apexx scripts. Leave empty to use scripts/apex, where the Salesforce Apex extension offers Execute and Debug on every .apex file."
+        },
+        "apexx.scriptStructuralTypes": {
+          "type": "string",
+          "enum": [
+            "inline",
+            "deployed"
+          ],
+          "default": "inline",
+          "enumDescriptions": [
+            "Declare the structural types a script uses in the block itself, so it needs nothing deployed.",
+            "Use the deployed ApexXFuncs and ApexXTuples members, which a script passing a Func or a tuple to or from a deployed ApexX class requires."
+          ],
+          "description": "Where an .apexx script's Func interfaces and tuple carriers come from."
         },
         "apexx.apiVersion": {
           "type": "string",
@@ -94,8 +117,31 @@
           "type": "boolean",
           "default": false,
           "description": "Report Apex semantic errors from the Salesforce Apex language server alongside ApexX compiler errors. Off by default: these catch real mistakes such as calling a method that does not exist, but they also flag code the platform compiles and deploys, so they are advisory rather than authoritative."
+        },
+        "apexx.standardApexLibrary": {
+          "type": "boolean",
+          "default": true,
+          "description": "Resolve the Apex standard library from the Salesforce Apex extension, so completion and hover answer from the same data the Apex language server does. Reads the StandardApexLibrary archive that extension already ships; nothing is downloaded, and when the extension is absent ApexX falls back to its own table of the common types."
+        },
+        "apexxLanguageServer.trace.server": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Log the traffic between VS Code and the ApexX language server to the ApexX output channel. `messages` names each request, `verbose` includes its payload. This is the name vscode-languageclient reads, keyed by the client's own id, so declaring it here is what makes it settable at all. Off by default; for diagnosing the language service itself."
         }
       }
+    },
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "apexx.executeCurrentScript",
+          "when": "resourceExtname == .apexx"
+        }
+      ]
     }
   },
   "scripts": {
@@ -111,5 +157,11 @@
   "devDependencies": {
     "@types/node": "^24.0.0",
     "@types/vscode": "^1.90.0"
+  },
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "ApexX compiles the workspace's .clsx and .apexx files and runs a language server over them, so it stays off until the workspace is trusted. Without trust VS Code falls back to word suggestions taken from the open file, which is why completion looks empty rather than broken."
+    }
   }
 }

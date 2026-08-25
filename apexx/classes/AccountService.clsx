@@ -28,12 +28,17 @@ public with sharing class AccountService {
     @AuraEnabled(cacheable=true)
     @UserFriendlyError
     public static Boolean loadRevenueComparison() {
-        List<Account> accounts = demoAccounts();
-        List<Account> withRevenue = accounts
-            .filter(account => account.AnnualRevenue != null);
+        // The same deliberate pair runRevenueComparison uses: two accounts 750
+        // apart, so overriding one default argument is what decides the answer.
+        List<Account> accounts = [
+            SELECT Id, Name, AnnualRevenue
+            FROM Account
+            WHERE AccountNumber IN ('APXX-001', 'APXX-002')
+            ORDER BY AccountNumber
+        ];
 
-        return withRevenue.size() > 1
-            && compareRevenue(withRevenue.get(0), withRevenue.get(1), 1000);
+        return accounts.size() > 1
+            && compareRevenue(accounts.get(0), accounts.get(1), 1000);
     }
 
     @AuraEnabled

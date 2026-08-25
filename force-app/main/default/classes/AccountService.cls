@@ -104,17 +104,17 @@ public with sharing class AccountService {
         return (Boolean) new UserFriendlyError().handle(new ApexX.Invocation('AccountService', 'loadRevenueComparison', new List<String>{  }, new List<Object>{  }, new Map<String, Object>()), new ApexXNext4());
     }
     private static Boolean loadRevenueComparison_ApexXBody0() {
-            List<Account> accounts = demoAccounts();
-            List<Account> apexxFilter0 = new List<Account>();
-            for (Account account : accounts) {
-                if (account.AnnualRevenue != null) {
-                    apexxFilter0.add(account);
-                }
-            }
-            List<Account> withRevenue = apexxFilter0;
+            // The same deliberate pair runRevenueComparison uses: two accounts 750
+            // apart, so overriding one default argument is what decides the answer.
+            List<Account> accounts = [
+                SELECT Id, Name, AnnualRevenue
+                FROM Account
+                WHERE AccountNumber IN ('APXX-001', 'APXX-002')
+                ORDER BY AccountNumber
+            ];
 
-            return withRevenue.size() > 1
-                && compareRevenue(withRevenue.get(0), withRevenue.get(1), 1000);
+            return accounts.size() > 1
+                && compareRevenue(accounts.get(0), accounts.get(1), 1000);
     }
     private class ApexXNext4 implements ApexX.Next {
         private ApexXNext4() {
@@ -193,17 +193,17 @@ public with sharing class AccountService {
     }
 
     public static List<Account> priorityAccounts(List<Account> accounts) {
-        List<Account> apexxFilter1 = new List<Account>();
+        List<Account> apexxFilter0 = new List<Account>();
         for (Account account : accounts) {
             if (account.AccountNumber != null
                 && account.AnnualRevenue != null
                 && account.NumberOfEmployees != null
                 && account.NumberOfEmployees > 0
                 && account.AnnualRevenue / account.NumberOfEmployees >= MIN_REVENUE_PER_EMPLOYEE) {
-                apexxFilter1.add(account);
+                apexxFilter0.add(account);
             }
         }
-        return apexxFilter1;
+        return apexxFilter0;
     }
 
     public static List<String> normalizedContactEmails(List<Account> accounts) {
@@ -211,15 +211,15 @@ public with sharing class AccountService {
         for (Account account : accounts) {
             apexxFlatMap0.addAll(account.Contacts);
         }
-        List<Contact> apexxFilter2 = new List<Contact>();
+        List<Contact> apexxFilter1 = new List<Contact>();
         for (Contact contact : apexxFlatMap0) {
             if (contact.Email != null
                 && contact.Email.contains('@')) {
-                apexxFilter2.add(contact);
+                apexxFilter1.add(contact);
             }
         }
         List<String> apexxMap0 = new List<String>();
-        for (Contact contact : apexxFilter2) {
+        for (Contact contact : apexxFilter1) {
             apexxMap0.add(contact.Email.trim().toLowerCase());
         }
         return apexxMap0;
@@ -334,14 +334,14 @@ public with sharing class AccountService {
             }
         }
         Account firstHot = apexxFind1;
-        List<Account> apexxFilter3 = new List<Account>();
+        List<Account> apexxFilter2 = new List<Account>();
         for (Account account : accounts) {
             if (account.Name != null) {
-                apexxFilter3.add(account);
+                apexxFilter2.add(account);
             }
         }
         List<String> apexxMap3 = new List<String>();
-        for (Account account : apexxFilter3) {
+        for (Account account : apexxFilter2) {
             apexxMap3.add(account.Name);
         }
         List<String> names = apexxMap3;
@@ -384,20 +384,20 @@ public with sharing class AccountService {
             String escalationReason = apexxTuple1.item1;
             Decimal exposureThreshold = apexxTuple1.item2;
 
-            List<Account> apexxFilter4 = new List<Account>();
+            List<Account> apexxFilter3 = new List<Account>();
             for (Account account : accounts) {
                 if (account.AnnualRevenue != null
                     && account.AnnualRevenue >= minimumRevenue) {
+                    apexxFilter3.add(account);
+                }
+            }
+            List<Account> apexxFilter4 = new List<Account>();
+            for (Account account : apexxFilter3) {
+                if (matchesStrategy.invoke(account)) {
                     apexxFilter4.add(account);
                 }
             }
-            List<Account> apexxFilter5 = new List<Account>();
-            for (Account account : apexxFilter4) {
-                if (matchesStrategy.invoke(account)) {
-                    apexxFilter5.add(account);
-                }
-            }
-            List<Account> selected = apexxFilter5;
+            List<Account> selected = apexxFilter4;
 
             List<AccountWorkItem> workItems = buildSelectedWork(
                 selected,
@@ -407,14 +407,14 @@ public with sharing class AccountService {
             for (Account account : selected) {
                 apexxFlatMap1.addAll(account.Contacts);
             }
-            List<Contact> apexxFilter6 = new List<Contact>();
+            List<Contact> apexxFilter5 = new List<Contact>();
             for (Contact contact : apexxFlatMap1) {
                 if (contact.Email != null) {
-                    apexxFilter6.add(contact);
+                    apexxFilter5.add(contact);
                 }
             }
             List<String> apexxMap4 = new List<String>();
-            for (Contact contact : apexxFilter6) {
+            for (Contact contact : apexxFilter5) {
                 apexxMap4.add(contact.Email.trim().toLowerCase());
             }
             List<String> stakeholderEmails = apexxMap4;
@@ -481,14 +481,14 @@ public with sharing class AccountService {
             apexxFlatMap2.addAll(account.Contacts);
         }
         List<Contact> contacts = apexxFlatMap2;
-        List<Contact> apexxFilter7 = new List<Contact>();
+        List<Contact> apexxFilter6 = new List<Contact>();
         for (Contact contact : contacts) {
             if (contact.Email != null && contact.Email.contains('@')) {
-                apexxFilter7.add(contact);
+                apexxFilter6.add(contact);
             }
         }
         List<String> apexxMap5 = new List<String>();
-        for (Contact contact : apexxFilter7) {
+        for (Contact contact : apexxFilter6) {
             apexxMap5.add(contact.Email.trim().toLowerCase());
         }
         List<String> emails = apexxMap5;

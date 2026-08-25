@@ -3,11 +3,23 @@ import { createHash } from "node:crypto";
 export const FUNC_REGISTRY_CLASS = "ApexXFuncs";
 export const TUPLE_REGISTRY_CLASS = "ApexXTuples";
 
+/**
+ * How a structural type is named where it is used.
+ *
+ * `registry` qualifies it with the registry class that a class-mode build deploys.
+ * `flat` leaves the member name bare, for an anonymous block that declares the
+ * type inline: a block-level class is an inner type, and Apex rejects an inner
+ * type that has inner types of its own.
+ */
+export type SharedTypeNaming = "registry" | "flat";
+
 export function sharedFuncTypeName(
   parameterTypes: string[],
   returnType: string,
+  naming: SharedTypeNaming = "registry",
 ): string {
-  return `${FUNC_REGISTRY_CLASS}.${sharedFuncMemberName(parameterTypes, returnType)}`;
+  const member = sharedFuncMemberName(parameterTypes, returnType);
+  return naming === "flat" ? member : `${FUNC_REGISTRY_CLASS}.${member}`;
 }
 
 export function sharedFuncMemberName(
@@ -22,8 +34,12 @@ export function sharedFuncMemberName(
   ])}`;
 }
 
-export function sharedTupleTypeName(types: string[]): string {
-  return `${TUPLE_REGISTRY_CLASS}.${sharedTupleMemberName(types)}`;
+export function sharedTupleTypeName(
+  types: string[],
+  naming: SharedTypeNaming = "registry",
+): string {
+  const member = sharedTupleMemberName(types);
+  return naming === "flat" ? member : `${TUPLE_REGISTRY_CLASS}.${member}`;
 }
 
 export function sharedTupleMemberName(types: string[]): string {
@@ -37,7 +53,10 @@ export function sharedTypeMemberName(qualifiedName: string): string {
   return qualifiedName.split(".").at(-1) ?? qualifiedName;
 }
 
-export function toSharedApexType(typeName: string): string {
+export function toSharedApexType(
+  typeName: string,
+  naming: SharedTypeNaming = "registry",
+): string {
   const normalized = normalizeSharedType(typeName);
   const funcMatch = /^Func<(.+)>$/i.exec(normalized);
 
@@ -46,7 +65,11 @@ export function toSharedApexType(typeName: string): string {
   }
 
   const arguments_ = splitCommaList(funcMatch[1]);
-  return sharedFuncTypeName(arguments_.slice(0, -1), arguments_.at(-1) ?? "Object");
+  return sharedFuncTypeName(
+    arguments_.slice(0, -1),
+    arguments_.at(-1) ?? "Object",
+    naming,
+  );
 }
 
 export function normalizeSharedType(typeName: string): string {
